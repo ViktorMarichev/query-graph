@@ -1,21 +1,61 @@
 import { Bench } from 'tinybench'
 
-import { plus100 } from '../index.js'
+import { registerDefinition } from '../index.js'
 
-function add(a: number) {
-  return a + 100
-}
-
-const b = new Bench()
-
-b.add('Native a + 100', () => {
-  plus100(10)
+const graph = registerDefinition({
+  schemaVersion: 1,
+  name: 'benchmark',
+  root: 'link',
+  sources: [
+    {
+      key: 'link',
+      fields: [{ name: 'idControllerObjectValue', scalarType: 'int64' }],
+    },
+    {
+      key: 'value',
+      fields: [
+        { name: 'id', scalarType: 'int64' },
+        { name: 'value', scalarType: 'string', nullable: true },
+      ],
+    },
+  ],
+  parameters: [],
+  relations: [
+    {
+      name: 'value',
+      from: 'link',
+      to: 'value',
+      required: true,
+      on: {
+        kind: 'eq',
+        left: { kind: 'field', source: 'link', field: 'idControllerObjectValue' },
+        right: { kind: 'field', source: 'value', field: 'id' },
+      },
+    },
+  ],
+  constraints: [],
+  projection: {
+    fields: [
+      {
+        path: ['value'],
+        relations: ['value'],
+        expression: { kind: 'field', source: 'value', field: 'value' },
+      },
+    ],
+  },
 })
 
-b.add('JavaScript a + 100', () => {
-  add(10)
+const fields = new Set(['link.idControllerObjectValue', 'value.id', 'value.value'])
+const bench = new Bench()
+
+bench.add('Native graph field lookup', () => {
+  graph.hasField('value', 'value')
 })
 
-await b.run()
+bench.add('JavaScript Set field lookup', () => {
+  fields.has('value.value')
+})
 
-console.table(b.table())
+await bench.run()
+
+console.table(bench.table())
