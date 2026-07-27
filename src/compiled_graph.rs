@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
-use crate::{validation, DefinitionIssues, FieldDefinition, GraphDefinition, RelationDefinition};
+use crate::{
+  validation, DefinitionIssues, FieldDefinition, GraphDefinition, ProjectionFieldDefinition,
+  ProjectionPath, RelationDefinition,
+};
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CompiledGraph {
   definition: GraphDefinition,
   root_index: usize,
@@ -10,7 +13,9 @@ pub struct CompiledGraph {
   field_index: Vec<HashMap<String, usize>>,
   parameter_index: HashMap<String, usize>,
   relation_index: HashMap<String, usize>,
+  projection_index: HashMap<ProjectionPath, usize>,
   outgoing_relations: Vec<Vec<usize>>,
+  relation_paths: Vec<Vec<usize>>,
 }
 
 impl CompiledGraph {
@@ -52,10 +57,25 @@ impl CompiledGraph {
       .map(|(index, relation)| (relation.name.clone(), index))
       .collect();
 
+    let projection_index = definition
+      .projection
+      .fields
+      .iter()
+      .enumerate()
+      .map(|(index, field)| (ProjectionPath::from_segments(&field.path), index))
+      .collect();
+
     let mut outgoing_relations = vec![Vec::new(); definition.sources.len()];
+    let mut incoming_relations = vec![None; definition.sources.len()];
     for (relation_index, relation) in definition.relations.iter().enumerate() {
-      outgoing_relations[source_index[&relation.from]].push(relation_index);
+      let from_index = source_index[&relation.from];
+      let to_index = source_index[&relation.to];
+      outgoing_relations[from_index].push(relation_index);
+      incoming_relations[to_index] = Some(relation_index);
     }
+
+    let relation_paths =
+      build_relation_paths(&definition, &source_index, root_index, &incoming_relations);
 
     Ok(Self {
       definition,
@@ -64,7 +84,9 @@ impl CompiledGraph {
       field_index,
       parameter_index,
       relation_index,
+      projection_index,
       outgoing_relations,
+      relation_paths,
     })
   }
 
@@ -103,6 +125,22 @@ impl CompiledGraph {
       .map(|index| &self.definition.relations[*index])
   }
 
+  pub(crate) fn relation_index(&self, name: &str) -> Option<usize> {
+    self.relation_index.get(name).copied()
+  }
+
+  pub fn projection(&self, path: &str) -> Option<&ProjectionFieldDefinition> {
+    let path = ProjectionPath::parse(path);
+    self
+      .projection_index
+      .get(&path)
+      .map(|index| &self.definition.projection.fields[*index])
+  }
+
+  pub(crate) fn projection_index(&self, path: &ProjectionPath) -> Option<usize> {
+    self.projection_index.get(path).copied()
+  }
+
   pub fn outgoing_relations(
     &self,
     source: &str,
@@ -114,4 +152,47 @@ impl CompiledGraph {
         .map(|index| &self.definition.relations[*index]),
     )
   }
+
+  pub(crate) fn relation_path_indices(&self, source: &str) -> Option<&[usize]> {
+    let source_index = *self.source_index.get(source)?;
+    Some(&self.relation_paths[source_index])
+  }
+
+  pub fn relation_path(&self, source: &str) -> Option<impl Iterator<Item = &RelationDefinition>> {
+    let source_index = *self.source_index.get(source)?;
+    Some(
+      self.relation_paths[source_index]
+        .iter()
+        .map(|index| &self.definition.relations[*index]),
+    )
+  }
+}
+
+fn build_relation_paths(
+  definition: &GraphDefinition,
+  source_index: &HashMap<String, usize>,
+  root_index: usize,
+  incoming_relations: &[Option<usize>],
+) -> Vec<Vec<usize>> {
+  let mut paths = vec![Vec::new(); definition.sources.len()];
+
+  for (source_index_value, path) in paths.iter_mut().enumerate() {
+    if source_index_value == root_index {
+      continue;
+    }
+
+    let mut current = source_index_value;
+    let mut reversed_path = Vec::new();
+    while current != root_index {
+      let relation_index = incoming_relations[current]
+        .expect("validated graph source must have one incoming relation");
+      reversed_path.push(relation_index);
+      let relation = &definition.relations[relation_index];
+      current = source_index[&relation.from];
+    }
+    reversed_path.reverse();
+    *path = reversed_path;
+  }
+
+  paths
 }

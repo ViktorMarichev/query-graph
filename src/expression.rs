@@ -110,4 +110,46 @@ impl Expression {
       expressions: expressions.into_iter().collect(),
     }
   }
+
+  pub fn for_each_field<'a>(&'a self, visitor: &mut impl FnMut(&'a str, &'a str)) {
+    match self {
+      Self::Field { source, field } => visitor(source, field),
+      Self::Parameter { .. } | Self::Literal { .. } => {}
+      Self::Eq { left, right }
+      | Self::NotEq { left, right }
+      | Self::LessThan { left, right }
+      | Self::LessThanOrEqual { left, right }
+      | Self::GreaterThan { left, right }
+      | Self::GreaterThanOrEqual { left, right } => {
+        left.for_each_field(visitor);
+        right.for_each_field(visitor);
+      }
+      Self::Like {
+        expression,
+        pattern,
+      } => {
+        expression.for_each_field(visitor);
+        pattern.for_each_field(visitor);
+      }
+      Self::In { expression, values } => {
+        expression.for_each_field(visitor);
+        for value in values {
+          value.for_each_field(visitor);
+        }
+      }
+      Self::And { expressions } | Self::Or { expressions } => {
+        for expression in expressions {
+          expression.for_each_field(visitor);
+        }
+      }
+      Self::Not { expression } | Self::IsNull { expression } | Self::IsNotNull { expression } => {
+        expression.for_each_field(visitor)
+      }
+      Self::Function { arguments, .. } => {
+        for argument in arguments {
+          argument.for_each_field(visitor);
+        }
+      }
+    }
+  }
 }

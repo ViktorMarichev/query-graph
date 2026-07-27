@@ -10,7 +10,23 @@ export declare class QueryGraph {
   hasParameter(parameter: string): boolean
   hasRelation(relation: string): boolean
   selectableFields(): Array<string>
+  withRelationalMapping(mapping: unknown): RelationalQueryGraph
 }
-export type QueryGraphHandle = QueryGraph
+
+export declare class RelationalQueryGraph {
+  get name(): string
+  compileSqlServer(operation: unknown): CompiledSqlStatement
+}
+
+export interface CompiledSqlStatement {
+  sql: string
+  bindings: Array<SqlBinding>
+  fields: Array<string>
+}
 
 export declare function registerDefinition(definition: unknown): QueryGraph
+
+export interface SqlBinding {
+  name: string
+  parameter: string
+}

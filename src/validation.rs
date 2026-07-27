@@ -54,10 +54,14 @@ pub enum DefinitionIssueCode {
   EmptyFunctionName,
   EmptyProjectionPath,
   EmptyProjectionPathSegment,
+  InvalidProjectionPathSegment,
   DuplicateProjectionPath,
+  HiddenProjectionField,
   UnknownProjectionRelation,
   InvalidProjectionRelationPath,
   ProjectionExpressionScope,
+  RootHasIncomingRelation,
+  AmbiguousSourcePath,
   UnreachableSource,
 }
 
@@ -293,11 +297,18 @@ pub(crate) fn validate(definition: &GraphDefinition) -> Result<(), DefinitionIss
     }
 
     for (segment_index, segment) in field.path.iter().enumerate() {
+      let segment_location = format!("{location}.path[{segment_index}]");
       if segment.trim().is_empty() {
         issues.push(DefinitionIssue::new(
           DefinitionIssueCode::EmptyProjectionPathSegment,
-          format!("{location}.path[{segment_index}]"),
+          segment_location,
           "projection path segment must not be empty",
+        ));
+      } else if segment.contains('.') {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidProjectionPathSegment,
+          segment_location,
+          "projection path segment must not contain '.'",
         ));
       }
     }
@@ -323,6 +334,8 @@ pub(crate) fn validate(definition: &GraphDefinition) -> Result<(), DefinitionIss
       DefinitionIssueCode::ProjectionExpressionScope,
       &mut issues,
     );
+
+    validate_projection_visibility(definition, field, &location, &mut issues);
   }
 
   for (order_index, order) in definition.default_order_by.iter().enumerate() {
@@ -337,7 +350,7 @@ pub(crate) fn validate(definition: &GraphDefinition) -> Result<(), DefinitionIss
     );
   }
 
-  validate_reachability(definition, &sources, &mut issues);
+  validate_topology(definition, &sources, &mut issues);
 
   if issues.is_empty() {
     Ok(())
@@ -384,6 +397,89 @@ fn validate_projection_relation_path(
   }
 
   visited_sources
+}
+
+fn validate_projection_visibility(
+  definition: &GraphDefinition,
+  projection: &crate::ProjectionFieldDefinition,
+  location: &str,
+  issues: &mut Vec<DefinitionIssue>,
+) {
+  if !projection.selectable {
+    return;
+  }
+
+  let mut referenced_fields = HashSet::new();
+  projection.expression.for_each_field(&mut |source, field| {
+    referenced_fields.insert((source, field));
+  });
+
+  for (source, field) in referenced_fields {
+    let Some(field_definition) = definition
+      .sources
+      .iter()
+      .find(|candidate| candidate.key == source)
+      .and_then(|source| {
+        source
+          .fields
+          .iter()
+          .find(|candidate| candidate.name == field)
+      })
+    else {
+      continue;
+    };
+
+    if !field_definition.selectable {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::HiddenProjectionField,
+        format!("{location}.expression"),
+        format!("field {source:?}.{field:?} is internal and cannot be exposed"),
+      ));
+    }
+  }
+}
+
+fn validate_topology(
+  definition: &GraphDefinition,
+  sources: &HashMap<String, HashSet<String>>,
+  issues: &mut Vec<DefinitionIssue>,
+) {
+  let mut incoming = HashMap::<&str, Vec<(usize, &str)>>::new();
+
+  for (relation_index, relation) in definition.relations.iter().enumerate() {
+    if !sources.contains_key(&relation.from) || !sources.contains_key(&relation.to) {
+      continue;
+    }
+
+    if relation.to == definition.root {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::RootHasIncomingRelation,
+        format!("relations[{relation_index}].to"),
+        format!(
+          "root source {:?} cannot have an incoming relation",
+          definition.root
+        ),
+      ));
+    }
+
+    incoming
+      .entry(&relation.to)
+      .or_default()
+      .push((relation_index, &relation.name));
+  }
+
+  for (source, relations) in incoming {
+    if source != definition.root && relations.len() > 1 {
+      let names: Vec<_> = relations.iter().map(|(_, name)| *name).collect();
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::AmbiguousSourcePath,
+        format!("sources.{source}"),
+        format!("source {source:?} has multiple incoming relations: {names:?}"),
+      ));
+    }
+  }
+
+  validate_reachability(definition, sources, issues);
 }
 
 fn validate_reachability(

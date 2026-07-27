@@ -558,5 +558,5 @@ if (!nativeBinding) {
 
 module.exports = nativeBinding
 module.exports.QueryGraph = nativeBinding.QueryGraph
-module.exports.QueryGraphHandle = nativeBinding.QueryGraphHandle
+module.exports.RelationalQueryGraph = nativeBinding.RelationalQueryGraph
 module.exports.registerDefinition = nativeBinding.registerDefinition
