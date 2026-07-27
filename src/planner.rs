@@ -2,7 +2,10 @@ use std::collections::{HashSet, VecDeque};
 use std::error::Error;
 use std::fmt;
 
-use crate::{CompiledGraph, ConstraintCondition, Expression, OperationIssues, QueryOperation};
+use crate::{
+  CompiledGraph, ConstraintCondition, Expression, OperationIssues, QueryOperation,
+  RelationCardinality,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QueryPlan {
@@ -84,6 +87,18 @@ pub(crate) fn build(
 
   let relation_indices = order_relations(graph, required_relations)?;
 
+  if operation.offset.is_some() || operation.limit.is_some() {
+    if let Some(relation) = relation_indices
+      .iter()
+      .map(|index| &graph.definition().relations[*index])
+      .find(|relation| relation.cardinality == RelationCardinality::Many)
+    {
+      return Err(PlanError::PaginationThroughManyRelation {
+        relation: relation.name.clone(),
+      });
+    }
+  }
+
   Ok(QueryPlan {
     projection_indices: operation_plan.projection_indices.into_boxed_slice(),
     relation_indices: relation_indices.into_boxed_slice(),
@@ -97,6 +112,7 @@ pub(crate) fn build(
 pub enum PlanError {
   Operation(OperationIssues),
   InvalidCompiledGraph { message: String },
+  PaginationThroughManyRelation { relation: String },
 }
 
 impl fmt::Display for PlanError {
@@ -106,6 +122,10 @@ impl fmt::Display for PlanError {
       Self::InvalidCompiledGraph { message } => {
         write!(formatter, "invalid compiled graph: {message}")
       }
+      Self::PaginationThroughManyRelation { relation } => write!(
+        formatter,
+        "pagination through many relation {relation:?} requires a split query plan"
+      ),
     }
   }
 }

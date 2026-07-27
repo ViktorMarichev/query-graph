@@ -32,6 +32,40 @@ fn rejects_projection_path_segments_containing_separator() {
 }
 
 #[test]
+fn rejects_overlapping_projection_paths() {
+  let mut definition = GraphDefinition::new("pathConflict", "root");
+  definition.sources = vec![source("root")];
+  definition.projection = ProjectionDefinition {
+    fields: vec![
+      ProjectionFieldDefinition::new(vec!["owner".into()], Expression::field("root", "id")),
+      ProjectionFieldDefinition::new(
+        vec!["owner".into(), "id".into()],
+        Expression::field("root", "id"),
+      ),
+    ],
+  };
+
+  assert!(issue_codes(definition).contains(&DefinitionIssueCode::ConflictingProjectionPath));
+}
+
+#[test]
+fn rejects_non_selectable_default_projection() {
+  let mut definition = GraphDefinition::new("invalidDefaultProjection", "root");
+  definition.sources = vec![source("root")];
+  definition.projection = ProjectionDefinition {
+    fields: vec![ProjectionFieldDefinition {
+      path: vec!["id".into()],
+      expression: Expression::field("root", "id"),
+      relations: Vec::new(),
+      selectable: false,
+      selected_by_default: true,
+    }],
+  };
+
+  assert!(issue_codes(definition).contains(&DefinitionIssueCode::NonSelectableDefaultProjection));
+}
+
+#[test]
 fn rejects_selectable_projection_of_hidden_field() {
   let mut definition = GraphDefinition::new("hiddenField", "root");
   definition.sources = vec![SourceDefinition::new(

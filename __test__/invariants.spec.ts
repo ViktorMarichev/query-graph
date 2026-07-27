@@ -27,5 +27,34 @@ test('accepts safe JavaScript integers for int64 parameters', (t) => {
     },
   })
 
-  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'id' }])
+  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'id', scalarType: 'int64', cardinality: 'one' }])
+})
+
+test('rejects non-decimal strings for decimal parameters', (t) => {
+  const root = source('root', { amount: 'decimal' })
+  const amount = requiredParameter('amount', 'decimal')
+  const graph = registerDefinition(
+    defineGraph({
+      name: 'decimalParameters',
+      root,
+      sources: [root],
+      parameters: [amount],
+      constraints: [constraint('amount', eq(root.field('amount'), param(amount)))],
+      projection: [project('amount', root.field('amount'), { default: true })],
+    }),
+  ).withRelationalMapping({
+    sources: {
+      root: { table: 'Root' },
+    },
+  })
+
+  const error = t.throws(() =>
+    graph.compileSqlServer({
+      parameters: {
+        amount: 'NaN',
+      },
+    }),
+  )
+
+  t.regex(error.message, /InvalidParameterType/)
 })

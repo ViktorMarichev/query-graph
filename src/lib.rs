@@ -6,9 +6,12 @@ mod expression;
 mod mapping;
 mod node_api;
 mod operation;
+mod oracle;
 mod path;
 mod planner;
 mod relational_graph;
+mod scalar;
+mod sql;
 mod sql_server;
 mod validation;
 
@@ -25,11 +28,12 @@ pub use mapping::{
   SourceMapping, TableName,
 };
 pub use node_api::{
-  register_definition, CompiledSqlStatement, QueryGraph, RelationalQueryGraph, SqlBinding,
+  register_definition, CompiledSqlColumn, CompiledSqlRelation, CompiledSqlStatement, QueryGraph,
+  RelationalQueryGraph, SqlBinding,
 };
 pub use operation::{OperationIssue, OperationIssueCode, OperationIssues, QueryOperation};
 use path::ProjectionPath;
 pub use planner::PlanError;
 pub use relational_graph::MappedQueryGraph;
-pub use sql_server::{ParameterBinding, SqlCompileError, SqlStatement};
+pub use sql::{ParameterBinding, SqlColumn, SqlCompileError, SqlRelation, SqlStatement};
 pub use validation::{DefinitionIssue, DefinitionIssueCode, DefinitionIssues};

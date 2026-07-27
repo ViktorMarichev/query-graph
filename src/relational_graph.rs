@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-  sql_server, CompiledGraph, CompiledRelationalMapping, MappingIssues, QueryOperation,
+  oracle, sql_server, CompiledGraph, CompiledRelationalMapping, MappingIssues, QueryOperation,
   RelationalMapping, SqlCompileError, SqlStatement,
 };
 
@@ -34,5 +34,12 @@ impl MappedQueryGraph {
     operation: &QueryOperation,
   ) -> Result<SqlStatement, SqlCompileError> {
     sql_server::compile(self.graph.as_ref(), &self.mapping, operation)
+  }
+
+  pub fn compile_oracle(
+    &self,
+    operation: &QueryOperation,
+  ) -> Result<SqlStatement, SqlCompileError> {
+    oracle::compile(self.graph.as_ref(), &self.mapping, operation)
   }
 }

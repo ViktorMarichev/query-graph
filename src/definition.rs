@@ -106,6 +106,23 @@ pub enum ScalarType {
   Json,
 }
 
+impl ScalarType {
+  pub const fn as_str(self) -> &'static str {
+    match self {
+      Self::Boolean => "boolean",
+      Self::Int32 => "int32",
+      Self::Int64 => "int64",
+      Self::Float64 => "float64",
+      Self::Decimal => "decimal",
+      Self::String => "string",
+      Self::Date => "date",
+      Self::DateTime => "dateTime",
+      Self::Binary => "binary",
+      Self::Json => "json",
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParameterDefinition {
@@ -143,6 +160,15 @@ pub enum ParameterCardinality {
   #[default]
   One,
   Many,
+}
+
+impl ParameterCardinality {
+  pub const fn as_str(self) -> &'static str {
+    match self {
+      Self::One => "one",
+      Self::Many => "many",
+    }
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +218,15 @@ pub enum RelationCardinality {
   #[default]
   One,
   Many,
+}
+
+impl RelationCardinality {
+  pub const fn as_str(self) -> &'static str {
+    match self {
+      Self::One => "one",
+      Self::Many => "many",
+    }
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

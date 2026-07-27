@@ -182,6 +182,8 @@ const statement = relationalGraph.compileSqlServer(operation)
 
 console.log(statement.sql)
 console.table(statement.bindings)
+console.table(statement.columns)
+console.table(statement.relations)
 
 const bench = new Bench()
 

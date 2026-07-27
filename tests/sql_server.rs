@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use query_graph::{
   ConstraintDefinition, Expression, FieldDefinition, GraphDefinition, LiteralValue,
-  MappedQueryGraph, MappingIssueCode, OrderByDefinition, ParameterDefinition, PlanError,
-  ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationDefinition,
-  RelationalMapping, ScalarType, SourceDefinition, SourceMapping, SqlCompileError, TableName,
+  MappedQueryGraph, MappingIssueCode, OrderByDefinition, ParameterCardinality, ParameterDefinition,
+  PlanError, ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationCardinality,
+  RelationDefinition, RelationalMapping, ScalarType, SourceDefinition, SourceMapping,
+  SqlCompileError, TableName,
 };
 use serde_json::json;
 
@@ -141,23 +142,34 @@ fn compiles_default_projection_to_sql_server() {
     statement.sql,
     concat!(
       "SELECT\n",
-      "  [value].[id] AS [value.id],\n",
-      "  [value].[value] AS [value.value]\n",
-      "FROM [dbo].[Controller#Link] AS [link]\n",
-      "INNER JOIN [ControllerObjectValue] AS [value]\n",
-      "  ON ([link].[idValue] = [value].[id])\n",
+      "  [t1].[id] AS [c0],\n",
+      "  [t1].[value] AS [c1]\n",
+      "FROM [dbo].[Controller#Link] AS [t0]\n",
+      "INNER JOIN [ControllerObjectValue] AS [t1]\n",
+      "  ON ([t0].[idValue] = [t1].[id])\n",
       "WHERE\n",
-      "  ([link].[owner_id] = @p0)\n",
-      "  AND ([link].[dateDelete] IS NULL)\n",
+      "  ([t0].[owner_id] = @p0)\n",
+      "  AND ([t0].[dateDelete] IS NULL)\n",
       "ORDER BY\n",
-      "  [link].[order] ASC,\n",
-      "  [value].[order] ASC\n",
+      "  [t0].[order] ASC,\n",
+      "  [t1].[order] ASC\n",
       "OFFSET 10 ROWS FETCH NEXT 25 ROWS ONLY"
     )
   );
-  assert_eq!(statement.fields, ["value.id", "value.value"]);
+  assert_eq!(statement.columns[0].name, "c0");
+  assert_eq!(statement.columns[0].path, "value.id");
+  assert_eq!(statement.columns[0].relations, ["value"]);
+  assert_eq!(statement.columns[1].name, "c1");
+  assert_eq!(statement.relations.len(), 1);
+  assert_eq!(statement.relations[0].name, "value");
+  assert_eq!(statement.relations[0].from, "link");
+  assert_eq!(statement.relations[0].to, "value");
+  assert_eq!(statement.relations[0].cardinality, RelationCardinality::One);
+  assert!(statement.relations[0].required);
   assert_eq!(statement.bindings[0].name, "p0");
   assert_eq!(statement.bindings[0].parameter, "idOwner");
+  assert_eq!(statement.bindings[0].scalar_type, ScalarType::Int64);
+  assert_eq!(statement.bindings[0].cardinality, ParameterCardinality::One);
 }
 
 #[test]
@@ -170,10 +182,8 @@ fn plans_optional_join_for_an_explicit_projection() {
 
   let statement = relational_graph().compile_sql_server(&operation).unwrap();
 
-  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [detail]"));
-  assert!(statement
-    .sql
-    .contains("[detail].[name] AS [value.detail.name]"));
+  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
+  assert!(statement.sql.contains("[t2].[name] AS [c0]"));
 }
 
 #[test]
@@ -234,9 +244,9 @@ fn plans_relation_paths_required_only_by_ordering() {
 
   assert!(statement
     .sql
-    .contains("INNER JOIN [ControllerObjectValue] AS [value]"));
-  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [detail]"));
-  assert!(statement.sql.contains("[detail].[name] ASC"));
+    .contains("INNER JOIN [ControllerObjectValue] AS [t1]"));
+  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
+  assert!(statement.sql.contains("[t2].[name] ASC"));
 }
 
 #[test]
@@ -254,7 +264,7 @@ fn renders_sql_server_string_literals_as_unicode() {
     })
     .unwrap();
 
-  assert!(statement.sql.contains("N'O''Reilly' AS [value.id]"));
+  assert!(statement.sql.contains("N'O''Reilly' AS [c0]"));
 }
 
 #[test]
@@ -276,5 +286,45 @@ fn preserves_the_empty_schema_part_in_sql_server_table_names() {
 
   assert!(statement
     .sql
-    .contains("FROM [Controller]..[Controller#Link] AS [link]"));
+    .contains("FROM [Controller]..[Controller#Link] AS [t0]"));
+}
+
+#[test]
+fn reports_many_cardinality_without_pagination() {
+  let mut definition = definition();
+  definition.relations[0].cardinality = RelationCardinality::Many;
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+
+  let statement = graph
+    .compile_sql_server(&QueryOperation {
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      ..QueryOperation::default()
+    })
+    .unwrap();
+
+  assert_eq!(
+    statement.relations[0].cardinality,
+    RelationCardinality::Many
+  );
+}
+
+#[test]
+fn rejects_pagination_through_a_many_relation() {
+  let mut definition = definition();
+  definition.relations[0].cardinality = query_graph::RelationCardinality::Many;
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+
+  let error = graph
+    .compile_sql_server(&QueryOperation {
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      limit: Some(25),
+      ..QueryOperation::default()
+    })
+    .unwrap_err();
+
+  assert!(matches!(
+    error,
+    SqlCompileError::Plan(PlanError::PaginationThroughManyRelation { relation })
+      if relation == "value"
+  ));
 }

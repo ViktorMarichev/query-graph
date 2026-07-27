@@ -5,7 +5,9 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{CompiledGraph, ParameterCardinality, ProjectionPath, ScalarType};
+use crate::{
+  scalar::is_decimal_text, CompiledGraph, ParameterCardinality, ProjectionPath, ScalarType,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -242,12 +244,7 @@ fn is_valid_scalar(value: &Value, scalar_type: ScalarType) -> bool {
           .is_some_and(|value| value.parse::<i64>().is_ok())
     }
     ScalarType::Float64 => value.as_f64().is_some(),
-    ScalarType::Decimal => {
-      value.is_number()
-        || value
-          .as_str()
-          .is_some_and(|value| value.parse::<f64>().is_ok())
-    }
+    ScalarType::Decimal => value.is_number() || value.as_str().is_some_and(is_decimal_text),
     ScalarType::String | ScalarType::Date | ScalarType::DateTime | ScalarType::Binary => {
       value.is_string()
     }

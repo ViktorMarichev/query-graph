@@ -120,6 +120,11 @@ test('composes graph modules into a flat wire definition', (t) => {
   t.false('modules' in definition)
   t.true(Object.isFrozen(combinedModule))
   t.true(Object.isFrozen(combinedModule.sources))
+  t.true(Object.isFrozen(combinedModule.sources[0]))
+  t.true(Object.isFrozen(combinedModule.sources[0].fields))
+  t.true(Object.isFrozen(combinedModule.relations[0].on))
+  t.true(Object.isFrozen(definition))
+  t.true(Object.isFrozen(definition.projection.fields))
 })
 
 test('rejects conflicting definitions from graph modules', (t) => {
@@ -171,6 +176,8 @@ test('passes a DSL definition to Rust without an intermediate compiler', (t) => 
       parameters: { id: 42 },
     })
 
-  t.regex(statement.sql, /\[root\]\.\[id\] AS \[id\]/)
-  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'id' }])
+  t.regex(statement.sql, /\[t0\]\.\[id\] AS \[c0\]/)
+  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'id', scalarType: 'int64', cardinality: 'one' }])
+  t.deepEqual(statement.columns, [{ name: 'c0', path: 'id', relations: [] }])
+  t.deepEqual(statement.relations, [])
 })

@@ -56,7 +56,9 @@ pub enum DefinitionIssueCode {
   EmptyProjectionPathSegment,
   InvalidProjectionPathSegment,
   DuplicateProjectionPath,
+  ConflictingProjectionPath,
   HiddenProjectionField,
+  NonSelectableDefaultProjection,
   UnknownProjectionRelation,
   InvalidProjectionRelationPath,
   ProjectionExpressionScope,
@@ -285,7 +287,7 @@ pub(crate) fn validate(definition: &GraphDefinition) -> Result<(), DefinitionIss
     );
   }
 
-  let mut projection_paths = HashSet::new();
+  let mut projection_paths: HashSet<Vec<String>> = HashSet::new();
   for (field_index, field) in definition.projection.fields.iter().enumerate() {
     let location = format!("projection.fields[{field_index}]");
     if field.path.is_empty() {
@@ -313,11 +315,33 @@ pub(crate) fn validate(definition: &GraphDefinition) -> Result<(), DefinitionIss
       }
     }
 
+    let conflicting_path = projection_paths
+      .iter()
+      .find(|existing| projection_paths_conflict(existing, &field.path))
+      .cloned();
+
     if !projection_paths.insert(field.path.clone()) {
       issues.push(DefinitionIssue::new(
         DefinitionIssueCode::DuplicateProjectionPath,
         format!("{location}.path"),
         format!("projection path {:?} is defined more than once", field.path),
+      ));
+    } else if let Some(conflicting_path) = conflicting_path {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::ConflictingProjectionPath,
+        format!("{location}.path"),
+        format!(
+          "projection path {:?} conflicts with {:?}",
+          field.path, conflicting_path
+        ),
+      ));
+    }
+
+    if field.selected_by_default && !field.selectable {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::NonSelectableDefaultProjection,
+        format!("{location}.selectedByDefault"),
+        "a non-selectable projection field cannot be selected by default",
       ));
     }
 
@@ -356,6 +380,18 @@ pub(crate) fn validate(definition: &GraphDefinition) -> Result<(), DefinitionIss
     Ok(())
   } else {
     Err(DefinitionIssues(issues))
+  }
+}
+
+fn projection_paths_conflict(left: &[String], right: &[String]) -> bool {
+  if left.is_empty() || right.is_empty() || left.len() == right.len() {
+    return false;
+  }
+
+  if left.len() < right.len() {
+    right.starts_with(left)
+  } else {
+    left.starts_with(right)
   }
 }
 

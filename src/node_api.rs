@@ -5,14 +5,15 @@ use napi_derive::napi;
 
 use crate::{
   CompiledGraph, GraphDefinition, MappedQueryGraph, ParameterBinding, QueryOperation,
-  RelationalMapping, SqlStatement,
+  RelationalMapping, SqlColumn, SqlCompileError, SqlRelation, SqlStatement,
 };
 
 #[napi(object)]
 pub struct CompiledSqlStatement {
   pub sql: String,
   pub bindings: Vec<SqlBinding>,
-  pub fields: Vec<String>,
+  pub columns: Vec<CompiledSqlColumn>,
+  pub relations: Vec<CompiledSqlRelation>,
 }
 
 impl From<SqlStatement> for CompiledSqlStatement {
@@ -24,7 +25,8 @@ impl From<SqlStatement> for CompiledSqlStatement {
         .into_iter()
         .map(SqlBinding::from)
         .collect(),
-      fields: statement.fields,
+      columns: statement.columns.into_iter().map(Into::into).collect(),
+      relations: statement.relations.into_iter().map(Into::into).collect(),
     }
   }
 }
@@ -33,6 +35,10 @@ impl From<SqlStatement> for CompiledSqlStatement {
 pub struct SqlBinding {
   pub name: String,
   pub parameter: String,
+  #[napi(ts_type = "import('./definition.js').ScalarType")]
+  pub scalar_type: String,
+  #[napi(ts_type = "import('./definition.js').ParameterCardinality")]
+  pub cardinality: String,
 }
 
 impl From<ParameterBinding> for SqlBinding {
@@ -40,6 +46,47 @@ impl From<ParameterBinding> for SqlBinding {
     Self {
       name: binding.name,
       parameter: binding.parameter,
+      scalar_type: binding.scalar_type.as_str().to_owned(),
+      cardinality: binding.cardinality.as_str().to_owned(),
+    }
+  }
+}
+
+#[napi(object)]
+pub struct CompiledSqlColumn {
+  pub name: String,
+  pub path: String,
+  pub relations: Vec<String>,
+}
+
+impl From<SqlColumn> for CompiledSqlColumn {
+  fn from(column: SqlColumn) -> Self {
+    Self {
+      name: column.name,
+      path: column.path,
+      relations: column.relations,
+    }
+  }
+}
+
+#[napi(object)]
+pub struct CompiledSqlRelation {
+  pub name: String,
+  pub from: String,
+  pub to: String,
+  #[napi(ts_type = "import('./definition.js').RelationCardinality")]
+  pub cardinality: String,
+  pub required: bool,
+}
+
+impl From<SqlRelation> for CompiledSqlRelation {
+  fn from(relation: SqlRelation) -> Self {
+    Self {
+      name: relation.name,
+      from: relation.from,
+      to: relation.to,
+      cardinality: relation.cardinality.as_str().to_owned(),
+      required: relation.required,
     }
   }
 }
@@ -141,24 +188,36 @@ impl RelationalQueryGraph {
 
   #[napi(ts_args_type = "operation: import('./definition.js').QueryOperation")]
   pub fn compile_sql_server(&self, operation: serde_json::Value) -> Result<CompiledSqlStatement> {
-    let operation: QueryOperation = serde_json::from_value(operation).map_err(|error| {
+    compile_operation(operation, |operation| {
+      self.graph.compile_sql_server(operation)
+    })
+  }
+
+  #[napi(ts_args_type = "operation: import('./definition.js').QueryOperation")]
+  pub fn compile_oracle(&self, operation: serde_json::Value) -> Result<CompiledSqlStatement> {
+    compile_operation(operation, |operation| self.graph.compile_oracle(operation))
+  }
+}
+
+fn compile_operation(
+  operation: serde_json::Value,
+  compile: impl FnOnce(&QueryOperation) -> std::result::Result<SqlStatement, SqlCompileError>,
+) -> Result<CompiledSqlStatement> {
+  let operation: QueryOperation = serde_json::from_value(operation).map_err(|error| {
+    Error::new(
+      Status::InvalidArg,
+      format!("Invalid query operation: {error}"),
+    )
+  })?;
+
+  compile(&operation)
+    .map(CompiledSqlStatement::from)
+    .map_err(|error| {
       Error::new(
         Status::InvalidArg,
-        format!("Invalid query operation: {error}"),
+        format!("Unable to compile SQL: {error}"),
       )
-    })?;
-
-    self
-      .graph
-      .compile_sql_server(&operation)
-      .map(CompiledSqlStatement::from)
-      .map_err(|error| {
-        Error::new(
-          Status::InvalidArg,
-          format!("Unable to compile SQL: {error}"),
-        )
-      })
-  }
+    })
 }
 
 #[napi(ts_args_type = "definition: import('./definition.js').GraphDefinitionInput")]

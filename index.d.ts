@@ -16,12 +16,28 @@ export declare class QueryGraph {
 export declare class RelationalQueryGraph {
   get name(): string
   compileSqlServer(operation: import('./definition.js').QueryOperation): CompiledSqlStatement
+  compileOracle(operation: import('./definition.js').QueryOperation): CompiledSqlStatement
+}
+
+export interface CompiledSqlColumn {
+  name: string
+  path: string
+  relations: Array<string>
+}
+
+export interface CompiledSqlRelation {
+  name: string
+  from: string
+  to: string
+  cardinality: import('./definition.js').RelationCardinality
+  required: boolean
 }
 
 export interface CompiledSqlStatement {
   sql: string
   bindings: Array<SqlBinding>
-  fields: Array<string>
+  columns: Array<CompiledSqlColumn>
+  relations: Array<CompiledSqlRelation>
 }
 
 export declare function registerDefinition(definition: import('./definition.js').GraphDefinitionInput): QueryGraph
@@ -29,4 +45,6 @@ export declare function registerDefinition(definition: import('./definition.js')
 export interface SqlBinding {
   name: string
   parameter: string
+  scalarType: import('./definition.js').ScalarType
+  cardinality: import('./definition.js').ParameterCardinality
 }

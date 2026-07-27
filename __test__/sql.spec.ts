@@ -68,11 +68,41 @@ test('compiles a mapped graph to SQL Server', (t) => {
     limit: 20,
   })
   t.is(graph.name, 'attributeValues')
-  t.deepEqual(statement.fields, ['value.id', 'value.value'])
-  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'idOwner' }])
-  t.regex(statement.sql, /FROM \[dbo\]\.\[ControllerAttributeValueLink\] AS \[link\]/)
-  t.regex(statement.sql, /INNER JOIN \[ControllerObjectValue\] AS \[value\]/)
-  t.regex(statement.sql, /\(\[link\]\.\[owner_id\] = @p0\)/)
+  t.deepEqual(statement.columns, [
+    { name: 'c0', path: 'value.id', relations: ['value'] },
+    { name: 'c1', path: 'value.value', relations: ['value'] },
+  ])
+  t.deepEqual(statement.relations, [
+    {
+      name: 'value',
+      from: 'link',
+      to: 'value',
+      cardinality: 'one',
+      required: true,
+    },
+  ])
+  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'idOwner', scalarType: 'int64', cardinality: 'one' }])
+  t.regex(statement.sql, /\[t1\]\.\[id\] AS \[c0\]/)
+  t.regex(statement.sql, /FROM \[dbo\]\.\[ControllerAttributeValueLink\] AS \[t0\]/)
+  t.regex(statement.sql, /INNER JOIN \[ControllerObjectValue\] AS \[t1\]/)
+  t.regex(statement.sql, /\(\[t0\]\.\[owner_id\] = @p0\)/)
+  t.regex(statement.sql, /OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY$/)
+})
+
+test('compiles the same mapped graph to Oracle', (t) => {
+  const graph = registerDefinition(definition).withRelationalMapping(mapping)
+
+  const statement = graph.compileOracle({
+    parameters: { idOwner: 42 },
+    limit: 20,
+  })
+
+  t.deepEqual(statement.columns[0], { name: 'c0', path: 'value.id', relations: ['value'] })
+  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'idOwner', scalarType: 'int64', cardinality: 'one' }])
+  t.regex(statement.sql, /"t1"\."id" AS "c0"/)
+  t.regex(statement.sql, /FROM "dbo"\."ControllerAttributeValueLink" "t0"/)
+  t.regex(statement.sql, /INNER JOIN "ControllerObjectValue" "t1"/)
+  t.regex(statement.sql, /\("t0"\."owner_id" = :p0\)/)
   t.regex(statement.sql, /OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY$/)
 })
 

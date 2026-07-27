@@ -253,22 +253,22 @@ function defineGraphModule(configuration) {
   const content = composeDefinitionContent(configuration)
   const module = {
     name: configuration.name,
-    sources: Object.freeze(content.sources),
-    parameters: Object.freeze(content.parameters),
-    relations: Object.freeze(content.relations),
-    constraints: Object.freeze(content.constraints),
-    projection: Object.freeze(content.projection),
-    defaultOrderBy: Object.freeze(content.defaultOrderBy),
+    sources: content.sources,
+    parameters: content.parameters,
+    relations: content.relations,
+    constraints: content.constraints,
+    projection: content.projection,
+    defaultOrderBy: content.defaultOrderBy,
   }
   Object.defineProperty(module, GRAPH_MODULE_BRAND, { value: true })
 
-  return Object.freeze(module)
+  return deepFreeze(module)
 }
 
 function defineGraph(configuration) {
   const content = composeDefinitionContent(configuration)
 
-  return {
+  return deepFreeze({
     schemaVersion: GRAPH_DEFINITION_VERSION,
     name: configuration.name,
     root: referenceName(configuration.root, 'source'),
@@ -280,7 +280,7 @@ function defineGraph(configuration) {
       fields: content.projection,
     },
     defaultOrderBy: content.defaultOrderBy,
-  }
+  })
 }
 
 function composeDefinitionContent(configuration) {
@@ -451,6 +451,19 @@ function copySource(sourceReference) {
     key: sourceReference.key,
     fields: sourceReference.fields.map((fieldDefinition) => ({ ...fieldDefinition })),
   }
+}
+
+function deepFreeze(value, seen = new WeakSet()) {
+  if (value === null || typeof value !== 'object' || seen.has(value)) {
+    return value
+  }
+
+  seen.add(value)
+  for (const property of Reflect.ownKeys(value)) {
+    deepFreeze(value[property], seen)
+  }
+
+  return Object.freeze(value)
 }
 
 function assertScalarType(scalarType) {

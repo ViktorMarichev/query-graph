@@ -105,6 +105,10 @@ impl CompiledGraph {
       .map(|index| &self.definition.sources[*index])
   }
 
+  pub(crate) fn source_index(&self, key: &str) -> Option<usize> {
+    self.source_index.get(key).copied()
+  }
+
   pub fn field(&self, source: &str, field: &str) -> Option<&FieldDefinition> {
     let source_index = *self.source_index.get(source)?;
     let field_index = *self.field_index[source_index].get(field)?;
