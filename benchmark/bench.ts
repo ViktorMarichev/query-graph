@@ -1,205 +1,129 @@
 import { Bench } from 'tinybench'
 
+import {
+  asc,
+  call,
+  constraint,
+  defineGraph,
+  eq,
+  isNull,
+  nullable,
+  param,
+  project,
+  relation,
+  requiredParameter,
+  source,
+} from '../definition.js'
 import { registerDefinition } from '../index.js'
 
-const attributeValueGraphDefinition = {
-  schemaVersion: 1,
+const link = source('link', {
+  id: 'int64',
+  idOwner: 'int64',
+  idControllerObjectValue: 'int64',
+  idOrganisation: 'int64',
+  order: 'int32',
+  dateDelete: nullable('dateTime'),
+})
+
+const value = source('value', {
+  id: 'int64',
+  idControllerObjectRequisite: 'int64',
+  idAttachment: nullable('int64'),
+  value: nullable('string'),
+  order: 'int32',
+})
+
+const requisite = source('requisite', {
+  id: 'int64',
+  idType: 'int64',
+  code: 'string',
+  name: 'string',
+})
+
+const requisiteType = source('requisiteType', {
+  id: 'int64',
+  code: 'string',
+})
+
+const attachment = source('attachment', {
+  idAttachment: 'int64',
+  idStorage: 'int64',
+})
+
+const storage = source('storage', {
+  id: 'int64',
+})
+
+const idOwner = requiredParameter('idOwner', 'int64')
+const idOrganisation = requiredParameter('idOrganisation', 'int64')
+
+const valueRelation = relation('value', link, value, eq(link.field('idControllerObjectValue'), value.field('id')), {
+  required: true,
+})
+
+const requisiteRelation = relation(
+  'requisite',
+  value,
+  requisite,
+  eq(value.field('idControllerObjectRequisite'), requisite.field('id')),
+  { required: true },
+)
+
+const requisiteTypeRelation = relation(
+  'requisiteType',
+  requisite,
+  requisiteType,
+  eq(requisite.field('idType'), requisiteType.field('id')),
+  { required: true },
+)
+
+const attachmentRelation = relation(
+  'attachment',
+  value,
+  attachment,
+  eq(value.field('idAttachment'), attachment.field('idAttachment')),
+)
+
+const storageRelation = relation('storage', attachment, storage, eq(attachment.field('idStorage'), storage.field('id')))
+
+const attributeValueGraphDefinition = defineGraph({
   name: 'controllerAttributeValues',
-  root: 'link',
-
-  sources: [
-    {
-      key: 'link',
-      fields: [
-        { name: 'id', scalarType: 'int64' },
-        { name: 'idOwner', scalarType: 'int64' },
-        { name: 'idControllerObjectValue', scalarType: 'int64' },
-        { name: 'idOrganisation', scalarType: 'int64' },
-        { name: 'order', scalarType: 'int32' },
-        { name: 'dateDelete', scalarType: 'dateTime', nullable: true },
-      ],
-    },
-    {
-      key: 'value',
-      fields: [
-        { name: 'id', scalarType: 'int64' },
-        { name: 'idControllerObjectRequisite', scalarType: 'int64' },
-        { name: 'idAttachment', scalarType: 'int64', nullable: true },
-        { name: 'value', scalarType: 'string', nullable: true },
-        { name: 'order', scalarType: 'int32' },
-      ],
-    },
-    {
-      key: 'requisite',
-      fields: [
-        { name: 'id', scalarType: 'int64' },
-        { name: 'idType', scalarType: 'int64' },
-        { name: 'code', scalarType: 'string' },
-        { name: 'name', scalarType: 'string' },
-      ],
-    },
-    {
-      key: 'requisiteType',
-      fields: [
-        { name: 'id', scalarType: 'int64' },
-        { name: 'code', scalarType: 'string' },
-      ],
-    },
-    {
-      key: 'attachment',
-      fields: [
-        { name: 'idAttachment', scalarType: 'int64' },
-        { name: 'idStorage', scalarType: 'int64' },
-      ],
-    },
-    {
-      key: 'storage',
-      fields: [{ name: 'id', scalarType: 'int64' }],
-    },
-  ],
-
-  parameters: [
-    { name: 'idOwner', scalarType: 'int64', required: true },
-    { name: 'idOrganisation', scalarType: 'int64', required: true },
-  ],
-
-  relations: [
-    {
-      name: 'value',
-      from: 'link',
-      to: 'value',
-      required: true,
-      on: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'link', field: 'idControllerObjectValue' },
-        right: { kind: 'field', source: 'value', field: 'id' },
-      },
-    },
-    {
-      name: 'requisite',
-      from: 'value',
-      to: 'requisite',
-      required: true,
-      on: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'value', field: 'idControllerObjectRequisite' },
-        right: { kind: 'field', source: 'requisite', field: 'id' },
-      },
-    },
-    {
-      name: 'requisiteType',
-      from: 'requisite',
-      to: 'requisiteType',
-      required: true,
-      on: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'requisite', field: 'idType' },
-        right: { kind: 'field', source: 'requisiteType', field: 'id' },
-      },
-    },
-    {
-      name: 'attachment',
-      from: 'value',
-      to: 'attachment',
-      on: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'value', field: 'idAttachment' },
-        right: { kind: 'field', source: 'attachment', field: 'idAttachment' },
-      },
-    },
-    {
-      name: 'storage',
-      from: 'attachment',
-      to: 'storage',
-      on: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'attachment', field: 'idStorage' },
-        right: { kind: 'field', source: 'storage', field: 'id' },
-      },
-    },
-  ],
-
+  root: link,
+  sources: [link, value, requisite, requisiteType, attachment, storage],
+  parameters: [idOwner, idOrganisation],
+  relations: [valueRelation, requisiteRelation, requisiteTypeRelation, attachmentRelation, storageRelation],
   constraints: [
-    {
-      name: 'owner',
-      predicate: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'link', field: 'idOwner' },
-        right: { kind: 'parameter', name: 'idOwner' },
-      },
-    },
-    {
-      name: 'organisation',
-      predicate: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'link', field: 'idOrganisation' },
-        right: { kind: 'parameter', name: 'idOrganisation' },
-      },
-    },
-    {
-      name: 'active',
-      predicate: {
-        kind: 'isNull',
-        expression: { kind: 'field', source: 'link', field: 'dateDelete' },
-      },
-    },
+    constraint('owner', eq(link.field('idOwner'), param(idOwner))),
+    constraint('organisation', eq(link.field('idOrganisation'), param(idOrganisation))),
+    constraint('active', isNull(link.field('dateDelete'))),
   ],
-
-  projection: {
-    fields: [
-      {
-        path: ['value', 'id'],
-        relations: ['value'],
-        expression: { kind: 'field', source: 'value', field: 'id' },
-        selectedByDefault: true,
-      },
-      {
-        path: ['value', 'value'],
-        relations: ['value'],
-        expression: { kind: 'field', source: 'value', field: 'value' },
-        selectedByDefault: true,
-      },
-      {
-        path: ['value', 'requisite', 'code'],
-        relations: ['value', 'requisite'],
-        expression: { kind: 'field', source: 'requisite', field: 'code' },
-        selectedByDefault: true,
-      },
-      {
-        path: ['value', 'requisite', 'name'],
-        relations: ['value', 'requisite'],
-        expression: { kind: 'field', source: 'requisite', field: 'name' },
-        selectedByDefault: true,
-      },
-      {
-        path: ['value', 'requisite', 'type'],
-        relations: ['value', 'requisite', 'requisiteType'],
-        expression: { kind: 'field', source: 'requisiteType', field: 'code' },
-        selectedByDefault: true,
-      },
-      {
-        path: ['value', 'file', 'url'],
-        relations: ['value', 'attachment', 'storage'],
-        expression: {
-          kind: 'function',
-          name: 'publicStorageUrl',
-          arguments: [{ kind: 'field', source: 'storage', field: 'id' }],
-        },
-      },
-    ],
-  },
-
-  defaultOrderBy: [
-    {
-      expression: { kind: 'field', source: 'link', field: 'order' },
-      direction: 'asc',
-    },
-    {
-      expression: { kind: 'field', source: 'value', field: 'order' },
-      direction: 'asc',
-    },
+  projection: [
+    project('value.id', value.field('id'), {
+      through: [valueRelation],
+      default: true,
+    }),
+    project('value.value', value.field('value'), {
+      through: [valueRelation],
+      default: true,
+    }),
+    project('value.requisite.code', requisite.field('code'), {
+      through: [valueRelation, requisiteRelation],
+      default: true,
+    }),
+    project('value.requisite.name', requisite.field('name'), {
+      through: [valueRelation, requisiteRelation],
+      default: true,
+    }),
+    project('value.requisite.type', requisiteType.field('code'), {
+      through: [valueRelation, requisiteRelation, requisiteTypeRelation],
+      default: true,
+    }),
+    project('value.file.url', call('publicStorageUrl', storage.field('id')), {
+      through: [valueRelation, attachmentRelation, storageRelation],
+    }),
   ],
-}
+  defaultOrderBy: [asc(link.field('order')), asc(value.field('order'))],
+})
 
 const relationalMapping = {
   sources: {

@@ -3,6 +3,18 @@
   "version": "1.0.0",
   "description": "Native query graph planner and SQL compiler for Node.js",
   "main": "index.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "default": "./index.js"
+    },
+    "./definition": {
+      "types": "./definition.d.ts",
+      "require": "./definition.js",
+      "default": "./definition.js"
+    }
+  },
   "license": "UNLICENSED",
   "browser": "browser.js",
   "keywords": [
@@ -14,6 +26,8 @@
     "node-addon"
   ],
   "files": [
+    "definition.d.ts",
+    "definition.js",
     "index.d.ts",
     "index.js",
     "browser.js"

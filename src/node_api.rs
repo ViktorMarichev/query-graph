@@ -104,7 +104,7 @@ impl QueryGraph {
       .collect()
   }
 
-  #[napi(ts_args_type = "mapping: unknown")]
+  #[napi(ts_args_type = "mapping: import('./definition.js').RelationalMapping")]
   pub fn with_relational_mapping(
     &self,
     mapping: serde_json::Value,
@@ -139,7 +139,7 @@ impl RelationalQueryGraph {
     self.graph.graph().definition().name.clone()
   }
 
-  #[napi(ts_args_type = "operation: unknown")]
+  #[napi(ts_args_type = "operation: import('./definition.js').QueryOperation")]
   pub fn compile_sql_server(&self, operation: serde_json::Value) -> Result<CompiledSqlStatement> {
     let operation: QueryOperation = serde_json::from_value(operation).map_err(|error| {
       Error::new(
@@ -161,7 +161,7 @@ impl RelationalQueryGraph {
   }
 }
 
-#[napi(ts_args_type = "definition: unknown")]
+#[napi(ts_args_type = "definition: import('./definition.js').GraphDefinitionInput")]
 pub fn register_definition(definition: serde_json::Value) -> Result<QueryGraph> {
   let definition: GraphDefinition = serde_json::from_value(definition).map_err(|error| {
     Error::new(

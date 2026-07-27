@@ -1,68 +1,51 @@
 import test from 'ava'
 
-import { registerDefinition } from '../index'
+import {
+  constraint,
+  defineGraph,
+  eq,
+  nullable,
+  param,
+  project,
+  relation,
+  requiredParameter,
+  source,
+} from '../definition.js'
+import { registerDefinition } from '../index.js'
 
-const definition = {
-  schemaVersion: 1,
+const link = source('link', {
+  id: 'int64',
+  idOwner: 'int64',
+  idControllerObjectValue: 'int64',
+})
+
+const value = source('value', {
+  id: 'int64',
+  value: nullable('string'),
+})
+
+const idOwner = requiredParameter('idOwner', 'int64')
+const valueRelation = relation('value', link, value, eq(link.field('idControllerObjectValue'), value.field('id')), {
+  required: true,
+})
+
+const definition = defineGraph({
   name: 'attributeValues',
-  root: 'link',
-  sources: [
-    {
-      key: 'link',
-      fields: [
-        { name: 'id', scalarType: 'int64' },
-        { name: 'idOwner', scalarType: 'int64' },
-        { name: 'idControllerObjectValue', scalarType: 'int64' },
-      ],
-    },
-    {
-      key: 'value',
-      fields: [
-        { name: 'id', scalarType: 'int64' },
-        { name: 'value', scalarType: 'string', nullable: true },
-      ],
-    },
+  root: link,
+  sources: [link, value],
+  parameters: [idOwner],
+  relations: [valueRelation],
+  constraints: [constraint('owner', eq(link.field('idOwner'), param(idOwner)))],
+  projection: [
+    project('value.id', value.field('id'), {
+      through: [valueRelation],
+      default: true,
+    }),
+    project('value.value', value.field('value'), {
+      through: [valueRelation],
+    }),
   ],
-  parameters: [{ name: 'idOwner', scalarType: 'int64', required: true }],
-  relations: [
-    {
-      name: 'value',
-      from: 'link',
-      to: 'value',
-      required: true,
-      on: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'link', field: 'idControllerObjectValue' },
-        right: { kind: 'field', source: 'value', field: 'id' },
-      },
-    },
-  ],
-  constraints: [
-    {
-      name: 'owner',
-      predicate: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'link', field: 'idOwner' },
-        right: { kind: 'parameter', name: 'idOwner' },
-      },
-    },
-  ],
-  projection: {
-    fields: [
-      {
-        path: ['value', 'id'],
-        relations: ['value'],
-        expression: { kind: 'field', source: 'value', field: 'id' },
-        selectedByDefault: true,
-      },
-      {
-        path: ['value', 'value'],
-        relations: ['value'],
-        expression: { kind: 'field', source: 'value', field: 'value' },
-      },
-    ],
-  },
-}
+})
 
 test('registers a definition as a native graph handle', (t) => {
   const graph = registerDefinition(definition)

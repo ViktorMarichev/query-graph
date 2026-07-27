@@ -1,75 +1,52 @@
 import test from 'ava'
 
+import {
+  asc,
+  constraint,
+  defineGraph,
+  eq,
+  nullable,
+  param,
+  project,
+  relation,
+  requiredParameter,
+  source,
+} from '../definition.js'
 import { registerDefinition } from '../index.js'
 
-const definition = {
-  schemaVersion: 1,
+const link = source('link', {
+  idOwner: 'int64',
+  idValue: 'int64',
+  order: 'int32',
+})
+
+const value = source('value', {
+  id: 'int64',
+  value: nullable('string'),
+})
+
+const idOwner = requiredParameter('idOwner', 'int64')
+const valueRelation = relation('value', link, value, eq(link.field('idValue'), value.field('id')), { required: true })
+
+const definition = defineGraph({
   name: 'attributeValues',
-  root: 'link',
-  sources: [
-    {
-      key: 'link',
-      fields: [
-        { name: 'idOwner', scalarType: 'int64' },
-        { name: 'idValue', scalarType: 'int64' },
-        { name: 'order', scalarType: 'int32' },
-      ],
-    },
-    {
-      key: 'value',
-      fields: [
-        { name: 'id', scalarType: 'int64' },
-        { name: 'value', scalarType: 'string', nullable: true },
-      ],
-    },
+  root: link,
+  sources: [link, value],
+  parameters: [idOwner],
+  relations: [valueRelation],
+  constraints: [constraint('owner', eq(link.field('idOwner'), param(idOwner)))],
+  projection: [
+    project('value.id', value.field('id'), {
+      through: [valueRelation],
+      default: true,
+    }),
+    project('value.value', value.field('value'), {
+      through: [valueRelation],
+      default: true,
+    }),
   ],
-  parameters: [{ name: 'idOwner', scalarType: 'int64', required: true }],
-  relations: [
-    {
-      name: 'value',
-      from: 'link',
-      to: 'value',
-      required: true,
-      on: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'link', field: 'idValue' },
-        right: { kind: 'field', source: 'value', field: 'id' },
-      },
-    },
-  ],
-  constraints: [
-    {
-      name: 'owner',
-      predicate: {
-        kind: 'eq',
-        left: { kind: 'field', source: 'link', field: 'idOwner' },
-        right: { kind: 'parameter', name: 'idOwner' },
-      },
-    },
-  ],
-  projection: {
-    fields: [
-      {
-        path: ['value', 'id'],
-        relations: ['value'],
-        expression: { kind: 'field', source: 'value', field: 'id' },
-        selectedByDefault: true,
-      },
-      {
-        path: ['value', 'value'],
-        relations: ['value'],
-        expression: { kind: 'field', source: 'value', field: 'value' },
-        selectedByDefault: true,
-      },
-    ],
-  },
-  defaultOrderBy: [
-    {
-      expression: { kind: 'field', source: 'link', field: 'order' },
-      direction: 'asc',
-    },
-  ],
-}
+  defaultOrderBy: [asc(link.field('order'))],
+})
 
 const mapping = {
   sources: {

@@ -10,12 +10,12 @@ export declare class QueryGraph {
   hasParameter(parameter: string): boolean
   hasRelation(relation: string): boolean
   selectableFields(): Array<string>
-  withRelationalMapping(mapping: unknown): RelationalQueryGraph
+  withRelationalMapping(mapping: import('./definition.js').RelationalMapping): RelationalQueryGraph
 }
 
 export declare class RelationalQueryGraph {
   get name(): string
-  compileSqlServer(operation: unknown): CompiledSqlStatement
+  compileSqlServer(operation: import('./definition.js').QueryOperation): CompiledSqlStatement
 }
 
 export interface CompiledSqlStatement {
@@ -24,7 +24,7 @@ export interface CompiledSqlStatement {
   fields: Array<string>
 }
 
-export declare function registerDefinition(definition: unknown): QueryGraph
+export declare function registerDefinition(definition: import('./definition.js').GraphDefinitionInput): QueryGraph
 
 export interface SqlBinding {
   name: string
