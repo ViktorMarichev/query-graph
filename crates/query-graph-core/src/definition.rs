@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CompiledGraph, DefinitionIssues, Expression};
 
-pub const GRAPH_DEFINITION_VERSION: u32 = 5;
+pub const GRAPH_DEFINITION_VERSION: u32 = 6;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -40,6 +40,14 @@ impl GraphDefinition {
 
   pub fn compile(self) -> Result<CompiledGraph, DefinitionIssues> {
     CompiledGraph::try_from_definition(self)
+  }
+
+  pub fn is_summary(&self) -> bool {
+    self
+      .projection
+      .fields
+      .iter()
+      .any(|field| field.role != ProjectionFieldRole::Value)
   }
 }
 
@@ -329,6 +337,8 @@ pub struct ProjectionDefinition {
 pub struct ProjectionFieldDefinition {
   pub path: Vec<String>,
   pub expression: Expression,
+  #[serde(default, skip_serializing_if = "ProjectionFieldRole::is_value")]
+  pub role: ProjectionFieldRole,
   #[serde(default)]
   pub selected_by_default: bool,
 }
@@ -338,13 +348,39 @@ impl ProjectionFieldDefinition {
     Self {
       path,
       expression,
+      role: ProjectionFieldRole::Value,
       selected_by_default: false,
     }
+  }
+
+  pub fn dimension(mut self) -> Self {
+    self.role = ProjectionFieldRole::Dimension;
+    self
+  }
+
+  pub fn measure(mut self) -> Self {
+    self.role = ProjectionFieldRole::Measure;
+    self
   }
 
   pub fn selected_by_default(mut self) -> Self {
     self.selected_by_default = true;
     self
+  }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProjectionFieldRole {
+  #[default]
+  Value,
+  Dimension,
+  Measure,
+}
+
+impl ProjectionFieldRole {
+  const fn is_value(&self) -> bool {
+    matches!(self, Self::Value)
   }
 }
 

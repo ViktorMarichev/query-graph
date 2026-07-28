@@ -20,10 +20,10 @@ pub use compiled_graph::CompiledGraph;
 pub use definition::{
   ConstraintCondition, ConstraintDefinition, FieldDefinition, GraphDefinition, NullsOrder,
   OrderByDefinition, OrderDirection, ParameterDefinition, ParameterShape, ProjectionDefinition,
-  ProjectionFieldDefinition, RelationCardinality, RelationDefinition, RelationSelection,
-  ScalarType, SourceDefinition, GRAPH_DEFINITION_VERSION,
+  ProjectionFieldDefinition, ProjectionFieldRole, RelationCardinality, RelationDefinition,
+  RelationSelection, ScalarType, SourceDefinition, GRAPH_DEFINITION_VERSION,
 };
-pub use expression::{Expression, LiteralValue, SemanticFunction};
+pub use expression::{AggregateFunction, Expression, LiteralValue, SemanticFunction};
 pub use mapping::{
   CompiledRelationalMapping, MappingIssue, MappingIssueCode, MappingIssues, RelationalMapping,
   SourceMapping, TableName,

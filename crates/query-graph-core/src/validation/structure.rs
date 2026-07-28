@@ -6,6 +6,7 @@ use crate::{
 };
 
 use super::{
+  aggregation,
   expression::{self, ExpressionContext},
   projection, topology, DefinitionIssue, DefinitionIssueCode, DefinitionIssues,
 };
@@ -45,6 +46,7 @@ impl<'a> DefinitionValidator<'a> {
     self.validate_constraints();
     self.validate_projection();
     self.validate_ordering();
+    aggregation::validate(self.definition, &mut self.issues);
     topology::validate(self.definition, &self.sources, &mut self.issues);
 
     if self.issues.is_empty() {

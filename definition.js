@@ -1,6 +1,6 @@
 'use strict'
 
-const GRAPH_DEFINITION_VERSION = 5
+const GRAPH_DEFINITION_VERSION = 6
 const SCALAR_TYPES = new Set([
   'boolean',
   'int32',
@@ -14,6 +14,7 @@ const SCALAR_TYPES = new Set([
   'json',
 ])
 const GRAPH_MODULE_BRAND = Symbol('GraphModule')
+const SUMMARY_FIELD_BRAND = Symbol('SummaryField')
 
 function fieldType(scalarType, options = {}) {
   assertScalarType(scalarType)
@@ -246,6 +247,41 @@ function concat(first, ...rest) {
   return call('concat', first, ...rest)
 }
 
+function aggregate(functionName, expression) {
+  const definition = {
+    kind: 'aggregate',
+    function: functionName,
+  }
+  if (expression !== undefined) {
+    definition.expression = asExpression(expression)
+  }
+  return definition
+}
+
+function count(expression) {
+  return aggregate('count', expression)
+}
+
+function countDistinct(expression) {
+  return aggregate('countDistinct', expression)
+}
+
+function sum(expression) {
+  return aggregate('sum', expression)
+}
+
+function average(expression) {
+  return aggregate('average', expression)
+}
+
+function minimum(expression) {
+  return aggregate('minimum', expression)
+}
+
+function maximum(expression) {
+  return aggregate('maximum', expression)
+}
+
 function relation(name, from, to, on, options = {}) {
   const definition = {
     name,
@@ -290,6 +326,26 @@ function project(path, expression, options = {}) {
   return definition
 }
 
+function dimension(path, expression, options = {}) {
+  return summaryField('dimension', path, expression, options)
+}
+
+function measure(path, expression, options = {}) {
+  return summaryField('measure', path, expression, options)
+}
+
+function summaryField(role, path, expression, options) {
+  const definition = {
+    ...project(path, expression, options),
+    role,
+  }
+  Object.defineProperty(definition, SUMMARY_FIELD_BRAND, {
+    value: true,
+  })
+
+  return definition
+}
+
 function asc(expression, options = {}) {
   return orderBy('asc', expression, options)
 }
@@ -327,7 +383,26 @@ function defineGraphModule(configuration) {
 }
 
 function defineGraph(configuration) {
+  return buildGraphDefinition(configuration, 'record')
+}
+
+function defineSummaryGraph(configuration) {
+  if (configuration.projection !== undefined) {
+    throw new TypeError('Summary graph uses dimensions and measures instead of projection')
+  }
+
+  return buildGraphDefinition(
+    {
+      ...configuration,
+      projection: [...(configuration.dimensions ?? []), ...(configuration.measures ?? [])],
+    },
+    'summary',
+  )
+}
+
+function buildGraphDefinition(configuration, mode) {
   const content = composeDefinitionContent(configuration)
+  validateProjectionMode(content.projection, mode)
 
   return deepFreeze({
     schemaVersion: GRAPH_DEFINITION_VERSION,
@@ -342,6 +417,28 @@ function defineGraph(configuration) {
     },
     defaultOrderBy: content.defaultOrderBy,
   })
+}
+
+function validateProjectionMode(projection, mode) {
+  if (mode === 'summary') {
+    if (projection.length === 0) {
+      throw new TypeError('Summary graph must define at least one dimension or measure')
+    }
+    const invalid = projection.find((field) => field.role !== 'dimension' && field.role !== 'measure')
+    if (invalid !== undefined) {
+      throw new TypeError(
+        `Summary graph projection field ${JSON.stringify(invalid.path.join('.'))} has no summary role`,
+      )
+    }
+    return
+  }
+
+  const summaryField = projection.find((field) => field.role === 'dimension' || field.role === 'measure')
+  if (summaryField !== undefined) {
+    throw new TypeError(
+      `Record graph projection field ${JSON.stringify(summaryField.path.join('.'))} has a summary role`,
+    )
+  }
 }
 
 function composeDefinitionContent(configuration) {
@@ -474,6 +571,9 @@ function unaryExpression(kind, expression) {
 }
 
 function asExpression(value) {
+  if (value?.[SUMMARY_FIELD_BRAND] === true) {
+    return value.expression
+  }
   if (value && typeof value === 'object' && typeof value.kind === 'string') {
     return value
   }
@@ -566,11 +666,20 @@ exports.lower = lower
 exports.upper = upper
 exports.coalesce = coalesce
 exports.concat = concat
+exports.count = count
+exports.countDistinct = countDistinct
+exports.sum = sum
+exports.average = average
+exports.minimum = minimum
+exports.maximum = maximum
 exports.relation = relation
 exports.constraint = constraint
 exports.project = project
+exports.dimension = dimension
+exports.measure = measure
 exports.asc = asc
 exports.desc = desc
 exports.defineGraphModule = defineGraphModule
 exports.defineGraph = defineGraph
+exports.defineSummaryGraph = defineSummaryGraph
 exports.firstBy = firstBy

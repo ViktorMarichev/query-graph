@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-  CompiledGraph, CompiledRelationalMapping, Expression, PlanError, QueryOperation,
-  RelationDefinition,
+  AggregateFunction, CompiledGraph, CompiledRelationalMapping, Expression, PlanError,
+  QueryOperation, RelationDefinition,
 };
 
 use super::{ParameterBinding, SqlCompileError, SqlDialect};
@@ -90,6 +90,10 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
         let arguments = self.render_expressions(arguments)?;
         Ok(self.dialect.render_function(*name, &arguments))
       }
+      Expression::Aggregate {
+        function,
+        expression,
+      } => self.render_aggregate(*function, expression.as_deref()),
     }
   }
 
@@ -145,6 +149,31 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
 
   pub(super) fn into_bindings(self) -> Vec<ParameterBinding> {
     self.bindings
+  }
+
+  fn render_aggregate(
+    &mut self,
+    function: AggregateFunction,
+    expression: Option<&Expression>,
+  ) -> Result<String, SqlCompileError> {
+    let rendered_expression = expression
+      .map(|expression| self.render_expression(expression))
+      .transpose()?;
+
+    if function != AggregateFunction::Count && rendered_expression.is_none() {
+      return Err(SqlCompileError::Plan(PlanError::InvalidCompiledGraph {
+        message: format!(
+          "aggregate function {:?} has no expression",
+          function.as_str()
+        ),
+      }));
+    }
+
+    Ok(
+      self
+        .dialect
+        .render_aggregate(function, rendered_expression.as_deref()),
+    )
   }
 
   fn render_field(&self, source: &str, field: &str) -> Result<String, SqlCompileError> {

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{LiteralValue, ScalarType, SemanticFunction};
+use crate::{AggregateFunction, LiteralValue, ScalarType, SemanticFunction};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -200,6 +200,64 @@ pub(crate) fn infer_function(
   }
 }
 
+pub(crate) fn infer_aggregate(
+  function: AggregateFunction,
+  expression: Option<InferredType>,
+) -> Result<InferredType, TypeSystemError> {
+  match function {
+    AggregateFunction::Count => Ok(InferredType::scalar(ScalarType::Int64, false)),
+    AggregateFunction::CountDistinct => {
+      let expression = require_aggregate_argument(function, expression)?;
+      if expression.scalar_type == Some(ScalarType::Json) {
+        return Err(TypeSystemError::new(
+          TypeSystemErrorKind::InvalidType,
+          "countDistinct is not defined for json values",
+        ));
+      }
+      Ok(InferredType::scalar(ScalarType::Int64, false))
+    }
+    AggregateFunction::Sum | AggregateFunction::Average => {
+      let expression = require_aggregate_argument(function, expression)?;
+      let Some(scalar_type) = expression.scalar_type else {
+        return Err(unresolved_type(&format!("{} argument", function.as_str())));
+      };
+      if !is_numeric(scalar_type) {
+        return Err(TypeSystemError::new(
+          TypeSystemErrorKind::InvalidType,
+          format!(
+            "{} requires a numeric value, received {}",
+            function.as_str(),
+            expression.describe()
+          ),
+        ));
+      }
+
+      let result_type = match function {
+        AggregateFunction::Average if scalar_type != ScalarType::Float64 => ScalarType::Decimal,
+        _ => scalar_type,
+      };
+      Ok(InferredType::scalar(result_type, true))
+    }
+    AggregateFunction::Minimum | AggregateFunction::Maximum => {
+      let expression = require_aggregate_argument(function, expression)?;
+      let Some(scalar_type) = expression.scalar_type else {
+        return Err(unresolved_type(&format!("{} argument", function.as_str())));
+      };
+      if !is_orderable(scalar_type) {
+        return Err(TypeSystemError::new(
+          TypeSystemErrorKind::InvalidType,
+          format!(
+            "{} requires an orderable value, received {}",
+            function.as_str(),
+            expression.describe()
+          ),
+        ));
+      }
+      Ok(InferredType::scalar(scalar_type, true))
+    }
+  }
+}
+
 pub(crate) fn require_predicate(expression: InferredType) -> Result<(), TypeSystemError> {
   if expression.scalar_type == Some(ScalarType::Boolean) {
     Ok(())
@@ -232,6 +290,24 @@ pub(crate) fn require_orderable(expression: InferredType) -> Result<(), TypeSyst
   }
 }
 
+pub(crate) fn require_groupable(expression: InferredType) -> Result<(), TypeSystemError> {
+  let Some(scalar_type) = expression.scalar_type else {
+    return Err(unresolved_type("dimension expression"));
+  };
+
+  if scalar_type != ScalarType::Json {
+    Ok(())
+  } else {
+    Err(TypeSystemError::new(
+      TypeSystemErrorKind::InvalidType,
+      format!(
+        "dimension expression must have equality semantics, received {}",
+        expression.describe()
+      ),
+    ))
+  }
+}
+
 pub(crate) fn resolve_expression_type(
   expression: InferredType,
 ) -> Result<ExpressionType, TypeSystemError> {
@@ -249,6 +325,21 @@ fn infer_unary_string_function(
   let argument = arguments[0];
   require_string_or_null(argument, &format!("{name} argument"))?;
   Ok(InferredType::scalar(ScalarType::String, argument.nullable))
+}
+
+fn require_aggregate_argument(
+  function: AggregateFunction,
+  expression: Option<InferredType>,
+) -> Result<InferredType, TypeSystemError> {
+  expression.ok_or_else(|| {
+    TypeSystemError::new(
+      TypeSystemErrorKind::InvalidFunctionArity,
+      format!(
+        "aggregate function {:?} expects 1 argument, received 0",
+        function.as_str()
+      ),
+    )
+  })
 }
 
 fn infer_coalesce(arguments: &[InferredType]) -> Result<InferredType, TypeSystemError> {

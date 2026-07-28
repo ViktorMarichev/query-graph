@@ -3,15 +3,16 @@ use std::error::Error;
 use std::fmt;
 
 use crate::{
-  CompiledGraph, ConstraintCondition, Expression, OperationIssues, QueryOperation,
-  RelationCardinality,
+  compiled_graph::ConstraintPhase, CompiledGraph, ConstraintCondition, Expression, OperationIssues,
+  QueryOperation, RelationCardinality,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QueryPlan {
   projection_indices: Box<[usize]>,
   relation_indices: Box<[usize]>,
-  constraint_indices: Box<[usize]>,
+  pre_aggregation_constraint_indices: Box<[usize]>,
+  post_aggregation_constraint_indices: Box<[usize]>,
   offset: Option<u64>,
   limit: Option<u64>,
 }
@@ -25,8 +26,12 @@ impl QueryPlan {
     &self.relation_indices
   }
 
-  pub(crate) fn constraint_indices(&self) -> &[usize] {
-    &self.constraint_indices
+  pub(crate) fn pre_aggregation_constraint_indices(&self) -> &[usize] {
+    &self.pre_aggregation_constraint_indices
+  }
+
+  pub(crate) fn post_aggregation_constraint_indices(&self) -> &[usize] {
+    &self.post_aggregation_constraint_indices
   }
 
   pub fn offset(&self) -> Option<u64> {
@@ -69,6 +74,15 @@ pub(crate) fn build(
     );
   }
 
+  for projection_index in graph.dimension_projection_indices() {
+    required_relations.extend(
+      graph
+        .projection_relation_path_indices(*projection_index)
+        .iter()
+        .copied(),
+    );
+  }
+
   for constraint_index in &constraint_indices {
     add_expression_relations(
       graph,
@@ -87,6 +101,13 @@ pub(crate) fn build(
     add_expression_parameters(
       graph,
       &graph.definition().projection.fields[*projection_index].expression,
+      &mut required_parameters,
+    )?;
+  }
+  for projection_index in graph.dimension_projection_indices() {
+    add_expression_parameters(
+      graph,
+      &graph.projection_at(*projection_index).expression,
       &mut required_parameters,
     )?;
   }
@@ -111,7 +132,11 @@ pub(crate) fn build(
   }
   operation.validate_plan_parameters(required_parameters)?;
 
-  if operation.offset.is_some() || operation.limit.is_some() {
+  if graph.is_summary() {
+    validate_summary_relation_shape(graph, &relation_indices)?;
+  }
+
+  if !graph.is_summary() && (operation.offset.is_some() || operation.limit.is_some()) {
     if let Some(relation) = relation_indices
       .iter()
       .map(|index| &graph.definition().relations[*index])
@@ -123,10 +148,16 @@ pub(crate) fn build(
     }
   }
 
+  let (pre_aggregation_constraint_indices, post_aggregation_constraint_indices): (Vec<_>, Vec<_>) =
+    constraint_indices
+      .into_iter()
+      .partition(|index| graph.constraint_phase(*index) == ConstraintPhase::BeforeAggregation);
+
   Ok(QueryPlan {
     projection_indices: operation_plan.projection_indices.into_boxed_slice(),
     relation_indices: relation_indices.into_boxed_slice(),
-    constraint_indices: constraint_indices.into_boxed_slice(),
+    pre_aggregation_constraint_indices: pre_aggregation_constraint_indices.into_boxed_slice(),
+    post_aggregation_constraint_indices: post_aggregation_constraint_indices.into_boxed_slice(),
     offset: operation.offset,
     limit: operation.limit,
   })
@@ -135,8 +166,16 @@ pub(crate) fn build(
 #[derive(Debug)]
 pub enum PlanError {
   Operation(OperationIssues),
-  InvalidCompiledGraph { message: String },
-  PaginationThroughManyRelation { relation: String },
+  InvalidCompiledGraph {
+    message: String,
+  },
+  PaginationThroughManyRelation {
+    relation: String,
+  },
+  AggregationAcrossManyBranches {
+    left_relation: String,
+    right_relation: String,
+  },
 }
 
 impl fmt::Display for PlanError {
@@ -149,6 +188,13 @@ impl fmt::Display for PlanError {
       Self::PaginationThroughManyRelation { relation } => write!(
         formatter,
         "pagination through many relation {relation:?} requires a split query plan"
+      ),
+      Self::AggregationAcrossManyBranches {
+        left_relation,
+        right_relation,
+      } => write!(
+        formatter,
+        "aggregation across independent many relations {left_relation:?} and {right_relation:?} requires an aggregate subquery plan"
       ),
     }
   }
@@ -259,4 +305,42 @@ fn order_relations(
       message: format!("relations {required:?} cannot be ordered from the root"),
     })
   }
+}
+
+fn validate_summary_relation_shape(
+  graph: &CompiledGraph,
+  relation_indices: &[usize],
+) -> Result<(), PlanError> {
+  let many_relations: Vec<_> = relation_indices
+    .iter()
+    .map(|index| &graph.definition().relations[*index])
+    .filter(|relation| relation.cardinality == RelationCardinality::Many)
+    .collect();
+
+  for (index, left) in many_relations.iter().enumerate() {
+    let left_path =
+      graph
+        .relation_path_indices(&left.to)
+        .ok_or_else(|| PlanError::InvalidCompiledGraph {
+          message: format!("relation target {:?} has no path from the root", left.to),
+        })?;
+
+    for right in &many_relations[index + 1..] {
+      let right_path =
+        graph
+          .relation_path_indices(&right.to)
+          .ok_or_else(|| PlanError::InvalidCompiledGraph {
+            message: format!("relation target {:?} has no path from the root", right.to),
+          })?;
+
+      if !left_path.starts_with(right_path) && !right_path.starts_with(left_path) {
+        return Err(PlanError::AggregationAcrossManyBranches {
+          left_relation: left.name.clone(),
+          right_relation: right.name.clone(),
+        });
+      }
+    }
+  }
+
+  Ok(())
 }

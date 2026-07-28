@@ -163,6 +163,11 @@ pub(super) fn validate(
     Expression::Function { arguments, .. } => {
       validate_children(arguments, &format!("{location}.arguments"), context, issues);
     }
+    Expression::Aggregate { expression, .. } => {
+      if let Some(expression) = expression {
+        validate_child(expression, location, "expression", context, issues);
+      }
+    }
     Expression::Exists { source, predicate } => {
       validate_exists(source, predicate.as_deref(), location, context, issues);
     }

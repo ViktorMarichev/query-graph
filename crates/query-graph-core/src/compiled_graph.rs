@@ -11,6 +11,12 @@ struct CompiledProjection {
   relation_path: Box<[usize]>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConstraintPhase {
+  BeforeAggregation,
+  AfterAggregation,
+}
+
 #[derive(Debug)]
 pub struct CompiledGraph {
   definition: GraphDefinition,
@@ -21,6 +27,9 @@ pub struct CompiledGraph {
   relation_index: HashMap<String, usize>,
   projection_index: HashMap<ProjectionPath, usize>,
   projections: Vec<CompiledProjection>,
+  summary: bool,
+  dimension_projection_indices: Box<[usize]>,
+  constraint_phases: Box<[ConstraintPhase]>,
   outgoing_relations: Vec<Vec<usize>>,
   relation_paths: Vec<Vec<usize>>,
   effective_relation_required: Vec<bool>,
@@ -74,6 +83,28 @@ impl CompiledGraph {
       .map(|(index, field)| (ProjectionPath::from_segments(&field.path), index))
       .collect();
 
+    let summary = definition.is_summary();
+    let dimension_projection_indices = definition
+      .projection
+      .fields
+      .iter()
+      .enumerate()
+      .filter_map(|(index, field)| {
+        (field.role == crate::ProjectionFieldRole::Dimension).then_some(index)
+      })
+      .collect();
+    let constraint_phases = definition
+      .constraints
+      .iter()
+      .map(|constraint| {
+        if constraint.predicate.contains_aggregate() {
+          ConstraintPhase::AfterAggregation
+        } else {
+          ConstraintPhase::BeforeAggregation
+        }
+      })
+      .collect();
+
     let mut outgoing_relations = vec![Vec::new(); definition.sources.len()];
     let mut incoming_relations = vec![None; definition.sources.len()];
     for (relation_index, relation) in definition.relations.iter().enumerate() {
@@ -114,6 +145,9 @@ impl CompiledGraph {
       relation_index,
       projection_index,
       projections,
+      summary,
+      dimension_projection_indices,
+      constraint_phases,
       outgoing_relations,
       relation_paths,
       effective_relation_required,
@@ -122,6 +156,22 @@ impl CompiledGraph {
 
   pub fn definition(&self) -> &GraphDefinition {
     &self.definition
+  }
+
+  pub fn is_summary(&self) -> bool {
+    self.summary
+  }
+
+  pub(crate) fn dimension_projection_indices(&self) -> &[usize] {
+    &self.dimension_projection_indices
+  }
+
+  pub(crate) fn constraint_phase(&self, constraint_index: usize) -> ConstraintPhase {
+    self.constraint_phases[constraint_index]
+  }
+
+  pub(crate) fn projection_at(&self, projection_index: usize) -> &ProjectionFieldDefinition {
+    &self.definition.projection.fields[projection_index]
   }
 
   pub fn root(&self) -> &crate::SourceDefinition {

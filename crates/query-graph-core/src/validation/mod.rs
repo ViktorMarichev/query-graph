@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::GraphDefinition;
 
+mod aggregation;
 mod expression;
 mod projection;
 mod structure;
@@ -70,6 +71,12 @@ pub enum DefinitionIssueCode {
   UnresolvedExpressionType,
   InvalidPredicateType,
   InvalidOrderExpression,
+  MixedProjectionRoles,
+  InvalidAggregateContext,
+  InvalidDimensionExpression,
+  InvalidMeasureExpression,
+  NestedAggregate,
+  UngroupedExpression,
   EmptyProjectionPath,
   EmptyProjectionPathSegment,
   InvalidProjectionPathSegment,

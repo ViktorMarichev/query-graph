@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
   sql::{self, SqlDialect},
-  CompiledGraph, CompiledRelationalMapping, LiteralValue, NullsOrder, OrderDirection,
-  QueryOperation, SemanticFunction, SqlCompileError, SqlStatement, TableName,
+  AggregateFunction, CompiledGraph, CompiledRelationalMapping, LiteralValue, NullsOrder,
+  OrderDirection, QueryOperation, SemanticFunction, SqlCompileError, SqlStatement, TableName,
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,6 +138,18 @@ impl SqlDialect for SqlServerDialect {
     };
 
     format!("{sql_name}({})", arguments.join(", "))
+  }
+
+  fn render_aggregate(&self, function: AggregateFunction, expression: Option<&str>) -> String {
+    let expression = expression.unwrap_or("*");
+    match function {
+      AggregateFunction::Count => format!("COUNT_BIG({expression})"),
+      AggregateFunction::CountDistinct => format!("COUNT_BIG(DISTINCT {expression})"),
+      AggregateFunction::Sum => format!("SUM({expression})"),
+      AggregateFunction::Average => format!("AVG((1.0 * {expression}))"),
+      AggregateFunction::Minimum => format!("MIN({expression})"),
+      AggregateFunction::Maximum => format!("MAX({expression})"),
+    }
   }
 
   fn render_order(

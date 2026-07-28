@@ -2,8 +2,9 @@ use std::error::Error;
 use std::fmt;
 
 use crate::{
-  planner, CompiledGraph, CompiledRelationalMapping, LiteralValue, NullsOrder, OrderDirection,
-  PlanError, QueryOperation, RelationCardinality, ScalarType, SemanticFunction, TableName,
+  planner, AggregateFunction, CompiledGraph, CompiledRelationalMapping, LiteralValue, NullsOrder,
+  OrderDirection, PlanError, QueryOperation, RelationCardinality, ScalarType, SemanticFunction,
+  TableName,
 };
 
 use self::renderer::Renderer;
@@ -58,6 +59,8 @@ pub(super) trait SqlDialect {
   fn render_literal(&self, value: &LiteralValue) -> String;
 
   fn render_function(&self, function: SemanticFunction, arguments: &[String]) -> String;
+
+  fn render_aggregate(&self, function: AggregateFunction, expression: Option<&str>) -> String;
 
   fn render_order(
     &self,
@@ -158,13 +161,31 @@ pub(crate) fn compile(
     sql.push_str(&format!("\n{join_type} {target}\n  ON {condition}"));
   }
 
-  if !plan.constraint_indices().is_empty() {
+  if !plan.pre_aggregation_constraint_indices().is_empty() {
     let predicates: Result<Vec<_>, _> = plan
-      .constraint_indices()
+      .pre_aggregation_constraint_indices()
       .iter()
       .map(|index| renderer.render_expression(&graph.definition().constraints[*index].predicate))
       .collect();
     sql.push_str(&format!("\nWHERE\n  {}", predicates?.join("\n  AND ")));
+  }
+
+  if graph.is_summary() && !graph.dimension_projection_indices().is_empty() {
+    let dimensions: Result<Vec<_>, _> = graph
+      .dimension_projection_indices()
+      .iter()
+      .map(|index| renderer.render_expression(&graph.projection_at(*index).expression))
+      .collect();
+    sql.push_str(&format!("\nGROUP BY\n  {}", dimensions?.join(",\n  ")));
+  }
+
+  if !plan.post_aggregation_constraint_indices().is_empty() {
+    let predicates: Result<Vec<_>, _> = plan
+      .post_aggregation_constraint_indices()
+      .iter()
+      .map(|index| renderer.render_expression(&graph.definition().constraints[*index].predicate))
+      .collect();
+    sql.push_str(&format!("\nHAVING\n  {}", predicates?.join("\n  AND ")));
   }
 
   if !graph.definition().default_order_by.is_empty() {

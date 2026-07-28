@@ -35,6 +35,30 @@ impl SemanticFunction {
   }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AggregateFunction {
+  Count,
+  CountDistinct,
+  Sum,
+  Average,
+  Minimum,
+  Maximum,
+}
+
+impl AggregateFunction {
+  pub const fn as_str(self) -> &'static str {
+    match self {
+      Self::Count => "count",
+      Self::CountDistinct => "countDistinct",
+      Self::Sum => "sum",
+      Self::Average => "average",
+      Self::Minimum => "minimum",
+      Self::Maximum => "maximum",
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Expression {
@@ -108,6 +132,11 @@ pub enum Expression {
     name: SemanticFunction,
     arguments: Vec<Expression>,
   },
+  Aggregate {
+    function: AggregateFunction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    expression: Option<Box<Expression>>,
+  },
 }
 
 impl Expression {
@@ -164,6 +193,53 @@ impl Expression {
       source: source.into(),
       predicate: Some(Box::new(predicate)),
     }
+  }
+
+  pub fn aggregate(function: AggregateFunction, expression: Option<Expression>) -> Self {
+    Self::Aggregate {
+      function,
+      expression: expression.map(Box::new),
+    }
+  }
+
+  pub fn count() -> Self {
+    Self::aggregate(AggregateFunction::Count, None)
+  }
+
+  pub fn count_of(expression: Expression) -> Self {
+    Self::aggregate(AggregateFunction::Count, Some(expression))
+  }
+
+  pub fn count_distinct(expression: Expression) -> Self {
+    Self::aggregate(AggregateFunction::CountDistinct, Some(expression))
+  }
+
+  pub fn sum(expression: Expression) -> Self {
+    Self::aggregate(AggregateFunction::Sum, Some(expression))
+  }
+
+  pub fn average(expression: Expression) -> Self {
+    Self::aggregate(AggregateFunction::Average, Some(expression))
+  }
+
+  pub fn minimum(expression: Expression) -> Self {
+    Self::aggregate(AggregateFunction::Minimum, Some(expression))
+  }
+
+  pub fn maximum(expression: Expression) -> Self {
+    Self::aggregate(AggregateFunction::Maximum, Some(expression))
+  }
+
+  pub fn contains_aggregate(&self) -> bool {
+    let mut contains_aggregate = false;
+    self.walk(&mut |expression| {
+      if matches!(expression, Self::Aggregate { .. }) {
+        contains_aggregate = true;
+        return false;
+      }
+      true
+    });
+    contains_aggregate
   }
 
   pub fn for_each_field<'a>(&'a self, visitor: &mut impl FnMut(&'a str, &'a str)) {
@@ -252,6 +328,11 @@ impl Expression {
       Self::Function { arguments, .. } => {
         for argument in arguments {
           argument.walk(visitor);
+        }
+      }
+      Self::Aggregate { expression, .. } => {
+        if let Some(expression) = expression {
+          expression.walk(visitor);
         }
       }
     }

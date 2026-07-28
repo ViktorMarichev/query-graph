@@ -1,4 +1,4 @@
-export const GRAPH_DEFINITION_VERSION: 5
+export const GRAPH_DEFINITION_VERSION: 6
 
 export type ScalarType =
   | 'boolean'
@@ -31,6 +31,8 @@ export type RelationCardinality = 'one' | 'many'
 export type OrderDirection = 'asc' | 'desc'
 export type NullsOrder = 'first' | 'last'
 export type SemanticFunctionName = 'lower' | 'upper' | 'coalesce' | 'concat'
+export type AggregateFunctionName = 'count' | 'countDistinct' | 'sum' | 'average' | 'minimum' | 'maximum'
+export type ProjectionFieldRole = 'value' | 'dimension' | 'measure'
 
 export interface FieldDefinition {
   name: string
@@ -128,6 +130,12 @@ export interface FunctionExpression {
   arguments: Expression[]
 }
 
+export interface AggregateExpression {
+  kind: 'aggregate'
+  function: AggregateFunctionName
+  expression?: Expression
+}
+
 export type Expression =
   | FieldExpression
   | ParameterExpression
@@ -140,6 +148,7 @@ export type Expression =
   | UnaryExpression
   | ExistsExpression
   | FunctionExpression
+  | AggregateExpression
 
 export interface RelationDefinition {
   name: string
@@ -170,13 +179,27 @@ export type JoinProjectionPath<Segments extends readonly string[]> = number exte
         : string
 
 declare const projectionPathType: unique symbol
+declare const summaryFieldType: unique symbol
 
 export interface ProjectionFieldDefinition<Path extends string = string> {
   path: string[]
   readonly [projectionPathType]?: Path
   expression: Expression
+  role?: ProjectionFieldRole
   selectedByDefault?: boolean
 }
+
+export interface DimensionDefinition<Path extends string = string> extends ProjectionFieldDefinition<Path> {
+  readonly [summaryFieldType]: 'dimension'
+  role: 'dimension'
+}
+
+export interface MeasureDefinition<Path extends string = string> extends ProjectionFieldDefinition<Path> {
+  readonly [summaryFieldType]: 'measure'
+  role: 'measure'
+}
+
+export type SummaryFieldDefinition<Path extends string = string> = DimensionDefinition<Path> | MeasureDefinition<Path>
 
 export interface ProjectionDefinition<Path extends string = string> {
   fields: ProjectionFieldDefinition<Path>[]
@@ -394,7 +417,7 @@ export interface RelationRef<Name extends string = string> extends RelationDefin
 }
 
 export type LiteralInput = null | boolean | string | number
-export type ExpressionInput = Expression | LiteralInput
+export type ExpressionInput = Expression | LiteralInput | SummaryFieldDefinition
 
 export interface FieldTypeOptions {
   nullable?: boolean
@@ -474,6 +497,13 @@ export function coalesce(
 ): FunctionExpression
 export function concat(first: ExpressionInput, ...rest: readonly ExpressionInput[]): FunctionExpression
 
+export function count(expression?: ExpressionInput): AggregateExpression
+export function countDistinct(expression: ExpressionInput): AggregateExpression
+export function sum(expression: ExpressionInput): AggregateExpression
+export function average(expression: ExpressionInput): AggregateExpression
+export function minimum(expression: ExpressionInput): AggregateExpression
+export function maximum(expression: ExpressionInput): AggregateExpression
+
 export interface RelationOptions {
   required?: boolean
   cardinality?: RelationCardinality
@@ -508,6 +538,27 @@ export function project<const Path extends readonly string[]>(
   expression: ExpressionInput,
   options?: ProjectionOptions,
 ): ProjectionFieldDefinition<JoinProjectionPath<Path>>
+
+export function dimension<const Path extends string>(
+  path: Path,
+  expression: ExpressionInput,
+  options?: ProjectionOptions,
+): DimensionDefinition<Path>
+export function dimension<const Path extends readonly string[]>(
+  path: Path,
+  expression: ExpressionInput,
+  options?: ProjectionOptions,
+): DimensionDefinition<JoinProjectionPath<Path>>
+export function measure<const Path extends string>(
+  path: Path,
+  expression: ExpressionInput,
+  options?: ProjectionOptions,
+): MeasureDefinition<Path>
+export function measure<const Path extends readonly string[]>(
+  path: Path,
+  expression: ExpressionInput,
+  options?: ProjectionOptions,
+): MeasureDefinition<JoinProjectionPath<Path>>
 
 export interface OrderByOptions {
   nulls?: NullsOrder
@@ -548,6 +599,8 @@ type ConfigurationParameter<Configuration> =
 
 type ConfigurationProjectionPath<Configuration> =
   | ProjectionPathOf<ConfigurationElement<Configuration, 'projection'>>
+  | ProjectionPathOf<ConfigurationElement<Configuration, 'dimensions'>>
+  | ProjectionPathOf<ConfigurationElement<Configuration, 'measures'>>
   | ModuleProjectionPath<ConfigurationElement<Configuration, 'modules'>>
 
 export interface GraphModule<
@@ -580,5 +633,22 @@ export interface GraphConfiguration {
 }
 
 export function defineGraph<const Configuration extends GraphConfiguration>(
+  configuration: Configuration,
+): GraphDefinition<ConfigurationParameter<Configuration>, ConfigurationProjectionPath<Configuration>>
+
+export interface SummaryGraphConfiguration {
+  name: string
+  root: string | SourceRef
+  modules?: readonly GraphModule[]
+  sources?: readonly SourceRef[]
+  parameters?: readonly ParameterDefinition[]
+  relations?: readonly RelationDefinition[]
+  constraints?: readonly ConstraintDefinition[]
+  dimensions?: readonly DimensionDefinition[]
+  measures?: readonly MeasureDefinition[]
+  defaultOrderBy?: readonly OrderByDefinition[]
+}
+
+export function defineSummaryGraph<const Configuration extends SummaryGraphConfiguration>(
   configuration: Configuration,
 ): GraphDefinition<ConfigurationParameter<Configuration>, ConfigurationProjectionPath<Configuration>>

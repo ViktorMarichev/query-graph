@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::{
   type_system::{self, InferredType, TypeSystemError, TypeSystemErrorKind},
   DefinitionIssue, DefinitionIssueCode, DefinitionIssues, Expression, ExpressionType,
-  GraphDefinition, ParameterShape,
+  GraphDefinition, ParameterShape, ProjectionFieldRole,
 };
 
 pub(crate) fn analyze(
@@ -90,6 +90,17 @@ pub(crate) fn analyze(
     let location = format!("projection.fields[{index}].expression");
     let expression_type =
       infer_expression(&projection.expression, &location, &environment, &mut issues);
+    if projection.role == ProjectionFieldRole::Dimension {
+      if let Some(expression_type) = expression_type {
+        if let Err(error) = type_system::require_groupable(expression_type) {
+          issues.push(DefinitionIssue::new(
+            DefinitionIssueCode::InvalidDimensionExpression,
+            &location,
+            error.message,
+          ));
+        }
+      }
+    }
     let resolved = expression_type.and_then(|expression_type| {
       report_type_result(
         type_system::resolve_expression_type(expression_type),
@@ -308,6 +319,25 @@ fn infer_expression(
           issues,
         )
       })
+    }
+    Expression::Aggregate {
+      function,
+      expression,
+    } => {
+      let expression_type = match expression.as_deref() {
+        Some(expression) => Some(infer_expression(
+          expression,
+          &format!("{location}.expression"),
+          environment,
+          issues,
+        )?),
+        None => None,
+      };
+      report_type_result(
+        type_system::infer_aggregate(*function, expression_type),
+        location,
+        issues,
+      )
     }
   }
 }

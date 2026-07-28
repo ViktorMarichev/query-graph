@@ -159,6 +159,9 @@ fn sql_diagnostic(error: &SqlCompileError) -> Value {
     SqlCompileError::Plan(PlanError::PaginationThroughManyRelation { .. }) => {
       ("paginationThroughManyRelation", "operation")
     }
+    SqlCompileError::Plan(PlanError::AggregationAcrossManyBranches { .. }) => {
+      ("aggregationAcrossManyBranches", "plan")
+    }
     SqlCompileError::Plan(PlanError::Operation(_)) => ("invalidOperation", "operation"),
     SqlCompileError::MissingSourceMapping(_) => ("missingSourceMapping", "mapping"),
     SqlCompileError::MissingParameter(_) => ("missingParameter", "operation.parameters"),

@@ -208,6 +208,69 @@ SQL Server renderer использует `OUTER/CROSS APPLY` и `TOP (1)`, Oracl
 в definition. Для Oracle 11g `firstBy` возвращает
 `unsupportedDialectFeature`.
 
+### Summary-графы
+
+`defineSummaryGraph` описывает результат через dimensions и measures, не через
+SQL-конструкции `GROUP BY` и `HAVING`:
+
+```ts
+const serviceId = dimension('serviceId', service.field('id'), {
+  default: true,
+})
+
+const staffCount = measure('staffCount', countDistinct(serviceStaff.field('idStaff')), { default: true })
+
+const definition = defineSummaryGraph({
+  name: 'serviceSummary',
+  root: service,
+  sources: [service, serviceStaff],
+  parameters: [idOrganisation, minimumStaff],
+  relations: [
+    relation('staff', service, serviceStaff, eq(service.field('id'), serviceStaff.field('idService')), {
+      cardinality: 'many',
+    }),
+  ],
+  constraints: [
+    constraint('organisation', eq(service.field('idOrganisation'), param(idOrganisation))),
+    constraint('minimumStaff', gte(staffCount, param(minimumStaff))),
+  ],
+  dimensions: [serviceId],
+  measures: [staffCount],
+  defaultOrderBy: [desc(staffCount)],
+})
+```
+
+Planner включает все объявленные dimensions в идентичность результата и
+компилирует их в `GROUP BY`, даже если operation не возвращает часть из них.
+Constraint без агрегата фильтрует исходное множество через `WHERE`. Constraint
+с агрегатом фильтрует уже построенные группы через `HAVING`. Поэтому автор графа
+не выбирает SQL-фазу вручную и не может случайно поместить агрегат в `WHERE`.
+
+Поддерживаются `count()`, `count(expression)`, `countDistinct`, `sum`,
+`average`, `minimum` и `maximum`. Measure можно передавать в сравнения и
+сортировку как expression; DSL разворачивает ссылку в сериализуемое
+семантическое выражение до передачи definition в Rust.
+
+Rust отклоняет агрегаты в обычных graph projections, relation predicates и
+dimensions, а также вложенные агрегаты и поля вне объявленных dimensions.
+`count` и `countDistinct` возвращают non-null `int64`; остальные меры nullable,
+поскольку пустое множество или множество из `NULL` не имеет значения агрегата.
+Для сохранения контракта `int64` SQL Server compiler использует `COUNT_BIG`, а
+Oracle compiler - `COUNT`. Dimension должен иметь семантику равенства, поэтому
+`json` не может задавать идентичность группы.
+
+Глобальный `DISTINCT` намеренно не выводится из структуры связей. Для количества
+уникальных значений используется `countDistinct`, а summary только из dimensions
+задает уникальные комбинации через группировку. Произвольный SQL subquery также
+не входит в DSL: `exists`, `firstBy` и агрегаты остаются семантическими
+операциями, для которых форму подзапроса при необходимости выбирает compiler.
+
+Summary-план с несколькими независимыми relations `many` отклоняется: обычные
+JOIN создали бы декартово размножение веток и могли исказить measures. Ограничение
+соседней ветки следует выражать через `exists`. Независимые меры нескольких
+коллекций потребуют отдельной aggregate-subquery strategy в planner; compiler не
+маскирует эту ситуацию через `DISTINCT`.
+
 Полученное определение не содержит SQL, имен таблиц, значений конкретного
 драйвера, объектов построителя или исполняемых функций обратного вызова
 JavaScript. DSL не выполняет планирование запросов: Rust остается единственным
@@ -226,7 +289,9 @@ JavaScript. DSL не выполняет планирование запросо�
 - общий тип аргументов `coalesce`;
 - boolean-тип условий relations и constraints;
 - допустимость сортировки выражений;
-- конкретный scalar type и nullability каждого поля проекции.
+- конкретный scalar type и nullability каждого поля проекции;
+- типы аргументов агрегатов и их результирующую nullability;
+- соответствие неагрегированных выражений объявленным dimensions.
 
 Поддерживаемые семантические функции задаются DSL-функциями `lower`, `upper`,
 `coalesce` и `concat`. Произвольное имя функции не является частью публичного
@@ -404,13 +469,16 @@ pagination; `OFFSET/FETCH` для него отклоняется как неп�
 Оба компилятора поддерживают выбор полей проекции, scalar/list параметры,
 ограничения определения,
 условные ограничения, сортировку по умолчанию, соединения
-`INNER JOIN`/`LEFT JOIN` и пагинацию `OFFSET`/`FETCH`. Общий SQL pipeline выбирает
-пути связей и обходит expression AST, а dialect renderer отвечает только за
-синтаксис конкретной СУБД.
+`INNER JOIN`/`LEFT JOIN`, summary dimensions/measures и пагинацию
+`OFFSET`/`FETCH`. Общий SQL pipeline выбирает пути связей, фазы `WHERE`/`HAVING`
+и обходит expression AST, а dialect renderer отвечает только за синтаксис
+конкретной СУБД.
 
-Пагинация отклоняется, если план проходит через relation с cardinality `many`:
-обычный JOIN в таком случае меняет количество корневых строк. Для этого сценария
-понадобится отдельный split-query plan.
+Для обычного record-графа пагинация отклоняется, если план проходит через
+relation с cardinality `many`: JOIN в таком случае меняет количество корневых
+строк. Summary-граф может пагинировать результат после группировки, поэтому
+relation `many` для него допустим. Для пагинации вложенных record-коллекций
+по-прежнему понадобится отдельный split-query plan.
 
 Фильтры времени выполнения и пользовательские отображения семантических функций
 намеренно оставлены для последующих этапов.
