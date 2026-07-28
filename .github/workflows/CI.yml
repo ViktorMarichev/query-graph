@@ -41,6 +41,8 @@ jobs:
         run: yarn lint
       - name: TypeScript
         run: yarn typecheck
+      - name: Pack DSL packages
+        run: npm pack ./packages/dsl-object --dry-run
       - name: Prettier
         run: yarn prettier . --check
       - name: Cargo fmt
@@ -260,14 +262,19 @@ jobs:
       - name: Publish
         run: |
           npm config set provenance true
+          ROOT_VERSION=$(node -p "require('./package.json').version")
+          npm pkg set "version=$ROOT_VERSION" --workspace @query-graph/dsl-object
+          npm pkg set "peerDependencies.query-graph=^$ROOT_VERSION" --workspace @query-graph/dsl-object
           if git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+$";
           then
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
             npm publish --access public
+            npm publish ./packages/dsl-object --access public
           elif git log -1 --pretty=%B | grep "^[0-9]\+\.[0-9]\+\.[0-9]\+";
           then
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
             npm publish --tag next --access public
+            npm publish ./packages/dsl-object --tag next --access public
           else
             echo "Not a release, skipping publish"
           fi

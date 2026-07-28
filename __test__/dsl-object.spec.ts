@@ -1,0 +1,137 @@
+import test from 'ava'
+
+import {
+  constraint as functionalConstraint,
+  defineGraph as functionalDefineGraph,
+  dimension as functionalDimension,
+  inParameter as functionalInParameter,
+  measure as functionalMeasure,
+  project as functionalProject,
+  relation as functionalRelation,
+} from '../definition.js'
+import type { GraphDefinition } from '../definition.js'
+import { registerDefinition } from '../index.js'
+import {
+  asc,
+  constraint,
+  count,
+  defineGraph,
+  dimension,
+  eq,
+  firstBy,
+  inParameter,
+  measure,
+  project,
+  relation,
+  requiredListParameter,
+  source,
+} from '@query-graph/dsl-object'
+
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2 ? true : false
+
+type ProjectionPathOf<Definition> =
+  Definition extends GraphDefinition<infer _Parameter, infer ProjectionPath> ? ProjectionPath : never
+
+test('object DSL produces the canonical functional definition', (t) => {
+  const staff = source('staff', { id: 'int64' })
+  const personStaff = source('personStaff', {
+    id: 'int64',
+    idStaff: 'int64',
+    idPerson: 'int64',
+  })
+  const ids = requiredListParameter('ids', 'int64')
+  const on = eq(staff.field('id'), personStaff.field('idStaff'))
+  const selection = firstBy(asc(personStaff.field('idPerson')), asc(personStaff.field('id')))
+
+  const objectDefinition = defineGraph({
+    name: 'staffCredentials',
+    root: staff,
+    sources: [staff, personStaff],
+    parameters: [ids],
+    relations: [
+      relation({
+        name: 'credentials',
+        from: staff,
+        to: personStaff,
+        on,
+        cardinality: 'one',
+        selection,
+      }),
+    ],
+    constraints: [
+      constraint({
+        name: 'ids',
+        predicate: inParameter(staff.field('id'), ids),
+        when: ids,
+      }),
+    ],
+    projection: [
+      project({ path: 'id', expression: staff.field('id'), default: true }),
+      project({
+        path: 'credentials.idPerson',
+        expression: personStaff.field('idPerson'),
+        default: true,
+      }),
+    ],
+  })
+
+  const functionalDefinition = functionalDefineGraph({
+    name: 'staffCredentials',
+    root: staff,
+    sources: [staff, personStaff],
+    parameters: [ids],
+    relations: [
+      functionalRelation('credentials', staff, personStaff, on, {
+        cardinality: 'one',
+        selection,
+      }),
+    ],
+    constraints: [
+      functionalConstraint('ids', functionalInParameter(staff.field('id'), ids), {
+        when: ids,
+      }),
+    ],
+    projection: [
+      functionalProject('id', staff.field('id'), { default: true }),
+      functionalProject('credentials.idPerson', personStaff.field('idPerson'), {
+        default: true,
+      }),
+    ],
+  })
+
+  t.deepEqual(objectDefinition, functionalDefinition)
+  t.is(registerDefinition(objectDefinition).name, 'staffCredentials')
+
+  type ProjectionPath = ProjectionPathOf<typeof objectDefinition>
+  const projectionPathsArePreserved: Equal<ProjectionPath, 'id' | 'credentials.idPerson'> = true
+  t.true(projectionPathsArePreserved)
+})
+
+test('object DSL preserves summary field semantics', (t) => {
+  const staff = source('staff', { id: 'int64' })
+
+  t.deepEqual(
+    dimension({ path: 'staff.id', expression: staff.field('id'), default: true }),
+    functionalDimension('staff.id', staff.field('id'), { default: true }),
+  )
+  t.deepEqual(
+    measure({ path: 'staff.count', expression: count(), default: true }),
+    functionalMeasure('staff.count', count(), { default: true }),
+  )
+})
+
+test('object DSL reports accidental positional structural calls', (t) => {
+  const staff = source('staff', { id: 'int64' })
+  const invalidObjectDslCalls = () => {
+    // @ts-expect-error Object DSL relations accept one configuration object.
+    relation('credentials', staff, staff, eq(staff.field('id'), staff.field('id')))
+    // @ts-expect-error Object DSL projections accept one configuration object.
+    project('id', staff.field('id'))
+  }
+  const positionalRelation = relation as unknown as (...arguments_: unknown[]) => unknown
+  const error = t.throws(() => positionalRelation('credentials'))
+
+  t.is(typeof invalidObjectDslCalls, 'function')
+  t.is(error.message, 'relation expects a configuration object')
+})

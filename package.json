@@ -2,6 +2,9 @@
   "name": "query-graph",
   "version": "1.0.0",
   "description": "Native query graph planner and SQL compiler for Node.js",
+  "workspaces": [
+    "packages/*"
+  ],
   "main": "index.js",
   "exports": {
     ".": {

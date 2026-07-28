@@ -1,0 +1,36 @@
+{
+  "name": "@query-graph/dsl-object",
+  "version": "1.0.0",
+  "description": "Object-based authoring DSL for query-graph definitions",
+  "type": "commonjs",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./index.js",
+      "default": "./index.js"
+    }
+  },
+  "files": [
+    "index.d.ts",
+    "index.js",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">= 20"
+  },
+  "license": "MIT",
+  "peerDependencies": {
+    "query-graph": "^1.0.0"
+  },
+  "devDependencies": {
+    "query-graph": "workspace:^"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  }
+}
