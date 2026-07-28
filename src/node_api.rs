@@ -257,7 +257,11 @@ fn compile_operation(
   Ok(statement.into())
 }
 
-#[napi(ts_args_type = "definition: import('./definition.js').GraphDefinitionInput")]
+#[napi(
+  ts_generic_types = "const Definition extends import('./definition.js').GraphDefinitionInput",
+  ts_args_type = "definition: import('./definition.js').ExactGraphDefinitionInput<Definition>",
+  ts_return_type = "import('./definition.js').QueryGraph<Definition>"
+)]
 pub fn register_definition(env: Env, definition: serde_json::Value) -> Result<QueryGraph> {
   let definition: GraphDefinition =
     serde_json::from_value(definition).map_err(|error| node_error::definition_wire(&env, error))?;

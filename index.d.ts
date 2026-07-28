@@ -48,7 +48,9 @@ export interface CompiledSqlStatement {
   relations: Array<CompiledSqlRelation>
 }
 
-export declare function registerDefinition(definition: import('./definition.js').GraphDefinitionInput): QueryGraph
+export declare function registerDefinition<const Definition extends import('./definition.js').GraphDefinitionInput>(
+  definition: import('./definition.js').ExactGraphDefinitionInput<Definition>,
+): import('./definition.js').QueryGraph<Definition>
 
 export interface SqlBinding {
   name: string

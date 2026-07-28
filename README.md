@@ -237,6 +237,30 @@ TypeScript проверяет имена источников, полей и с�
 написания definition. Rust остается авторитетной проверкой scalar-типов после
 композиции модулей; Node.js не обходит граф и не дублирует правила вывода типов.
 
+`defineGraph` также сохраняет типы параметров и projection paths, включая
+содержимое вложенных `GraphModule`. `registerDefinition` переносит эти сведения
+на native handle, поэтому операция проверяется непосредственно в месте вызова:
+
+```ts
+const relationalGraph = registerDefinition(definition).withRelationalMapping(mapping)
+
+relationalGraph.compileSqlServer({
+  select: ['id', 'credentials.idPerson'],
+  parameters: {
+    idOrganisation: 42,
+    personIds: [7, 11],
+  },
+})
+```
+
+TypeScript отклоняет неизвестный projection path или параметр, отсутствие
+required-параметра, scalar вместо списка и значение неподходящего scalar type.
+Optional-параметры можно не передавать, если они не требуются выбранным планом;
+обычно они включают constraint через `when`. Для `int64` допустимы безопасный
+JavaScript number и десятичная строка, а list-параметр получает массив того же
+типа. Эти проверки существуют только в декларациях TypeScript; сериализация
+definition, N-API вызов, runtime-валидация Rust и SQL compilation не меняются.
+
 ## Диагностика
 
 Ошибки N-API имеют имя `QueryGraphError` и сохраняют обычный `message` и stack.

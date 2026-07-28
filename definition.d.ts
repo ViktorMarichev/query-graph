@@ -12,6 +12,20 @@ export type ScalarType =
   | 'binary'
   | 'json'
 
+export type JsonValue = null | boolean | number | string | readonly JsonValue[] | { readonly [key: string]: JsonValue }
+
+export type ScalarParameterValue<Type extends ScalarType> = Type extends 'boolean'
+  ? boolean
+  : Type extends 'int32' | 'float64'
+    ? number
+    : Type extends 'int64' | 'decimal'
+      ? number | string
+      : Type extends 'string' | 'date' | 'dateTime' | 'binary'
+        ? string
+        : Type extends 'json'
+          ? JsonValue
+          : never
+
 export type ParameterShape = 'scalar' | 'list'
 export type RelationCardinality = 'one' | 'many'
 export type OrderDirection = 'asc' | 'desc'
@@ -145,18 +159,31 @@ export interface ConstraintDefinition {
   predicate: Expression
 }
 
-export interface ProjectionFieldDefinition {
+export type JoinProjectionPath<Segments extends readonly string[]> = number extends Segments['length']
+  ? string
+  : Segments extends readonly []
+    ? ''
+    : Segments extends readonly [infer Only extends string]
+      ? Only
+      : Segments extends readonly [infer Head extends string, ...infer Tail extends readonly string[]]
+        ? `${Head}.${JoinProjectionPath<Tail>}`
+        : string
+
+declare const projectionPathType: unique symbol
+
+export interface ProjectionFieldDefinition<Path extends string = string> {
   path: string[]
+  readonly [projectionPathType]?: Path
   expression: Expression
   selectedByDefault?: boolean
 }
 
-export interface ProjectionDefinition {
-  fields: ProjectionFieldDefinition[]
+export interface ProjectionDefinition<Path extends string = string> {
+  fields: ProjectionFieldDefinition<Path>[]
 }
 
-export interface ProjectionDefinitionInput {
-  fields?: ProjectionFieldDefinition[]
+export interface ProjectionDefinitionInput<Path extends string = string> {
+  fields?: ProjectionFieldDefinition<Path>[]
 }
 
 export interface OrderByDefinition {
@@ -184,13 +211,19 @@ export interface GraphDefinitionInput {
   defaultOrderBy?: OrderByDefinition[]
 }
 
-export interface GraphDefinition extends GraphDefinitionInput {
-  parameters: ParameterDefinition[]
+export interface GraphDefinition<
+  Parameter extends ParameterDefinition = ParameterDefinition,
+  ProjectionPath extends string = string,
+> extends GraphDefinitionInput {
+  parameters: Parameter[]
   relations: RelationDefinition[]
   constraints: ConstraintDefinition[]
-  projection: ProjectionDefinition
+  projection: ProjectionDefinition<ProjectionPath>
   defaultOrderBy: OrderByDefinition[]
 }
+
+export type ExactGraphDefinitionInput<Definition extends GraphDefinitionInput> = Definition &
+  Record<Exclude<keyof Definition, keyof GraphDefinitionInput>, never>
 
 export type TableName =
   | string
@@ -209,11 +242,82 @@ export interface RelationalMapping {
   sources: Record<string, SourceMapping>
 }
 
-export interface QueryOperation {
-  select?: string[]
-  parameters?: Record<string, unknown>
+export interface QueryOperationBase<SelectPath extends string = string> {
+  select?: readonly SelectPath[]
   offset?: number
   limit?: number
+}
+
+export type DefinitionParameter<Definition extends GraphDefinitionInput> =
+  Definition extends GraphDefinition<infer Parameter, infer _ProjectionPath>
+    ? Parameter
+    : NonNullable<Definition['parameters']>[number]
+
+export type DefinitionProjectionPath<Definition extends GraphDefinitionInput> =
+  Definition extends GraphDefinition<infer _Parameter, infer ProjectionPath>
+    ? ProjectionPath
+    : Definition['projection'] extends ProjectionDefinitionInput<infer ProjectionPath>
+      ? ProjectionPath
+      : string
+
+export type ParameterValue<Parameter extends ParameterDefinition> = Parameter extends { shape: 'list' }
+  ? readonly ScalarParameterValue<Parameter['scalarType']>[]
+  : ScalarParameterValue<Parameter['scalarType']>
+
+type RequiredParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
+  ? Parameter extends { required?: true }
+    ? Parameter
+    : never
+  : never
+
+type OptionalParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
+  ? Parameter extends { required?: true }
+    ? never
+    : Parameter
+  : never
+
+export type OperationParameters<Definition extends GraphDefinitionInput> = {
+  [Parameter in RequiredParameter<DefinitionParameter<Definition>> as Parameter['name']]-?: ParameterValue<Parameter>
+} & {
+  [Parameter in OptionalParameter<DefinitionParameter<Definition>> as Parameter['name']]?: ParameterValue<Parameter>
+}
+
+type OperationParameterInput<Definition extends GraphDefinitionInput> = [DefinitionParameter<Definition>] extends [
+  never,
+]
+  ? { parameters?: never }
+  : [RequiredParameter<DefinitionParameter<Definition>>] extends [never]
+    ? { parameters?: OperationParameters<Definition> }
+    : { parameters: OperationParameters<Definition> }
+
+export type QueryOperation<Definition extends GraphDefinitionInput = GraphDefinitionInput> = QueryOperationBase<
+  DefinitionProjectionPath<Definition>
+> &
+  OperationParameterInput<Definition>
+
+export interface QueryGraph<Definition extends GraphDefinitionInput = GraphDefinitionInput> {
+  readonly name: string
+  readonly root: string
+  readonly sourceCount: number
+  readonly relationCount: number
+  hasSource(source: string): boolean
+  hasField(source: string, field: string): boolean
+  hasParameter(parameter: string): boolean
+  hasRelation(relation: string): boolean
+  selectableFields(): Array<DefinitionProjectionPath<Definition>>
+  withRelationalMapping(mapping: RelationalMapping): RelationalQueryGraph<Definition>
+}
+
+export interface RelationalQueryGraph<Definition extends GraphDefinitionInput = GraphDefinitionInput> {
+  readonly name: string
+  compileSqlServer(
+    operation: QueryOperation<Definition>,
+    options?: SqlServerCompileOptions,
+  ): import('./index.js').CompiledSqlStatement
+  compileOracle(
+    operation: QueryOperation<Definition>,
+    options?: OracleCompileOptions,
+  ): import('./index.js').CompiledSqlStatement
 }
 
 export type SqlServerVersion = '2008' | '2012' | '2016' | '2019' | '2022'
@@ -257,17 +361,33 @@ export interface SourceRef<Key extends string = string, Fields extends FieldSpec
   field<Name extends Extract<keyof Fields, string>>(name: Name): FieldExpression<Key, Name>
 }
 
-export interface ScalarParameterRef<Name extends string = string> extends ParameterDefinition {
+export interface ScalarParameterRef<
+  Name extends string = string,
+  Type extends ScalarType = ScalarType,
+  Required extends boolean = boolean,
+> extends ParameterDefinition {
   name: Name
+  scalarType: Type
   shape?: 'scalar'
+  required?: Required
 }
 
-export interface ListParameterRef<Name extends string = string> extends ParameterDefinition {
+export interface ListParameterRef<
+  Name extends string = string,
+  Type extends ScalarType = ScalarType,
+  Required extends boolean = boolean,
+> extends ParameterDefinition {
   name: Name
+  scalarType: Type
   shape: 'list'
+  required?: Required
 }
 
-export type ParameterRef<Name extends string = string> = ScalarParameterRef<Name> | ListParameterRef<Name>
+export type ParameterRef<
+  Name extends string = string,
+  Type extends ScalarType = ScalarType,
+  Required extends boolean = boolean,
+> = ScalarParameterRef<Name, Type, Required> | ListParameterRef<Name, Type, Required>
 
 export interface RelationRef<Name extends string = string> extends RelationDefinition {
   name: Name
@@ -300,23 +420,25 @@ export function field<const Source extends string, const Name extends string>(
   name: Name,
 ): FieldExpression<Source, Name>
 
-export function requiredParameter<const Name extends string>(
+export function requiredParameter<const Name extends string, const Type extends ScalarType>(
   name: Name,
-  scalarType: ScalarType,
-): ScalarParameterRef<Name>
-export function optionalParameter<const Name extends string>(
+  scalarType: Type,
+): ScalarParameterRef<Name, Type, true>
+export function optionalParameter<const Name extends string, const Type extends ScalarType>(
   name: Name,
-  scalarType: ScalarType,
-): ScalarParameterRef<Name>
-export function requiredListParameter<const Name extends string>(
+  scalarType: Type,
+): ScalarParameterRef<Name, Type, false>
+export function requiredListParameter<const Name extends string, const Type extends ScalarType>(
   name: Name,
-  scalarType: ScalarType,
-): ListParameterRef<Name>
-export function optionalListParameter<const Name extends string>(
+  scalarType: Type,
+): ListParameterRef<Name, Type, true>
+export function optionalListParameter<const Name extends string, const Type extends ScalarType>(
   name: Name,
-  scalarType: ScalarType,
-): ListParameterRef<Name>
-export function param<const Name extends string>(parameter: ScalarParameterRef<Name>): ParameterExpression<Name>
+  scalarType: Type,
+): ListParameterRef<Name, Type, false>
+export function param<const Name extends string, const Type extends ScalarType>(
+  parameter: ScalarParameterRef<Name, Type>,
+): ParameterExpression<Name>
 
 export function literal(value: LiteralInput): LiteralExpression
 export function integer(value: number): LiteralExpression
@@ -331,9 +453,9 @@ export function gte(left: ExpressionInput, right: ExpressionInput): BinaryExpres
 export function like(expression: ExpressionInput, pattern: ExpressionInput): LikeExpression
 export function inList(expression: ExpressionInput, values: readonly ExpressionInput[]): InExpression
 export function and(...expressions: readonly ExpressionInput[]): ExpressionGroup
-export function inParameter<const Name extends string>(
+export function inParameter<const Name extends string, const Type extends ScalarType>(
   expression: ExpressionInput,
-  parameter: ListParameterRef<Name>,
+  parameter: ListParameterRef<Name, Type>,
 ): InParameterExpression<Name>
 export function or(...expressions: readonly ExpressionInput[]): ExpressionGroup
 export function not(expression: ExpressionInput): UnaryExpression
@@ -376,11 +498,16 @@ export interface ProjectionOptions {
   default?: boolean
 }
 
-export function project(
-  path: string | readonly string[],
+export function project<const Path extends string>(
+  path: Path,
   expression: ExpressionInput,
   options?: ProjectionOptions,
-): ProjectionFieldDefinition
+): ProjectionFieldDefinition<Path>
+export function project<const Path extends readonly string[]>(
+  path: Path,
+  expression: ExpressionInput,
+  options?: ProjectionOptions,
+): ProjectionFieldDefinition<JoinProjectionPath<Path>>
 
 export interface OrderByOptions {
   nulls?: NullsOrder
@@ -402,17 +529,43 @@ export interface GraphModuleConfiguration {
   defaultOrderBy?: readonly OrderByDefinition[]
 }
 
-export interface GraphModule {
+type ConfigurationElement<Configuration, Key extends PropertyKey> = Key extends keyof Configuration
+  ? NonNullable<Configuration[Key]> extends readonly (infer Element)[]
+    ? Element
+    : never
+  : never
+
+type ModuleParameter<Module> = Module extends GraphModule<infer Parameter, infer _ProjectionPath> ? Parameter : never
+
+type ModuleProjectionPath<Module> =
+  Module extends GraphModule<infer _Parameter, infer ProjectionPath> ? ProjectionPath : never
+
+type ProjectionPathOf<Field> = Field extends ProjectionFieldDefinition<infer Path> ? Path : never
+
+type ConfigurationParameter<Configuration> =
+  | Extract<ConfigurationElement<Configuration, 'parameters'>, ParameterDefinition>
+  | ModuleParameter<ConfigurationElement<Configuration, 'modules'>>
+
+type ConfigurationProjectionPath<Configuration> =
+  | ProjectionPathOf<ConfigurationElement<Configuration, 'projection'>>
+  | ModuleProjectionPath<ConfigurationElement<Configuration, 'modules'>>
+
+export interface GraphModule<
+  Parameter extends ParameterDefinition = ParameterDefinition,
+  ProjectionPath extends string = string,
+> {
   readonly name: string
   readonly sources: readonly SourceRef[]
-  readonly parameters: readonly ParameterDefinition[]
+  readonly parameters: readonly Parameter[]
   readonly relations: readonly RelationDefinition[]
   readonly constraints: readonly ConstraintDefinition[]
-  readonly projection: readonly ProjectionFieldDefinition[]
+  readonly projection: readonly ProjectionFieldDefinition<ProjectionPath>[]
   readonly defaultOrderBy: readonly OrderByDefinition[]
 }
 
-export function defineGraphModule(configuration: GraphModuleConfiguration): GraphModule
+export function defineGraphModule<const Configuration extends GraphModuleConfiguration>(
+  configuration: Configuration,
+): GraphModule<ConfigurationParameter<Configuration>, ConfigurationProjectionPath<Configuration>>
 
 export interface GraphConfiguration {
   name: string
@@ -426,4 +579,6 @@ export interface GraphConfiguration {
   defaultOrderBy?: readonly OrderByDefinition[]
 }
 
-export function defineGraph(configuration: GraphConfiguration): GraphDefinition
+export function defineGraph<const Configuration extends GraphConfiguration>(
+  configuration: Configuration,
+): GraphDefinition<ConfigurationParameter<Configuration>, ConfigurationProjectionPath<Configuration>>
