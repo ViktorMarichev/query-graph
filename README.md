@@ -161,6 +161,9 @@ const definition = defineGraph({
 const graph = registerDefinition(definition)
 ```
 
+Object DSL предоставляет собственный ограниченный authoring API и не обязан
+повторять каждый экспорт functional DSL.
+
 Оба DSL формируют один и тот же versioned wire-контракт. Сторонний DSL также может
 создавать `GraphDefinitionInput`; Rust проверяет его при `registerDefinition`.
 

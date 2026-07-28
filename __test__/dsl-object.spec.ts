@@ -135,3 +135,69 @@ test('object DSL reports accidental positional structural calls', (t) => {
   t.is(typeof invalidObjectDslCalls, 'function')
   t.is(error.message, 'relation expects a configuration object')
 })
+
+test('object DSL rejects unknown structural configuration fields', (t) => {
+  const staff = source('staff', { id: 'int64' })
+  const predicate = eq(staff.field('id'), staff.field('id'))
+
+  const invalidRelation = {
+    name: 'self',
+    from: staff,
+    to: staff,
+    on: predicate,
+    cardinallity: 'many',
+  }
+  const invalidConstraint = {
+    name: 'active',
+    predicate,
+    wheen: 'id',
+  }
+  const invalidProject = {
+    path: 'id',
+    expression: staff.field('id'),
+    deafult: true,
+  }
+  const invalidDimension = {
+    path: 'id',
+    expression: staff.field('id'),
+    selectedByDefault: true,
+  }
+  const invalidMeasure = {
+    path: 'count',
+    expression: count(),
+    distinct: true,
+  }
+
+  const cases = [
+    {
+      factory: 'relation',
+      field: 'cardinallity',
+      invoke: () => relation(invalidRelation),
+    },
+    {
+      factory: 'constraint',
+      field: 'wheen',
+      invoke: () => constraint(invalidConstraint),
+    },
+    {
+      factory: 'project',
+      field: 'deafult',
+      invoke: () => project(invalidProject),
+    },
+    {
+      factory: 'dimension',
+      field: 'selectedByDefault',
+      invoke: () => dimension(invalidDimension),
+    },
+    {
+      factory: 'measure',
+      field: 'distinct',
+      invoke: () => measure(invalidMeasure),
+    },
+  ]
+
+  for (const { factory, field, invoke } of cases) {
+    const error = t.throws(invoke)
+    t.is(error.message, `${factory} received unknown configuration field ${JSON.stringify(field)}`)
+  }
+})

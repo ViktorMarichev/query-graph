@@ -1,4 +1,87 @@
-export * from 'query-graph/definition'
+export {
+  and,
+  asc,
+  average,
+  coalesce,
+  concat,
+  count,
+  countDistinct,
+  decimal,
+  defineGraph,
+  defineGraphModule,
+  defineSummaryGraph,
+  desc,
+  eq,
+  exists,
+  fieldType,
+  firstBy,
+  gt,
+  gte,
+  hidden,
+  inList,
+  inParameter,
+  integer,
+  isNotNull,
+  isNull,
+  like,
+  literal,
+  lower,
+  lt,
+  lte,
+  maximum,
+  minimum,
+  neq,
+  not,
+  nullable,
+  optionalListParameter,
+  optionalParameter,
+  or,
+  param,
+  requiredListParameter,
+  requiredParameter,
+  source,
+  sum,
+  upper,
+} from 'query-graph/definition'
+
+export type {
+  AggregateExpression,
+  AggregateFunctionName,
+  ConstraintDefinition,
+  DimensionDefinition,
+  Expression,
+  ExpressionInput,
+  FieldExpression,
+  FieldSpec,
+  FieldSpecDefinition,
+  FieldSpecMap,
+  FieldTypeOptions,
+  FirstBySelection,
+  GraphConfiguration,
+  GraphDefinition,
+  GraphModule,
+  GraphModuleConfiguration,
+  JoinProjectionPath,
+  ListParameterRef,
+  MeasureDefinition,
+  NullsOrder,
+  OrderByDefinition,
+  OrderByOptions,
+  ParameterDefinition,
+  ParameterRef,
+  ProjectionFieldDefinition,
+  RelationCardinality,
+  RelationDefinition,
+  RelationRef,
+  RelationSelection,
+  ScalarParameterRef,
+  ScalarParameterValue,
+  ScalarType,
+  SourceDefinition,
+  SourceRef,
+  SummaryFieldDefinition,
+  SummaryGraphConfiguration,
+} from 'query-graph/definition'
 
 import type {
   ConstraintDefinition,
@@ -17,8 +100,8 @@ import type {
 
 export interface RelationConfiguration<Name extends string = string> {
   name: Name
-  from: string | SourceRef
-  to: string | SourceRef
+  from: SourceRef
+  to: SourceRef
   on: Expression
   required?: boolean
   cardinality?: RelationCardinality
@@ -30,7 +113,7 @@ export function relation<const Name extends string>(configuration: RelationConfi
 export interface ConstraintConfiguration {
   name: string
   predicate: Expression
-  when?: string | ParameterRef
+  when?: ParameterRef
 }
 
 export function constraint(configuration: ConstraintConfiguration): ConstraintDefinition

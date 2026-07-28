@@ -50,12 +50,17 @@ const definition = defineGraph({
 const graph = registerDefinition(definition)
 ```
 
-Expressions и функции композиции графа реэкспортируются из
-`query-graph/definition`. Объектные аргументы используются только структурными
-фабриками:
+Пакет предоставляет намеренно ограниченный authoring API, а не зеркальную копию
+`query-graph/definition`. Общие фабрики sources, parameters, expressions и
+композиции делегируются canonical functional implementation. Объектные аргументы
+используются структурными фабриками:
 
 - `relation({ name, from, to, on, ...options })`;
 - `constraint({ name, predicate, when? })`;
 - `project({ path, expression, default? })`;
 - `dimension({ path, expression, default? })`;
 - `measure({ path, expression, default? })`.
+
+Wire-level `GRAPH_DEFINITION_VERSION` и дублирующий standalone `field(source,
+name)` остаются в `query-graph/definition`. Расширение functional DSL не становится
+частью object DSL автоматически.
