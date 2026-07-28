@@ -23,6 +23,7 @@ pub struct ParameterBinding {
   pub name: String,
   pub parameter: String,
   pub scalar_type: ScalarType,
+  pub index: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +65,16 @@ pub(super) trait SqlDialect {
     direction: OrderDirection,
     nulls: Option<NullsOrder>,
   ) -> String;
+
+  fn render_first_by_query(
+    &self,
+    projection: &str,
+    source: &str,
+    predicate: &str,
+    order_by: &[String],
+  ) -> Result<String, SqlCompileError>;
+
+  fn render_single_row_source(&self, alias: &str) -> String;
 
   fn render_pagination(
     &self,
@@ -126,6 +137,17 @@ pub(crate) fn compile(
 
   for relation_index in plan.relation_indices() {
     let relation = &graph.definition().relations[*relation_index];
+    if relation.selection.is_some() {
+      let apply_type = if graph.relation_is_effectively_required(*relation_index) {
+        "CROSS APPLY"
+      } else {
+        "OUTER APPLY"
+      };
+      let target = renderer.render_selected_relation_source(relation)?;
+      sql.push_str(&format!("\n{apply_type} {target}"));
+      continue;
+    }
+
     let join_type = if graph.relation_is_effectively_required(*relation_index) {
       "INNER JOIN"
     } else {

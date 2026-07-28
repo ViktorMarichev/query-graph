@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CompiledGraph, DefinitionIssues, Expression};
 
-pub const GRAPH_DEFINITION_VERSION: u32 = 4;
+pub const GRAPH_DEFINITION_VERSION: u32 = 5;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -129,6 +129,8 @@ pub struct ParameterDefinition {
   pub name: String,
   pub scalar_type: ScalarType,
   #[serde(default)]
+  pub shape: ParameterShape,
+  #[serde(default)]
   pub required: bool,
 }
 
@@ -137,6 +139,7 @@ impl ParameterDefinition {
     Self {
       name: name.into(),
       scalar_type,
+      shape: ParameterShape::Scalar,
       required: true,
     }
   }
@@ -145,7 +148,43 @@ impl ParameterDefinition {
     Self {
       name: name.into(),
       scalar_type,
+      shape: ParameterShape::Scalar,
       required: false,
+    }
+  }
+
+  pub fn required_list(name: impl Into<String>, scalar_type: ScalarType) -> Self {
+    Self {
+      name: name.into(),
+      scalar_type,
+      shape: ParameterShape::List,
+      required: true,
+    }
+  }
+
+  pub fn optional_list(name: impl Into<String>, scalar_type: ScalarType) -> Self {
+    Self {
+      name: name.into(),
+      scalar_type,
+      shape: ParameterShape::List,
+      required: false,
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ParameterShape {
+  #[default]
+  Scalar,
+  List,
+}
+
+impl ParameterShape {
+  pub const fn as_str(self) -> &'static str {
+    match self {
+      Self::Scalar => "scalar",
+      Self::List => "list",
     }
   }
 }
@@ -160,6 +199,8 @@ pub struct RelationDefinition {
   pub cardinality: RelationCardinality,
   #[serde(default)]
   pub required: bool,
+  #[serde(default)]
+  pub selection: Option<RelationSelection>,
   pub on: Expression,
 }
 
@@ -176,6 +217,7 @@ impl RelationDefinition {
       to: to.into(),
       cardinality: RelationCardinality::One,
       required: false,
+      selection: None,
       on,
     }
   }
@@ -187,6 +229,13 @@ impl RelationDefinition {
 
   pub fn many(mut self) -> Self {
     self.cardinality = RelationCardinality::Many;
+    self
+  }
+
+  pub fn first_by(mut self, order_by: impl IntoIterator<Item = OrderByDefinition>) -> Self {
+    self.selection = Some(RelationSelection::FirstBy {
+      order_by: order_by.into_iter().collect(),
+    });
     self
   }
 }
@@ -204,6 +253,23 @@ impl RelationCardinality {
     match self {
       Self::One => "one",
       Self::Many => "many",
+    }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum RelationSelection {
+  FirstBy {
+    #[serde(rename = "orderBy")]
+    order_by: Vec<OrderByDefinition>,
+  },
+}
+
+impl RelationSelection {
+  pub fn order_by(&self) -> &[OrderByDefinition] {
+    match self {
+      Self::FirstBy { order_by } => order_by,
     }
   }
 }

@@ -101,11 +101,13 @@ pub(crate) fn build(
     add_expression_parameters(graph, &order.expression, &mut required_parameters)?;
   }
   for relation_index in &relation_indices {
-    add_expression_parameters(
-      graph,
-      &graph.definition().relations[*relation_index].on,
-      &mut required_parameters,
-    )?;
+    let relation = &graph.definition().relations[*relation_index];
+    add_expression_parameters(graph, &relation.on, &mut required_parameters)?;
+    if let Some(selection) = &relation.selection {
+      for order in selection.order_by() {
+        add_expression_parameters(graph, &order.expression, &mut required_parameters)?;
+      }
+    }
   }
   operation.validate_plan_parameters(required_parameters)?;
 
@@ -206,11 +208,17 @@ fn add_expression_parameters<'a>(
         })?;
 
     for relation_index in relation_path {
-      graph.definition().relations[*relation_index]
-        .on
-        .for_each_parameter(&mut |parameter| {
-          parameters.insert(parameter);
-        });
+      let relation = &graph.definition().relations[*relation_index];
+      relation.on.for_each_parameter(&mut |parameter| {
+        parameters.insert(parameter);
+      });
+      if let Some(selection) = &relation.selection {
+        for order in selection.order_by() {
+          order.expression.for_each_parameter(&mut |parameter| {
+            parameters.insert(parameter);
+          });
+        }
+      }
     }
   }
 

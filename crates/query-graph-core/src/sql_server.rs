@@ -166,6 +166,27 @@ impl SqlDialect for SqlServerDialect {
     }
   }
 
+  fn render_first_by_query(
+    &self,
+    projection: &str,
+    source: &str,
+    predicate: &str,
+    order_by: &[String],
+  ) -> Result<String, SqlCompileError> {
+    Ok(format!(
+      "SELECT TOP (1) {projection}\nFROM {source}\nWHERE {predicate}\nORDER BY {}",
+      order_by.join(", ")
+    ))
+  }
+
+  fn render_single_row_source(&self, alias: &str) -> String {
+    format!(
+      "(VALUES (1)) AS {}({})",
+      self.quote_identifier(alias),
+      self.quote_identifier("value")
+    )
+  }
+
   fn render_pagination(
     &self,
     offset: Option<u64>,

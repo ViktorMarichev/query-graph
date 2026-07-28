@@ -80,6 +80,10 @@ pub enum Expression {
     expression: Box<Expression>,
     values: Vec<Expression>,
   },
+  InParameter {
+    expression: Box<Expression>,
+    parameter: String,
+  },
   And {
     expressions: Vec<Expression>,
   },
@@ -148,6 +152,13 @@ impl Expression {
     }
   }
 
+  pub fn in_parameter(expression: Expression, parameter: impl Into<String>) -> Self {
+    Self::InParameter {
+      expression: Box::new(expression),
+      parameter: parameter.into(),
+    }
+  }
+
   pub fn exists_where(source: impl Into<String>, predicate: Expression) -> Self {
     Self::Exists {
       source: source.into(),
@@ -184,8 +195,10 @@ impl Expression {
 
   pub(crate) fn for_each_parameter<'a>(&'a self, visitor: &mut impl FnMut(&'a str)) {
     self.walk(&mut |expression| {
-      if let Self::Parameter { name } = expression {
-        visitor(name);
+      match expression {
+        Self::Parameter { name } => visitor(name),
+        Self::InParameter { parameter, .. } => visitor(parameter),
+        _ => {}
       }
       true
     });
@@ -219,6 +232,9 @@ impl Expression {
         for value in values {
           value.walk(visitor);
         }
+      }
+      Self::InParameter { expression, .. } => {
+        expression.walk(visitor);
       }
       Self::And { expressions } | Self::Or { expressions } => {
         for expression in expressions {

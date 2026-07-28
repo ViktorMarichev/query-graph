@@ -1,4 +1,4 @@
-export const GRAPH_DEFINITION_VERSION: 4
+export const GRAPH_DEFINITION_VERSION: 5
 
 export type ScalarType =
   | 'boolean'
@@ -12,6 +12,7 @@ export type ScalarType =
   | 'binary'
   | 'json'
 
+export type ParameterShape = 'scalar' | 'list'
 export type RelationCardinality = 'one' | 'many'
 export type OrderDirection = 'asc' | 'desc'
 export type NullsOrder = 'first' | 'last'
@@ -32,6 +33,7 @@ export interface SourceDefinition {
 export interface ParameterDefinition {
   name: string
   scalarType: ScalarType
+  shape?: ParameterShape
   required?: boolean
 }
 
@@ -84,6 +86,12 @@ export interface InExpression {
   values: Expression[]
 }
 
+export interface InParameterExpression<Name extends string = string> {
+  kind: 'inParameter'
+  expression: Expression
+  parameter: Name
+}
+
 export interface ExpressionGroup {
   kind: 'and' | 'or'
   expressions: Expression[]
@@ -113,6 +121,7 @@ export type Expression =
   | BinaryExpression
   | LikeExpression
   | InExpression
+  | InParameterExpression
   | ExpressionGroup
   | UnaryExpression
   | ExistsExpression
@@ -124,6 +133,7 @@ export interface RelationDefinition {
   to: string
   cardinality?: RelationCardinality
   required?: boolean
+  selection?: RelationSelection
   on: Expression
 }
 
@@ -154,6 +164,13 @@ export interface OrderByDefinition {
   direction: OrderDirection
   nulls?: NullsOrder
 }
+
+export interface FirstBySelection {
+  kind: 'firstBy'
+  orderBy: OrderByDefinition[]
+}
+
+export type RelationSelection = FirstBySelection
 
 export interface GraphDefinitionInput {
   schemaVersion: typeof GRAPH_DEFINITION_VERSION
@@ -240,9 +257,17 @@ export interface SourceRef<Key extends string = string, Fields extends FieldSpec
   field<Name extends Extract<keyof Fields, string>>(name: Name): FieldExpression<Key, Name>
 }
 
-export interface ParameterRef<Name extends string = string> extends ParameterDefinition {
+export interface ScalarParameterRef<Name extends string = string> extends ParameterDefinition {
   name: Name
+  shape?: 'scalar'
 }
+
+export interface ListParameterRef<Name extends string = string> extends ParameterDefinition {
+  name: Name
+  shape: 'list'
+}
+
+export type ParameterRef<Name extends string = string> = ScalarParameterRef<Name> | ListParameterRef<Name>
 
 export interface RelationRef<Name extends string = string> extends RelationDefinition {
   name: Name
@@ -275,9 +300,23 @@ export function field<const Source extends string, const Name extends string>(
   name: Name,
 ): FieldExpression<Source, Name>
 
-export function requiredParameter<const Name extends string>(name: Name, scalarType: ScalarType): ParameterRef<Name>
-export function optionalParameter<const Name extends string>(name: Name, scalarType: ScalarType): ParameterRef<Name>
-export function param<const Name extends string>(parameter: Name | ParameterRef<Name>): ParameterExpression<Name>
+export function requiredParameter<const Name extends string>(
+  name: Name,
+  scalarType: ScalarType,
+): ScalarParameterRef<Name>
+export function optionalParameter<const Name extends string>(
+  name: Name,
+  scalarType: ScalarType,
+): ScalarParameterRef<Name>
+export function requiredListParameter<const Name extends string>(
+  name: Name,
+  scalarType: ScalarType,
+): ListParameterRef<Name>
+export function optionalListParameter<const Name extends string>(
+  name: Name,
+  scalarType: ScalarType,
+): ListParameterRef<Name>
+export function param<const Name extends string>(parameter: ScalarParameterRef<Name>): ParameterExpression<Name>
 
 export function literal(value: LiteralInput): LiteralExpression
 export function integer(value: number): LiteralExpression
@@ -292,6 +331,10 @@ export function gte(left: ExpressionInput, right: ExpressionInput): BinaryExpres
 export function like(expression: ExpressionInput, pattern: ExpressionInput): LikeExpression
 export function inList(expression: ExpressionInput, values: readonly ExpressionInput[]): InExpression
 export function and(...expressions: readonly ExpressionInput[]): ExpressionGroup
+export function inParameter<const Name extends string>(
+  expression: ExpressionInput,
+  parameter: ListParameterRef<Name>,
+): InParameterExpression<Name>
 export function or(...expressions: readonly ExpressionInput[]): ExpressionGroup
 export function not(expression: ExpressionInput): UnaryExpression
 export function isNull(expression: ExpressionInput): UnaryExpression
@@ -312,6 +355,7 @@ export function concat(first: ExpressionInput, ...rest: readonly ExpressionInput
 export interface RelationOptions {
   required?: boolean
   cardinality?: RelationCardinality
+  selection?: RelationSelection
 }
 
 export function relation<const Name extends string>(
@@ -344,6 +388,8 @@ export interface OrderByOptions {
 
 export function asc(expression: ExpressionInput, options?: OrderByOptions): OrderByDefinition
 export function desc(expression: ExpressionInput, options?: OrderByOptions): OrderByDefinition
+
+export function firstBy(firstOrder: OrderByDefinition, ...rest: readonly OrderByDefinition[]): FirstBySelection
 
 export interface GraphModuleConfiguration {
   name: string

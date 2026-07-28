@@ -21,7 +21,7 @@ fn issue_codes(definition: GraphDefinition) -> Vec<DefinitionIssueCode> {
 #[test]
 fn rejects_the_previous_wire_definition_version() {
   let mut definition = GraphDefinition::new("oldWireVersion", "root");
-  definition.schema_version = 3;
+  definition.schema_version = 4;
   definition.sources = vec![source("root")];
   definition.projection = ProjectionDefinition {
     fields: vec![ProjectionFieldDefinition::new(

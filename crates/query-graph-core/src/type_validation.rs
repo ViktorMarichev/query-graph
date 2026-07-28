@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::{
   type_system::{self, InferredType, TypeSystemError, TypeSystemErrorKind},
   DefinitionIssue, DefinitionIssueCode, DefinitionIssues, Expression, ExpressionType,
-  GraphDefinition,
+  GraphDefinition, ParameterShape,
 };
 
 pub(crate) fn analyze(
@@ -37,7 +37,10 @@ pub(crate) fn analyze(
     .map(|parameter| {
       (
         parameter.name.as_str(),
-        InferredType::parameter(parameter.scalar_type),
+        ParameterType {
+          inferred: InferredType::parameter(parameter.scalar_type),
+          shape: parameter.shape,
+        },
       )
     })
     .collect();
@@ -51,6 +54,28 @@ pub(crate) fn analyze(
     let location = format!("relations[{index}].on");
     let expression_type = infer_expression(&relation.on, &location, &environment, &mut issues);
     validate_predicate(expression_type, &location, &mut issues);
+  }
+
+  for (relation_index, relation) in definition.relations.iter().enumerate() {
+    let Some(selection) = &relation.selection else {
+      continue;
+    };
+
+    for (order_index, order) in selection.order_by().iter().enumerate() {
+      let location =
+        format!("relations[{relation_index}].selection.orderBy[{order_index}].expression");
+      let expression_type =
+        infer_expression(&order.expression, &location, &environment, &mut issues);
+      if let Some(expression_type) = expression_type {
+        if let Err(error) = type_system::require_orderable(expression_type) {
+          issues.push(DefinitionIssue::new(
+            DefinitionIssueCode::InvalidOrderExpression,
+            location,
+            error.message,
+          ));
+        }
+      }
+    }
   }
 
   for (index, constraint) in definition.constraints.iter().enumerate() {
@@ -104,7 +129,13 @@ pub(crate) fn analyze(
 }
 
 type SourceTypes<'a> = HashMap<&'a str, HashMap<&'a str, InferredType>>;
-type ParameterTypes<'a> = HashMap<&'a str, InferredType>;
+type ParameterTypes<'a> = HashMap<&'a str, ParameterType>;
+
+#[derive(Clone, Copy)]
+struct ParameterType {
+  inferred: InferredType,
+  shape: ParameterShape,
+}
 
 struct TypeEnvironment<'a> {
   sources: SourceTypes<'a>,
@@ -125,12 +156,11 @@ fn infer_expression(
         .and_then(|fields| fields.get(field.as_str()))
         .expect("structural validation must resolve expression fields"),
     ),
-    Expression::Parameter { name } => Some(
-      *environment
-        .parameters
-        .get(name.as_str())
-        .expect("structural validation must resolve expression parameters"),
-    ),
+    Expression::Parameter { name } => environment
+      .parameters
+      .get(name.as_str())
+      .filter(|parameter| parameter.shape == ParameterShape::Scalar)
+      .map(|parameter| parameter.inferred),
     Expression::Literal { value } => Some(InferredType::literal(value)),
     Expression::Eq { left, right } | Expression::NotEq { left, right } => infer_binary(
       left,
@@ -184,6 +214,30 @@ fn infer_expression(
       match (expression_type, value_types) {
         (Some(expression_type), Some(value_types)) => report_type_result(
           type_system::infer_in(expression_type, &value_types),
+          location,
+          issues,
+        ),
+        _ => None,
+      }
+    }
+    Expression::InParameter {
+      expression,
+      parameter,
+    } => {
+      let expression_type = infer_expression(
+        expression,
+        &format!("{location}.expression"),
+        environment,
+        issues,
+      );
+      let parameter_type = environment
+        .parameters
+        .get(parameter.as_str())
+        .filter(|parameter| parameter.shape == ParameterShape::List)
+        .map(|parameter| parameter.inferred);
+      match (expression_type, parameter_type) {
+        (Some(expression_type), Some(parameter_type)) => report_type_result(
+          type_system::infer_in(expression_type, &[parameter_type]),
           location,
           issues,
         ),

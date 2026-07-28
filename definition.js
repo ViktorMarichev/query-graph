@@ -1,6 +1,6 @@
 'use strict'
 
-const GRAPH_DEFINITION_VERSION = 4
+const GRAPH_DEFINITION_VERSION = 5
 const SCALAR_TYPES = new Set([
   'boolean',
   'int32',
@@ -81,7 +81,19 @@ function optionalParameter(name, scalarType) {
   return parameterDefinition(name, scalarType, false)
 }
 
+function requiredListParameter(name, scalarType) {
+  return parameterDefinition(name, scalarType, true, 'list')
+}
+
+function optionalListParameter(name, scalarType) {
+  return parameterDefinition(name, scalarType, false, 'list')
+}
+
 function param(parameterReference) {
+  if (typeof parameterReference !== 'string' && parameterReference?.shape === 'list') {
+    throw new TypeError(`List parameter ${parameterReference.name} cannot be used as a scalar expression`)
+  }
+
   return {
     kind: 'parameter',
     name: referenceName(parameterReference, 'parameter'),
@@ -160,6 +172,17 @@ function inList(expression, values) {
   }
 }
 
+function inParameter(expression, parameterReference) {
+  if (typeof parameterReference !== 'string' && parameterReference?.shape !== 'list') {
+    throw new TypeError(`Parameter ${parameterReference?.name ?? '<unknown>'} is not a list parameter`)
+  }
+
+  return {
+    kind: 'inParameter',
+    expression: asExpression(expression),
+    parameter: referenceName(parameterReference, 'parameter'),
+  }
+}
 function and(...expressions) {
   return {
     kind: 'and',
@@ -236,6 +259,9 @@ function relation(name, from, to, on, options = {}) {
   if (options.cardinality === 'many') {
     definition.cardinality = 'many'
   }
+  if (options.selection !== undefined) {
+    definition.selection = options.selection
+  }
   return definition
 }
 
@@ -272,8 +298,20 @@ function desc(expression, options = {}) {
   return orderBy('desc', expression, options)
 }
 
+function firstBy(firstOrder, ...rest) {
+  if (firstOrder === undefined) {
+    throw new TypeError('firstBy requires at least one order expression')
+  }
+
+  return {
+    kind: 'firstBy',
+    orderBy: [firstOrder, ...rest],
+  }
+}
+
 function defineGraphModule(configuration) {
   const content = composeDefinitionContent(configuration)
+
   const module = {
     name: configuration.name,
     sources: content.sources,
@@ -401,11 +439,14 @@ function normalizeFieldSpec(specification) {
   throw new TypeError('Field specification must contain a scalar type')
 }
 
-function parameterDefinition(name, scalarType, required) {
+function parameterDefinition(name, scalarType, required, shape = 'scalar') {
   assertScalarType(scalarType)
   const definition = { name, scalarType }
   if (required) {
     definition.required = true
+  }
+  if (shape === 'list') {
+    definition.shape = 'list'
   }
   return definition
 }
@@ -504,6 +545,8 @@ exports.param = param
 exports.literal = literal
 exports.integer = integer
 exports.decimal = decimal
+exports.requiredListParameter = requiredListParameter
+exports.optionalListParameter = optionalListParameter
 exports.eq = eq
 exports.neq = neq
 exports.lt = lt
@@ -517,6 +560,7 @@ exports.or = or
 exports.not = not
 exports.isNull = isNull
 exports.isNotNull = isNotNull
+exports.inParameter = inParameter
 exports.exists = exists
 exports.lower = lower
 exports.upper = upper
@@ -529,3 +573,4 @@ exports.asc = asc
 exports.desc = desc
 exports.defineGraphModule = defineGraphModule
 exports.defineGraph = defineGraph
+exports.firstBy = firstBy

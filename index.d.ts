@@ -54,4 +54,5 @@ export interface SqlBinding {
   name: string
   parameter: string
   scalarType: import('./definition.js').ScalarType
+  index?: number
 }

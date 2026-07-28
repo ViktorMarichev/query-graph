@@ -144,6 +144,31 @@ impl SqlDialect for OracleDialect {
     format!("{expression} {direction}{nulls}")
   }
 
+  fn render_first_by_query(
+    &self,
+    projection: &str,
+    source: &str,
+    predicate: &str,
+    order_by: &[String],
+  ) -> Result<String, SqlCompileError> {
+    if self.version == OracleVersion::V11g {
+      return Err(SqlCompileError::UnsupportedDialectFeature {
+        dialect: self.name(),
+        version: self.version.as_str(),
+        feature: "firstBy relation selection",
+      });
+    }
+
+    Ok(format!(
+      "SELECT {projection}\nFROM {source}\nWHERE {predicate}\nORDER BY {}\nFETCH FIRST 1 ROW ONLY",
+      order_by.join(", ")
+    ))
+  }
+
+  fn render_single_row_source(&self, alias: &str) -> String {
+    format!("DUAL {}", self.quote_identifier(alias))
+  }
+
   fn render_pagination(
     &self,
     offset: Option<u64>,

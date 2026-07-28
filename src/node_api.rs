@@ -54,6 +54,7 @@ pub struct SqlBinding {
   pub parameter: String,
   #[napi(ts_type = "import('./definition.js').ScalarType")]
   pub scalar_type: String,
+  pub index: Option<u32>,
 }
 
 impl From<ParameterBinding> for SqlBinding {
@@ -62,6 +63,9 @@ impl From<ParameterBinding> for SqlBinding {
       name: binding.name,
       parameter: binding.parameter,
       scalar_type: binding.scalar_type.as_str().to_owned(),
+      index: binding
+        .index
+        .map(|index| u32::try_from(index).unwrap_or(u32::MAX)),
     }
   }
 }

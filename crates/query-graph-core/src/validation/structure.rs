@@ -1,6 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{ConstraintCondition, GraphDefinition, GRAPH_DEFINITION_VERSION};
+use crate::{
+  ConstraintCondition, GraphDefinition, ParameterShape, RelationCardinality, RelationSelection,
+  GRAPH_DEFINITION_VERSION,
+};
 
 use super::{
   expression::{self, ExpressionContext},
@@ -17,7 +20,7 @@ struct DefinitionValidator<'a> {
   definition: &'a GraphDefinition,
   issues: Vec<DefinitionIssue>,
   sources: SourceFields,
-  parameters: HashSet<String>,
+  parameters: HashMap<String, ParameterShape>,
   source_scopes: HashMap<String, HashSet<String>>,
 }
 
@@ -27,7 +30,7 @@ impl<'a> DefinitionValidator<'a> {
       definition,
       issues: Vec::new(),
       sources: HashMap::new(),
-      parameters: HashSet::new(),
+      parameters: HashMap::new(),
       source_scopes: HashMap::new(),
     }
   }
@@ -150,7 +153,11 @@ impl<'a> DefinitionValidator<'a> {
         continue;
       }
 
-      if !self.parameters.insert(parameter.name.clone()) {
+      if self
+        .parameters
+        .insert(parameter.name.clone(), parameter.shape)
+        .is_some()
+      {
         self.issues.push(DefinitionIssue::new(
           DefinitionIssueCode::DuplicateParameter,
           location,
@@ -197,6 +204,7 @@ impl<'a> DefinitionValidator<'a> {
         &context,
         &mut self.issues,
       );
+      self.validate_relation_selection(relation_index);
     }
   }
 
@@ -219,6 +227,51 @@ impl<'a> DefinitionValidator<'a> {
     }
   }
 
+  fn validate_relation_selection(&mut self, relation_index: usize) {
+    let relation = &self.definition.relations[relation_index];
+    let Some(selection) = &relation.selection else {
+      return;
+    };
+    let location = format!("relations[{relation_index}].selection");
+
+    if relation.cardinality != RelationCardinality::One {
+      self.issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::InvalidRelationSelection,
+        &location,
+        "relation selection is valid only for cardinality one",
+      ));
+    }
+
+    match selection {
+      RelationSelection::FirstBy { order_by } => {
+        if order_by.is_empty() {
+          self.issues.push(DefinitionIssue::new(
+            DefinitionIssueCode::EmptyRelationSelectionOrder,
+            format!("{location}.orderBy"),
+            "firstBy selection must contain at least one order expression",
+          ));
+        }
+
+        let allowed_sources = HashSet::from([relation.to.clone()]);
+        let context = ExpressionContext::scoped(
+          &self.sources,
+          &self.parameters,
+          &self.source_scopes,
+          &allowed_sources,
+          DefinitionIssueCode::RelationSelectionExpressionScope,
+        );
+        for (order_index, order) in order_by.iter().enumerate() {
+          expression::validate(
+            &order.expression,
+            &format!("{location}.orderBy[{order_index}].expression"),
+            &context,
+            &mut self.issues,
+          );
+        }
+      }
+    }
+  }
+
   fn validate_constraints(&mut self) {
     let mut names = HashSet::new();
 
@@ -227,7 +280,7 @@ impl<'a> DefinitionValidator<'a> {
       self.validate_constraint_name(constraint_index, &mut names);
 
       if let ConstraintCondition::ParameterPresent { parameter } = &constraint.when {
-        if !self.parameters.contains(parameter) {
+        if !self.parameters.contains_key(parameter) {
           self.issues.push(DefinitionIssue::new(
             DefinitionIssueCode::UnknownParameter,
             format!("{location}.when.parameter"),

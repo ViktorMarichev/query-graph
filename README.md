@@ -35,16 +35,20 @@ JavaScript.
 ```ts
 import { registerDefinition } from 'query-graph'
 import {
+  asc,
   constraint,
   defineGraph,
   defineGraphModule,
   eq,
   exists,
+  firstBy,
+  inParameter,
   isNotNull,
   nullable,
   param,
   project,
   relation,
+  requiredListParameter,
   requiredParameter,
   source,
 } from 'query-graph/definition'
@@ -130,6 +134,79 @@ Planner воспринимает existential branch как semijoin. Sources э�
 cardinality `many` не размножает корневые строки и не мешает их пагинации.
 Oracle и SQL Server compiler строят коррелированный `EXISTS` из одной и той же
 семантики definition.
+
+### Параметры-списки
+
+Параметр имеет явную форму `scalar` или `list`. Один параметр не меняет форму
+между операциями, поэтому в прикладном коде не требуется поддерживать
+`number | number[]`.
+
+```ts
+const idServices = requiredListParameter('idServices', 'int64')
+
+const definition = defineGraph({
+  name: 'staffByServices',
+  root: staff,
+  sources: [staff, businessServiceStaff],
+  parameters: [idServices],
+  relations: [
+    relation(
+      'staffServices',
+      staff,
+      businessServiceStaff,
+      eq(staff.field('id'), businessServiceStaff.field('idStaff')),
+      { cardinality: 'many' },
+    ),
+  ],
+  constraints: [
+    constraint(
+      'services',
+      exists(businessServiceStaff, inParameter(businessServiceStaff.field('idService'), idServices)),
+    ),
+  ],
+  projection: [project('id', staff.field('id'), { default: true })],
+})
+```
+
+Operation передает обычный массив:
+
+```ts
+const statement = relationalGraph.compileSqlServer({
+  parameters: { idServices: [12, 18, 24] },
+})
+```
+
+Compiler разворачивает его в `IN (@p0, @p1, @p2)`. Каждый элемент получает
+binding `{ parameter: 'idServices', index, scalarType: 'int64' }`, по которому
+adapter исполнения берет значение из исходного массива. Rust проверяет каждый
+элемент отдельно и возвращает путь ошибки наподобие
+`parameters.idServices[2]`.
+
+Отсутствующий optional list отключает constraint с `when`. Переданный пустой
+список остается присутствующим параметром и компилируется в ложный предикат
+`1 = 0`; недопустимый SQL `IN ()` не создается.
+
+### To-one selection
+
+`cardinality: 'one'` описывает контракт связи. Если физический источник может
+содержать несколько кандидатов, `firstBy` задает семантическое правило выбора
+одной строки:
+
+```ts
+const credentials = relation('credentials', staff, personStaff, eq(staff.field('id'), personStaff.field('idStaff')), {
+  selection: firstBy(asc(personStaff.field('idPerson')), asc(personStaff.field('id'))),
+})
+```
+
+Поля сортировки могут обращаться только к target source. Список сортировки
+обязателен; последнее поле следует выбирать уникальным, чтобы результат был
+детерминированным. `required: false` означает `0..1`, а `required: true` -
+ровно одну связанную строку.
+
+SQL Server renderer использует `OUTER/CROSS APPLY` и `TOP (1)`, Oracle 12c+
+использует `OUTER/CROSS APPLY` и `FETCH FIRST 1 ROW ONLY`. Эти детали не входят
+в definition. Для Oracle 11g `firstBy` возвращает
+`unsupportedDialectFeature`.
 
 Полученное определение не содержит SQL, имен таблиц, значений конкретного
 драйвера, объектов построителя или исполняемых функций обратного вызова
@@ -300,7 +377,8 @@ console.table(statement.bindings)
 По умолчанию выбирается Oracle 12c. Oracle 11g поддерживается для запросов без
 pagination; `OFFSET/FETCH` для него отклоняется как неподдерживаемая capability.
 
-Оба компилятора поддерживают выбор полей проекции, ограничения определения,
+Оба компилятора поддерживают выбор полей проекции, scalar/list параметры,
+ограничения определения,
 условные ограничения, сортировку по умолчанию, соединения
 `INNER JOIN`/`LEFT JOIN` и пагинацию `OFFSET`/`FETCH`. Общий SQL pipeline выбирает
 пути связей и обходит expression AST, а dialect renderer отвечает только за
@@ -310,8 +388,8 @@ pagination; `OFFSET/FETCH` для него отклоняется как неп�
 обычный JOIN в таком случае меняет количество корневых строк. Для этого сценария
 понадобится отдельный split-query plan.
 
-Фильтры времени выполнения, параметры-массивы и пользовательские отображения
-семантических функций намеренно оставлены для последующих этапов.
+Фильтры времени выполнения и пользовательские отображения семантических функций
+намеренно оставлены для последующих этапов.
 
 Полный пример графа, отображения, операции, сгенерированного SQL и замера
 производительности компиляции находится в `benchmark/bench.ts`.

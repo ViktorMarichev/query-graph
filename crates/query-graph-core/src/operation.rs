@@ -5,7 +5,10 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{scalar::is_decimal_text, CompiledGraph, ProjectionPath, ScalarType};
+use crate::{
+  scalar::is_decimal_text, CompiledGraph, ParameterDefinition, ParameterShape, ProjectionPath,
+  ScalarType,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -86,13 +89,7 @@ impl QueryOperation {
     for parameter in &graph.definition().parameters {
       match self.parameters.get(&parameter.name) {
         Some(value) => {
-          if !is_valid_scalar(value, parameter.scalar_type) {
-            issues.push(OperationIssue::new(
-              OperationIssueCode::InvalidParameterType,
-              format!("parameters.{}", parameter.name),
-              format!("expected {:?}", parameter.scalar_type),
-            ));
-          }
+          validate_parameter_value(parameter, value, &mut issues);
         }
         None if parameter.required => {
           issues.push(OperationIssue::new(
@@ -224,6 +221,45 @@ impl fmt::Display for OperationIssues {
 }
 
 impl Error for OperationIssues {}
+
+fn validate_parameter_value(
+  parameter: &ParameterDefinition,
+  value: &Value,
+  issues: &mut Vec<OperationIssue>,
+) {
+  let location = format!("parameters.{}", parameter.name);
+  match parameter.shape {
+    ParameterShape::Scalar => {
+      if !is_valid_scalar(value, parameter.scalar_type) {
+        issues.push(OperationIssue::new(
+          OperationIssueCode::InvalidParameterType,
+          location,
+          format!("expected {:?}", parameter.scalar_type),
+        ));
+      }
+    }
+    ParameterShape::List => {
+      let Some(values) = value.as_array() else {
+        issues.push(OperationIssue::new(
+          OperationIssueCode::InvalidParameterType,
+          location,
+          format!("expected list of {:?}", parameter.scalar_type),
+        ));
+        return;
+      };
+
+      for (index, value) in values.iter().enumerate() {
+        if !is_valid_scalar(value, parameter.scalar_type) {
+          issues.push(OperationIssue::new(
+            OperationIssueCode::InvalidParameterType,
+            format!("{location}[{index}]"),
+            format!("expected {:?}", parameter.scalar_type),
+          ));
+        }
+      }
+    }
+  }
+}
 
 fn is_valid_scalar(value: &Value, scalar_type: ScalarType) -> bool {
   match scalar_type {

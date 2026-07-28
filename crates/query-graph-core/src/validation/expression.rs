@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::{scalar::is_decimal_text, Expression, LiteralValue};
+use crate::{scalar::is_decimal_text, Expression, LiteralValue, ParameterShape};
 
 use super::{DefinitionIssue, DefinitionIssueCode};
 
@@ -11,7 +11,7 @@ struct ExpressionScope<'a> {
 
 pub(super) struct ExpressionContext<'a> {
   sources: &'a HashMap<String, HashSet<String>>,
-  parameters: &'a HashSet<String>,
+  parameters: &'a HashMap<String, ParameterShape>,
   source_scopes: &'a HashMap<String, HashSet<String>>,
   scope: Option<ExpressionScope<'a>>,
   allow_exists: bool,
@@ -20,7 +20,7 @@ pub(super) struct ExpressionContext<'a> {
 impl<'a> ExpressionContext<'a> {
   pub(super) fn unrestricted(
     sources: &'a HashMap<String, HashSet<String>>,
-    parameters: &'a HashSet<String>,
+    parameters: &'a HashMap<String, ParameterShape>,
     source_scopes: &'a HashMap<String, HashSet<String>>,
   ) -> Self {
     Self {
@@ -34,7 +34,7 @@ impl<'a> ExpressionContext<'a> {
 
   pub(super) fn constraint(
     sources: &'a HashMap<String, HashSet<String>>,
-    parameters: &'a HashSet<String>,
+    parameters: &'a HashMap<String, ParameterShape>,
     source_scopes: &'a HashMap<String, HashSet<String>>,
   ) -> Self {
     Self {
@@ -48,7 +48,7 @@ impl<'a> ExpressionContext<'a> {
 
   pub(super) fn scoped(
     sources: &'a HashMap<String, HashSet<String>>,
-    parameters: &'a HashSet<String>,
+    parameters: &'a HashMap<String, ParameterShape>,
     source_scopes: &'a HashMap<String, HashSet<String>>,
     allowed_sources: &'a HashSet<String>,
     scope_issue_code: DefinitionIssueCode,
@@ -90,13 +90,7 @@ pub(super) fn validate(
       validate_field(source, field, location, context, issues);
     }
     Expression::Parameter { name } => {
-      if !context.parameters.contains(name) {
-        issues.push(DefinitionIssue::new(
-          DefinitionIssueCode::UnknownParameter,
-          location,
-          format!("parameter {name:?} is not defined"),
-        ));
-      }
+      validate_parameter(name, ParameterShape::Scalar, location, context, issues);
     }
     Expression::Literal {
       value: LiteralValue::Decimal(value),
@@ -133,6 +127,19 @@ pub(super) fn validate(
         issues,
       );
       validate_children(values, &format!("{location}.values"), context, issues);
+    }
+    Expression::InParameter {
+      expression,
+      parameter,
+    } => {
+      validate_child(expression, location, "expression", context, issues);
+      validate_parameter(
+        parameter,
+        ParameterShape::List,
+        &format!("{location}.parameter"),
+        context,
+        issues,
+      );
     }
     Expression::And { expressions } | Expression::Or { expressions } => {
       validate_non_empty(
@@ -217,6 +224,35 @@ fn validate_exists(
       &predicate_context,
       issues,
     );
+  }
+}
+
+fn validate_parameter(
+  name: &str,
+  expected_shape: ParameterShape,
+  location: &str,
+  context: &ExpressionContext<'_>,
+  issues: &mut Vec<DefinitionIssue>,
+) {
+  let Some(actual_shape) = context.parameters.get(name) else {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::UnknownParameter,
+      location,
+      format!("parameter {name:?} is not defined"),
+    ));
+    return;
+  };
+
+  if *actual_shape != expected_shape {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::InvalidParameterShape,
+      location,
+      format!(
+        "parameter {name:?} has shape {}, expected {}",
+        actual_shape.as_str(),
+        expected_shape.as_str()
+      ),
+    ));
   }
 }
 
