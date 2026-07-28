@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CompiledGraph, DefinitionIssues, Expression};
 
-pub const GRAPH_DEFINITION_VERSION: u32 = 1;
+pub const GRAPH_DEFINITION_VERSION: u32 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GraphDefinition {
   pub schema_version: u32,
   pub name: String,
@@ -44,7 +44,7 @@ impl GraphDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceDefinition {
   pub key: String,
   pub fields: Vec<FieldDefinition>,
@@ -60,7 +60,7 @@ impl SourceDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct FieldDefinition {
   pub name: String,
   pub scalar_type: ScalarType,
@@ -124,14 +124,12 @@ impl ScalarType {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ParameterDefinition {
   pub name: String,
   pub scalar_type: ScalarType,
   #[serde(default)]
   pub required: bool,
-  #[serde(default)]
-  pub cardinality: ParameterCardinality,
 }
 
 impl ParameterDefinition {
@@ -140,7 +138,6 @@ impl ParameterDefinition {
       name: name.into(),
       scalar_type,
       required: true,
-      cardinality: ParameterCardinality::One,
     }
   }
 
@@ -149,30 +146,12 @@ impl ParameterDefinition {
       name: name.into(),
       scalar_type,
       required: false,
-      cardinality: ParameterCardinality::One,
-    }
-  }
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum ParameterCardinality {
-  #[default]
-  One,
-  Many,
-}
-
-impl ParameterCardinality {
-  pub const fn as_str(self) -> &'static str {
-    match self {
-      Self::One => "one",
-      Self::Many => "many",
     }
   }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RelationDefinition {
   pub name: String,
   pub from: String,
@@ -230,7 +209,7 @@ impl RelationCardinality {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConstraintDefinition {
   pub name: String,
   #[serde(default)]
@@ -263,7 +242,7 @@ impl ConstraintDefinition {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum ConstraintCondition {
   #[default]
   Always,
@@ -273,21 +252,17 @@ pub enum ConstraintCondition {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectionDefinition {
   #[serde(default)]
   pub fields: Vec<ProjectionFieldDefinition>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProjectionFieldDefinition {
   pub path: Vec<String>,
   pub expression: Expression,
-  #[serde(default)]
-  pub relations: Vec<String>,
-  #[serde(default = "default_true")]
-  pub selectable: bool,
   #[serde(default)]
   pub selected_by_default: bool,
 }
@@ -297,15 +272,8 @@ impl ProjectionFieldDefinition {
     Self {
       path,
       expression,
-      relations: Vec::new(),
-      selectable: true,
       selected_by_default: false,
     }
-  }
-
-  pub fn through(mut self, relations: impl IntoIterator<Item = impl Into<String>>) -> Self {
-    self.relations = relations.into_iter().map(Into::into).collect();
-    self
   }
 
   pub fn selected_by_default(mut self) -> Self {
@@ -315,7 +283,7 @@ impl ProjectionFieldDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OrderByDefinition {
   pub expression: Expression,
   pub direction: OrderDirection,

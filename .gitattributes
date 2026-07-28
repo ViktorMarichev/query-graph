@@ -2,12 +2,17 @@
 *        text=auto
 
 
-*.ts    text eol=lf merge=union
-*.tsx   text eol=lf merge=union
-*.rs    text eol=lf merge=union
-*.js    text eol=lf merge=union
-*.json  text eol=lf merge=union
-*.debug text eol=lf merge=union
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.rs    text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.debug text eol=lf
+
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+/.husky/* text eol=lf
 
 # Generated codes
 index.js                         linguist-detectable=false

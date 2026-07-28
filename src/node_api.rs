@@ -1,12 +1,29 @@
 use std::sync::Arc;
 
-use napi::{Error, Result, Status};
+use napi::{Env, Result};
 use napi_derive::napi;
-
-use crate::{
-  CompiledGraph, GraphDefinition, MappedQueryGraph, ParameterBinding, QueryOperation,
-  RelationalMapping, SqlColumn, SqlCompileError, SqlRelation, SqlStatement,
+use query_graph_core::{
+  CompiledGraph, GraphDefinition, MappedQueryGraph, OracleCompiler, OracleVersion,
+  ParameterBinding, QueryOperation, RelationalMapping, SqlColumn, SqlCompileError, SqlRelation,
+  SqlServerCompiler, SqlServerVersion, SqlStatement,
 };
+use serde::{de::DeserializeOwned, Deserialize};
+
+use crate::node_error;
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct SqlServerCompileOptions {
+  #[serde(default)]
+  version: SqlServerVersion,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct OracleCompileOptions {
+  #[serde(default)]
+  version: OracleVersion,
+}
 
 #[napi(object)]
 pub struct CompiledSqlStatement {
@@ -37,8 +54,6 @@ pub struct SqlBinding {
   pub parameter: String,
   #[napi(ts_type = "import('./definition.js').ScalarType")]
   pub scalar_type: String,
-  #[napi(ts_type = "import('./definition.js').ParameterCardinality")]
-  pub cardinality: String,
 }
 
 impl From<ParameterBinding> for SqlBinding {
@@ -47,7 +62,6 @@ impl From<ParameterBinding> for SqlBinding {
       name: binding.name,
       parameter: binding.parameter,
       scalar_type: binding.scalar_type.as_str().to_owned(),
-      cardinality: binding.cardinality.as_str().to_owned(),
     }
   }
 }
@@ -56,6 +70,9 @@ impl From<ParameterBinding> for SqlBinding {
 pub struct CompiledSqlColumn {
   pub name: String,
   pub path: String,
+  #[napi(ts_type = "import('./definition.js').ScalarType")]
+  pub scalar_type: String,
+  pub nullable: bool,
   pub relations: Vec<String>,
 }
 
@@ -64,6 +81,8 @@ impl From<SqlColumn> for CompiledSqlColumn {
     Self {
       name: column.name,
       path: column.path,
+      scalar_type: column.scalar_type.as_str().to_owned(),
+      nullable: column.nullable,
       relations: column.relations,
     }
   }
@@ -146,7 +165,6 @@ impl QueryGraph {
       .projection
       .fields
       .iter()
-      .filter(|field| field.selectable)
       .map(|field| field.path.join("."))
       .collect()
   }
@@ -154,21 +172,14 @@ impl QueryGraph {
   #[napi(ts_args_type = "mapping: import('./definition.js').RelationalMapping")]
   pub fn with_relational_mapping(
     &self,
+    env: Env,
     mapping: serde_json::Value,
   ) -> Result<RelationalQueryGraph> {
-    let mapping: RelationalMapping = serde_json::from_value(mapping).map_err(|error| {
-      Error::new(
-        Status::InvalidArg,
-        format!("Invalid relational mapping: {error}"),
-      )
-    })?;
+    let mapping: RelationalMapping =
+      serde_json::from_value(mapping).map_err(|error| node_error::mapping_wire(&env, error))?;
 
-    let graph = MappedQueryGraph::new(Arc::clone(&self.graph), mapping).map_err(|issues| {
-      Error::new(
-        Status::InvalidArg,
-        format!("Invalid relational mapping:\n{issues}"),
-      )
-    })?;
+    let graph = MappedQueryGraph::new(Arc::clone(&self.graph), mapping)
+      .map_err(|issues| node_error::mapping(&env, &issues))?;
 
     Ok(RelationalQueryGraph { graph })
   }
@@ -186,55 +197,69 @@ impl RelationalQueryGraph {
     self.graph.graph().definition().name.clone()
   }
 
-  #[napi(ts_args_type = "operation: import('./definition.js').QueryOperation")]
-  pub fn compile_sql_server(&self, operation: serde_json::Value) -> Result<CompiledSqlStatement> {
-    compile_operation(operation, |operation| {
-      self.graph.compile_sql_server(operation)
+  #[napi(
+    ts_args_type = "operation: import('./definition.js').QueryOperation, options?: import('./definition.js').SqlServerCompileOptions"
+  )]
+  pub fn compile_sql_server(
+    &self,
+    env: Env,
+    operation: serde_json::Value,
+    options: Option<serde_json::Value>,
+  ) -> Result<CompiledSqlStatement> {
+    let options: SqlServerCompileOptions = compile_options(&env, options)?;
+    let compiler = SqlServerCompiler::new(options.version);
+    compile_operation(&env, operation, |operation| {
+      self.graph.compile_sql_server_with(operation, &compiler)
     })
   }
 
-  #[napi(ts_args_type = "operation: import('./definition.js').QueryOperation")]
-  pub fn compile_oracle(&self, operation: serde_json::Value) -> Result<CompiledSqlStatement> {
-    compile_operation(operation, |operation| self.graph.compile_oracle(operation))
+  #[napi(
+    ts_args_type = "operation: import('./definition.js').QueryOperation, options?: import('./definition.js').OracleCompileOptions"
+  )]
+  pub fn compile_oracle(
+    &self,
+    env: Env,
+    operation: serde_json::Value,
+    options: Option<serde_json::Value>,
+  ) -> Result<CompiledSqlStatement> {
+    let options: OracleCompileOptions = compile_options(&env, options)?;
+    let compiler = OracleCompiler::new(options.version);
+    compile_operation(&env, operation, |operation| {
+      self.graph.compile_oracle_with(operation, &compiler)
+    })
   }
+}
+
+fn compile_options<T: DeserializeOwned + Default>(
+  env: &Env,
+  options: Option<serde_json::Value>,
+) -> Result<T> {
+  options.map_or_else(
+    || Ok(T::default()),
+    |options| {
+      serde_json::from_value(options).map_err(|error| node_error::compiler_options_wire(env, error))
+    },
+  )
 }
 
 fn compile_operation(
+  env: &Env,
   operation: serde_json::Value,
   compile: impl FnOnce(&QueryOperation) -> std::result::Result<SqlStatement, SqlCompileError>,
 ) -> Result<CompiledSqlStatement> {
-  let operation: QueryOperation = serde_json::from_value(operation).map_err(|error| {
-    Error::new(
-      Status::InvalidArg,
-      format!("Invalid query operation: {error}"),
-    )
-  })?;
-
-  compile(&operation)
-    .map(CompiledSqlStatement::from)
-    .map_err(|error| {
-      Error::new(
-        Status::InvalidArg,
-        format!("Unable to compile SQL: {error}"),
-      )
-    })
+  let operation: QueryOperation =
+    serde_json::from_value(operation).map_err(|error| node_error::operation_wire(env, error))?;
+  let statement = compile(&operation).map_err(|error| node_error::sql_compile(env, &error))?;
+  Ok(statement.into())
 }
 
 #[napi(ts_args_type = "definition: import('./definition.js').GraphDefinitionInput")]
-pub fn register_definition(definition: serde_json::Value) -> Result<QueryGraph> {
-  let definition: GraphDefinition = serde_json::from_value(definition).map_err(|error| {
-    Error::new(
-      Status::InvalidArg,
-      format!("Invalid query graph definition: {error}"),
-    )
-  })?;
-
-  let graph = definition.compile().map_err(|issues| {
-    Error::new(
-      Status::InvalidArg,
-      format!("Invalid query graph definition:\n{issues}"),
-    )
-  })?;
+pub fn register_definition(env: Env, definition: serde_json::Value) -> Result<QueryGraph> {
+  let definition: GraphDefinition =
+    serde_json::from_value(definition).map_err(|error| node_error::definition_wire(&env, error))?;
+  let graph = definition
+    .compile()
+    .map_err(|issues| node_error::definition(&env, &issues))?;
 
   Ok(QueryGraph {
     graph: Arc::new(graph),

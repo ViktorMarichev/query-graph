@@ -1,9 +1,15 @@
 use std::collections::HashMap;
 
 use crate::{
-  validation, DefinitionIssues, FieldDefinition, GraphDefinition, ProjectionFieldDefinition,
-  ProjectionPath, RelationDefinition,
+  type_validation, validation, DefinitionIssues, ExpressionType, FieldDefinition, GraphDefinition,
+  ProjectionFieldDefinition, ProjectionPath, RelationDefinition,
 };
+
+#[derive(Debug)]
+struct CompiledProjection {
+  expression_type: ExpressionType,
+  relation_path: Box<[usize]>,
+}
 
 #[derive(Debug)]
 pub struct CompiledGraph {
@@ -14,13 +20,16 @@ pub struct CompiledGraph {
   parameter_index: HashMap<String, usize>,
   relation_index: HashMap<String, usize>,
   projection_index: HashMap<ProjectionPath, usize>,
+  projections: Vec<CompiledProjection>,
   outgoing_relations: Vec<Vec<usize>>,
   relation_paths: Vec<Vec<usize>>,
+  effective_relation_required: Vec<bool>,
 }
 
 impl CompiledGraph {
   pub(crate) fn try_from_definition(definition: GraphDefinition) -> Result<Self, DefinitionIssues> {
     validation::validate(&definition)?;
+    let projection_types = type_validation::analyze(&definition)?;
 
     let source_index: HashMap<_, _> = definition
       .sources
@@ -76,6 +85,25 @@ impl CompiledGraph {
 
     let relation_paths =
       build_relation_paths(&definition, &source_index, root_index, &incoming_relations);
+    let projection_relation_paths =
+      validation::infer_projection_relation_paths(&definition, &source_index, &relation_paths)?;
+    let projections = projection_types
+      .into_iter()
+      .zip(projection_relation_paths)
+      .map(|(expression_type, relation_path)| CompiledProjection {
+        expression_type,
+        relation_path: relation_path.into_boxed_slice(),
+      })
+      .collect();
+    let effective_relation_required = definition
+      .relations
+      .iter()
+      .map(|relation| {
+        relation_paths[source_index[&relation.to]]
+          .iter()
+          .all(|index| definition.relations[*index].required)
+      })
+      .collect();
 
     Ok(Self {
       definition,
@@ -85,8 +113,10 @@ impl CompiledGraph {
       parameter_index,
       relation_index,
       projection_index,
+      projections,
       outgoing_relations,
       relation_paths,
+      effective_relation_required,
     })
   }
 
@@ -141,8 +171,24 @@ impl CompiledGraph {
       .map(|index| &self.definition.projection.fields[*index])
   }
 
+  pub fn projection_type(&self, path: &str) -> Option<ExpressionType> {
+    let path = ProjectionPath::parse(path);
+    self
+      .projection_index
+      .get(&path)
+      .map(|index| self.projections[*index].expression_type)
+  }
+
   pub(crate) fn projection_index(&self, path: &ProjectionPath) -> Option<usize> {
     self.projection_index.get(path).copied()
+  }
+
+  pub(crate) fn projection_type_at(&self, projection_index: usize) -> ExpressionType {
+    self.projections[projection_index].expression_type
+  }
+
+  pub(crate) fn projection_relation_path_indices(&self, projection_index: usize) -> &[usize] {
+    &self.projections[projection_index].relation_path
   }
 
   pub fn outgoing_relations(
@@ -155,6 +201,10 @@ impl CompiledGraph {
         .iter()
         .map(|index| &self.definition.relations[*index]),
     )
+  }
+
+  pub(crate) fn relation_is_effectively_required(&self, relation_index: usize) -> bool {
+    self.effective_relation_required[relation_index]
   }
 
   pub(crate) fn relation_path_indices(&self, source: &str) -> Option<&[usize]> {

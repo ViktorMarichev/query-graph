@@ -15,8 +15,7 @@
       "default": "./definition.js"
     }
   },
-  "license": "UNLICENSED",
-  "browser": "browser.js",
+  "license": "MIT",
   "keywords": [
     "query-graph",
     "sql",
@@ -29,8 +28,7 @@
     "definition.d.ts",
     "definition.js",
     "index.d.ts",
-    "index.js",
-    "browser.js"
+    "index.js"
   ],
   "napi": {
     "binaryName": "query-graph",
@@ -59,6 +57,7 @@
     "format:rs": "cargo fmt",
     "lint": "oxlint .",
     "prepublishOnly": "napi prepublish -t npm",
+    "typecheck": "tsc -p __test__/tsconfig.json --noEmit",
     "test": "ava",
     "preversion": "napi build --platform && git add .",
     "version": "napi version",

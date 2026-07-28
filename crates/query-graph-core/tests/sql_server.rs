@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use query_graph::{
+use query_graph_core::{
   ConstraintDefinition, Expression, FieldDefinition, GraphDefinition, LiteralValue,
-  MappedQueryGraph, MappingIssueCode, OrderByDefinition, ParameterCardinality, ParameterDefinition,
-  PlanError, ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationCardinality,
-  RelationDefinition, RelationalMapping, ScalarType, SourceDefinition, SourceMapping,
-  SqlCompileError, TableName,
+  MappedQueryGraph, MappingIssueCode, OrderByDefinition, ParameterDefinition, PlanError,
+  ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationCardinality,
+  RelationDefinition, RelationalMapping, ScalarType, SemanticFunction, SourceDefinition,
+  SourceMapping, SqlCompileError, SqlServerCompiler, SqlServerVersion, TableName,
 };
 use serde_json::json;
 
@@ -81,19 +81,16 @@ fn definition() -> GraphDefinition {
         vec!["value".into(), "id".into()],
         Expression::field("value", "id"),
       )
-      .through(["value"])
       .selected_by_default(),
       ProjectionFieldDefinition::new(
         vec!["value".into(), "value".into()],
         Expression::field("value", "value"),
       )
-      .through(["value"])
       .selected_by_default(),
       ProjectionFieldDefinition::new(
         vec!["value".into(), "detail".into(), "name".into()],
         Expression::field("detail", "name"),
-      )
-      .through(["value", "detail"]),
+      ),
     ],
   };
   definition.default_order_by = vec![
@@ -158,6 +155,8 @@ fn compiles_default_projection_to_sql_server() {
   );
   assert_eq!(statement.columns[0].name, "c0");
   assert_eq!(statement.columns[0].path, "value.id");
+  assert_eq!(statement.columns[0].scalar_type, ScalarType::Int64);
+  assert!(!statement.columns[0].nullable);
   assert_eq!(statement.columns[0].relations, ["value"]);
   assert_eq!(statement.columns[1].name, "c1");
   assert_eq!(statement.relations.len(), 1);
@@ -169,7 +168,71 @@ fn compiles_default_projection_to_sql_server() {
   assert_eq!(statement.bindings[0].name, "p0");
   assert_eq!(statement.bindings[0].parameter, "idOwner");
   assert_eq!(statement.bindings[0].scalar_type, ScalarType::Int64);
-  assert_eq!(statement.bindings[0].cardinality, ParameterCardinality::One);
+}
+
+#[test]
+fn enforces_sql_server_version_capabilities() {
+  let graph = relational_graph();
+  let compiler = SqlServerCompiler::new(SqlServerVersion::V2008);
+  let operation = QueryOperation {
+    parameters: HashMap::from([("idOwner".into(), json!(42))]),
+    ..QueryOperation::default()
+  };
+
+  let statement = graph
+    .compile_sql_server_with(&operation, &compiler)
+    .unwrap();
+  assert!(!statement.sql.contains("OFFSET"));
+
+  let paginated = QueryOperation {
+    offset: Some(1),
+    limit: Some(10),
+    ..operation
+  };
+  let error = graph
+    .compile_sql_server_with(&paginated, &compiler)
+    .unwrap_err();
+
+  assert!(matches!(
+    error,
+    SqlCompileError::UnsupportedDialectFeature {
+      dialect: "SQL Server",
+      version: "2008",
+      feature: "OFFSET/FETCH pagination",
+    }
+  ));
+}
+
+#[test]
+fn renders_concat_for_sql_server_2008_without_the_concat_function() {
+  let mut definition = definition();
+  definition.projection = ProjectionDefinition {
+    fields: vec![ProjectionFieldDefinition::new(
+      vec!["value".into(), "label".into()],
+      Expression::Function {
+        name: SemanticFunction::Concat,
+        arguments: vec![
+          Expression::field("value", "value"),
+          Expression::literal(LiteralValue::String(" suffix".into())),
+        ],
+      },
+    )
+    .selected_by_default()],
+  };
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+  let operation = QueryOperation {
+    parameters: HashMap::from([("idOwner".into(), json!(42))]),
+    ..QueryOperation::default()
+  };
+
+  let statement = graph
+    .compile_sql_server_with(&operation, &SqlServerCompiler::new(SqlServerVersion::V2008))
+    .unwrap();
+
+  assert!(statement
+    .sql
+    .contains("(COALESCE([t1].[value], N'') + COALESCE(N' suffix', N'')) AS [c0]"));
+  assert!(!statement.sql.contains("CONCAT("));
 }
 
 #[test]
@@ -184,6 +247,64 @@ fn plans_optional_join_for_an_explicit_projection() {
 
   assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
   assert!(statement.sql.contains("[t2].[name] AS [c0]"));
+  assert_eq!(statement.columns[0].relations, ["value", "detail"]);
+  assert_eq!(statement.columns[0].scalar_type, ScalarType::String);
+  assert!(statement.columns[0].nullable);
+}
+
+#[test]
+fn keeps_required_descendants_optional_below_an_optional_relation() {
+  let mut definition = definition();
+  definition.relations[0].required = false;
+  definition.relations[1].required = true;
+  definition.projection.fields[0] = ProjectionFieldDefinition::new(
+    vec!["value".into(), "detail".into(), "name".into()],
+    Expression::field("detail", "name"),
+  )
+  .selected_by_default();
+  definition.projection.fields.truncate(1);
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+
+  let statement = graph
+    .compile_sql_server(&QueryOperation {
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      ..QueryOperation::default()
+    })
+    .unwrap();
+
+  assert!(statement
+    .sql
+    .contains("LEFT JOIN [ControllerObjectValue] AS [t1]"));
+  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
+  assert!(statement.columns[0].nullable);
+  assert!(statement
+    .relations
+    .iter()
+    .all(|relation| !relation.required));
+}
+
+#[test]
+fn infers_the_deepest_path_for_a_multi_source_projection() {
+  let mut definition = definition();
+  definition.projection.fields = vec![ProjectionFieldDefinition::new(
+    vec!["matches".into()],
+    Expression::eq(
+      Expression::field("link", "idOwner"),
+      Expression::field("detail", "id"),
+    ),
+  )
+  .selected_by_default()];
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+
+  let statement = graph
+    .compile_sql_server(&QueryOperation {
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      ..QueryOperation::default()
+    })
+    .unwrap();
+
+  assert_eq!(statement.columns[0].relations, ["value", "detail"]);
+  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
 }
 
 #[test]
@@ -203,6 +324,70 @@ fn rejects_an_unknown_selected_field() {
     SqlCompileError::Plan(PlanError::Operation(_))
   ));
   assert!(error.to_string().contains("UnknownSelection"));
+}
+
+#[test]
+fn requires_optional_parameters_referenced_by_the_active_plan() {
+  let mut definition = definition();
+  definition
+    .parameters
+    .push(ParameterDefinition::optional("label", ScalarType::String));
+  definition.projection.fields.push(
+    ProjectionFieldDefinition::new(vec!["label".into()], Expression::parameter("label"))
+      .selected_by_default(),
+  );
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+
+  let error = graph
+    .compile_sql_server(&QueryOperation {
+      select: Some(vec!["label".into()]),
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      ..QueryOperation::default()
+    })
+    .unwrap_err();
+
+  assert!(matches!(
+    error,
+    SqlCompileError::Plan(PlanError::Operation(ref issues))
+      if issues.as_slice().iter().any(|issue|
+        issue.code == query_graph_core::OperationIssueCode::MissingParameter
+          && issue.location == "parameters.label"
+      )
+  ));
+
+  graph
+    .compile_sql_server(&QueryOperation {
+      select: Some(vec!["value.id".into()]),
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      ..QueryOperation::default()
+    })
+    .unwrap();
+}
+
+#[test]
+fn requires_optional_parameters_referenced_by_an_active_constraint() {
+  let mut definition = definition();
+  definition.parameters.push(ParameterDefinition::optional(
+    "filterOwner",
+    ScalarType::Int64,
+  ));
+  definition.constraints.push(ConstraintDefinition::always(
+    "optionalOwnerFilter",
+    Expression::eq(
+      Expression::field("link", "idOwner"),
+      Expression::parameter("filterOwner"),
+    ),
+  ));
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+
+  let error = graph
+    .compile_sql_server(&QueryOperation {
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      ..QueryOperation::default()
+    })
+    .unwrap_err();
+
+  assert!(error.to_string().contains("parameters.filterOwner"));
 }
 
 #[test]
@@ -254,7 +439,6 @@ fn renders_sql_server_string_literals_as_unicode() {
   let mut definition = definition();
   definition.projection.fields[0].expression =
     Expression::literal(LiteralValue::String("O'Reilly".into()));
-  definition.projection.fields[0].relations.clear();
   let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
 
   let statement = graph
@@ -311,7 +495,7 @@ fn reports_many_cardinality_without_pagination() {
 #[test]
 fn rejects_pagination_through_a_many_relation() {
   let mut definition = definition();
-  definition.relations[0].cardinality = query_graph::RelationCardinality::Many;
+  definition.relations[0].cardinality = query_graph_core::RelationCardinality::Many;
   let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
 
   let error = graph

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::CompiledGraph;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RelationalMapping {
   pub sources: HashMap<String, SourceMapping>,
 }
@@ -69,7 +69,7 @@ impl RelationalMapping {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceMapping {
   pub table: TableName,
   #[serde(default)]
@@ -86,7 +86,7 @@ impl SourceMapping {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum TableName {
   Name(String),
   Qualified {

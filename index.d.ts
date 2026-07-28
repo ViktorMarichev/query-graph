@@ -15,13 +15,21 @@ export declare class QueryGraph {
 
 export declare class RelationalQueryGraph {
   get name(): string
-  compileSqlServer(operation: import('./definition.js').QueryOperation): CompiledSqlStatement
-  compileOracle(operation: import('./definition.js').QueryOperation): CompiledSqlStatement
+  compileSqlServer(
+    operation: import('./definition.js').QueryOperation,
+    options?: import('./definition.js').SqlServerCompileOptions,
+  ): CompiledSqlStatement
+  compileOracle(
+    operation: import('./definition.js').QueryOperation,
+    options?: import('./definition.js').OracleCompileOptions,
+  ): CompiledSqlStatement
 }
 
 export interface CompiledSqlColumn {
   name: string
   path: string
+  scalarType: import('./definition.js').ScalarType
+  nullable: boolean
   relations: Array<string>
 }
 
@@ -46,5 +54,4 @@ export interface SqlBinding {
   name: string
   parameter: string
   scalarType: import('./definition.js').ScalarType
-  cardinality: import('./definition.js').ParameterCardinality
 }

@@ -1,6 +1,6 @@
-use query_graph::{
+use query_graph_core::{
   DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition, ProjectionDefinition,
-  ProjectionFieldDefinition, RelationDefinition, ScalarType, SourceDefinition,
+  ProjectionFieldDefinition, RelationDefinition, ScalarType, SemanticFunction, SourceDefinition,
 };
 
 fn source(key: &str) -> SourceDefinition {
@@ -15,6 +15,21 @@ fn issue_codes(definition: GraphDefinition) -> Vec<DefinitionIssueCode> {
     .into_iter()
     .map(|issue| issue.code)
     .collect()
+}
+
+#[test]
+fn rejects_the_previous_wire_definition_version() {
+  let mut definition = GraphDefinition::new("oldWireVersion", "root");
+  definition.schema_version = 2;
+  definition.sources = vec![source("root")];
+  definition.projection = ProjectionDefinition {
+    fields: vec![ProjectionFieldDefinition::new(
+      vec!["id".into()],
+      Expression::field("root", "id"),
+    )],
+  };
+
+  assert!(issue_codes(definition).contains(&DefinitionIssueCode::UnsupportedVersion));
 }
 
 #[test]
@@ -49,23 +64,6 @@ fn rejects_overlapping_projection_paths() {
 }
 
 #[test]
-fn rejects_non_selectable_default_projection() {
-  let mut definition = GraphDefinition::new("invalidDefaultProjection", "root");
-  definition.sources = vec![source("root")];
-  definition.projection = ProjectionDefinition {
-    fields: vec![ProjectionFieldDefinition {
-      path: vec!["id".into()],
-      expression: Expression::field("root", "id"),
-      relations: Vec::new(),
-      selectable: false,
-      selected_by_default: true,
-    }],
-  };
-
-  assert!(issue_codes(definition).contains(&DefinitionIssueCode::NonSelectableDefaultProjection));
-}
-
-#[test]
 fn rejects_selectable_projection_of_hidden_field() {
   let mut definition = GraphDefinition::new("hiddenField", "root");
   definition.sources = vec![SourceDefinition::new(
@@ -76,7 +74,7 @@ fn rejects_selectable_projection_of_hidden_field() {
     fields: vec![ProjectionFieldDefinition::new(
       vec!["secret".into()],
       Expression::Function {
-        name: "lower".into(),
+        name: SemanticFunction::Lower,
         arguments: vec![Expression::field("root", "secret")],
       },
     )],

@@ -61,16 +61,12 @@ pub(crate) fn build(
 
   let mut required_relations = HashSet::new();
   for projection_index in &operation_plan.projection_indices {
-    let projection = &graph.definition().projection.fields[*projection_index];
-    for relation in &projection.relations {
-      let relation_index =
-        graph
-          .relation_index(relation)
-          .ok_or_else(|| PlanError::InvalidCompiledGraph {
-            message: format!("projection refers to missing relation {relation:?}"),
-          })?;
-      required_relations.insert(relation_index);
-    }
+    required_relations.extend(
+      graph
+        .projection_relation_path_indices(*projection_index)
+        .iter()
+        .copied(),
+    );
   }
 
   for constraint_index in &constraint_indices {
@@ -86,6 +82,29 @@ pub(crate) fn build(
   }
 
   let relation_indices = order_relations(graph, required_relations)?;
+  let mut required_parameters = HashSet::new();
+  for projection_index in &operation_plan.projection_indices {
+    add_expression_parameters(
+      &graph.definition().projection.fields[*projection_index].expression,
+      &mut required_parameters,
+    );
+  }
+  for constraint_index in &constraint_indices {
+    add_expression_parameters(
+      &graph.definition().constraints[*constraint_index].predicate,
+      &mut required_parameters,
+    );
+  }
+  for order in &graph.definition().default_order_by {
+    add_expression_parameters(&order.expression, &mut required_parameters);
+  }
+  for relation_index in &relation_indices {
+    add_expression_parameters(
+      &graph.definition().relations[*relation_index].on,
+      &mut required_parameters,
+    );
+  }
+  operation.validate_plan_parameters(required_parameters)?;
 
   if operation.offset.is_some() || operation.limit.is_some() {
     if let Some(relation) = relation_indices
@@ -159,6 +178,12 @@ fn add_expression_relations(
   }
 
   Ok(())
+}
+
+fn add_expression_parameters<'a>(expression: &'a Expression, parameters: &mut HashSet<&'a str>) {
+  expression.for_each_parameter(&mut |parameter| {
+    parameters.insert(parameter);
+  });
 }
 
 fn order_relations(

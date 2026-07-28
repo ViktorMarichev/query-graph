@@ -2,17 +2,21 @@ import test from 'ava'
 
 import {
   asc,
+  coalesce,
+  concat,
   constraint,
   defineGraph,
   defineGraphModule,
   eq,
   isNull,
+  lower,
   nullable,
   param,
   project,
   requiredParameter,
   relation,
   source,
+  upper,
 } from '../definition.js'
 import { registerDefinition } from '../index.js'
 
@@ -41,7 +45,8 @@ test('builds the versioned wire definition without author-written discriminators
     projection: [project('id', root.field('id'), { default: true })],
   })
 
-  t.is(definition.schemaVersion, 1)
+  t.is(definition.schemaVersion, 3)
+  t.false('relations' in definition.projection.fields[0])
   t.deepEqual(definition.constraints[0].predicate, {
     kind: 'eq',
     left: { kind: 'field', source: 'root', field: 'id' },
@@ -51,6 +56,27 @@ test('builds the versioned wire definition without author-written discriminators
   t.false('field' in definition.sources[0])
   const error = t.throws(() => root.field('missing' as never))
   t.is(error.message, 'Source root does not define field missing')
+})
+
+test('builds the supported semantic function expressions', (t) => {
+  const root = source('root', {
+    name: nullable('string'),
+  })
+  const expressions = [
+    lower(root.field('name')),
+    upper(root.field('name')),
+    coalesce(root.field('name'), 'Unknown'),
+    concat(root.field('name'), ' suffix'),
+  ]
+
+  t.deepEqual(
+    expressions.map(({ name }) => name),
+    ['lower', 'upper', 'coalesce', 'concat'],
+  )
+  t.deepEqual(expressions[2].arguments[1], {
+    kind: 'literal',
+    value: { kind: 'string', value: 'Unknown' },
+  })
 })
 
 test('composes graph modules into a flat wire definition', (t) => {
@@ -65,7 +91,7 @@ test('composes graph modules into a flat wire definition', (t) => {
   const id = requiredParameter('id', 'int64')
   const idProjection = project('id', root.field('id'), { default: true })
   const childRelation = relation('child', root, child, eq(root.field('id'), child.field('idRoot')))
-  const childProjection = project('child.id', child.field('id'), { through: [childRelation] })
+  const childProjection = project('child.id', child.field('id'))
   const idOrder = asc(root.field('id'))
 
   const rootModule = defineGraphModule({
@@ -177,7 +203,7 @@ test('passes a DSL definition to Rust without an intermediate compiler', (t) => 
     })
 
   t.regex(statement.sql, /\[t0\]\.\[id\] AS \[c0\]/)
-  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'id', scalarType: 'int64', cardinality: 'one' }])
-  t.deepEqual(statement.columns, [{ name: 'c0', path: 'id', relations: [] }])
+  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'id', scalarType: 'int64' }])
+  t.deepEqual(statement.columns, [{ name: 'c0', path: 'id', scalarType: 'int64', nullable: false, relations: [] }])
   t.deepEqual(statement.relations, [])
 })

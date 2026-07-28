@@ -1,6 +1,6 @@
 'use strict'
 
-const GRAPH_DEFINITION_VERSION = 1
+const GRAPH_DEFINITION_VERSION = 3
 const SCALAR_TYPES = new Set([
   'boolean',
   'int32',
@@ -73,12 +73,12 @@ function field(sourceReference, name) {
   }
 }
 
-function requiredParameter(name, scalarType, options = {}) {
-  return parameterDefinition(name, scalarType, true, options)
+function requiredParameter(name, scalarType) {
+  return parameterDefinition(name, scalarType, true)
 }
 
-function optionalParameter(name, scalarType, options = {}) {
-  return parameterDefinition(name, scalarType, false, options)
+function optionalParameter(name, scalarType) {
+  return parameterDefinition(name, scalarType, false)
 }
 
 function param(parameterReference) {
@@ -194,6 +194,22 @@ function call(name, ...arguments_) {
   }
 }
 
+function lower(expression) {
+  return call('lower', expression)
+}
+
+function upper(expression) {
+  return call('upper', expression)
+}
+
+function coalesce(first, second, ...rest) {
+  return call('coalesce', first, second, ...rest)
+}
+
+function concat(first, ...rest) {
+  return call('concat', first, ...rest)
+}
+
 function relation(name, from, to, on, options = {}) {
   const definition = {
     name,
@@ -228,12 +244,6 @@ function project(path, expression, options = {}) {
   const definition = {
     path: typeof path === 'string' ? path.split('.') : [...path],
     expression: asExpression(expression),
-  }
-  if (options.through !== undefined) {
-    definition.relations = options.through.map((item) => referenceName(item, 'relation'))
-  }
-  if (options.selectable === false) {
-    definition.selectable = false
   }
   if (options.default === true) {
     definition.selectedByDefault = true
@@ -378,14 +388,11 @@ function normalizeFieldSpec(specification) {
   throw new TypeError('Field specification must contain a scalar type')
 }
 
-function parameterDefinition(name, scalarType, required, options) {
+function parameterDefinition(name, scalarType, required) {
   assertScalarType(scalarType)
   const definition = { name, scalarType }
   if (required) {
     definition.required = true
-  }
-  if (options.cardinality === 'many') {
-    definition.cardinality = 'many'
   }
   return definition
 }
@@ -497,7 +504,10 @@ exports.or = or
 exports.not = not
 exports.isNull = isNull
 exports.isNotNull = isNotNull
-exports.call = call
+exports.lower = lower
+exports.upper = upper
+exports.coalesce = coalesce
+exports.concat = concat
 exports.relation = relation
 exports.constraint = constraint
 exports.project = project

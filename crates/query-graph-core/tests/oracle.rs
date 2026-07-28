@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use query_graph::{
+use query_graph_core::{
   ConstraintDefinition, Expression, FieldDefinition, GraphDefinition, LiteralValue,
-  MappedQueryGraph, NullsOrder, OrderByDefinition, ParameterDefinition, ProjectionDefinition,
-  ProjectionFieldDefinition, QueryOperation, RelationDefinition, RelationalMapping, ScalarType,
-  SourceDefinition, SourceMapping, SqlCompileError, TableName,
+  MappedQueryGraph, NullsOrder, OracleCompiler, OracleVersion, OrderByDefinition,
+  ParameterDefinition, ProjectionDefinition, ProjectionFieldDefinition, QueryOperation,
+  RelationDefinition, RelationalMapping, ScalarType, SemanticFunction, SourceDefinition,
+  SourceMapping, SqlCompileError, TableName,
 };
 use serde_json::json;
 
@@ -58,19 +59,18 @@ fn definition() -> GraphDefinition {
     fields: vec![ProjectionFieldDefinition::new(
       vec!["value".into(), "label".into()],
       Expression::Function {
-        name: "concat".into(),
+        name: SemanticFunction::Concat,
         arguments: vec![
           Expression::field("value", "value"),
           Expression::literal(LiteralValue::String(" suffix".into())),
         ],
       },
     )
-    .through(["value"])
     .selected_by_default()],
   };
   definition.default_order_by = vec![OrderByDefinition {
     expression: Expression::field("link", "order"),
-    direction: query_graph::OrderDirection::Asc,
+    direction: query_graph_core::OrderDirection::Asc,
     nulls: Some(NullsOrder::Last),
   }];
   definition
@@ -138,9 +138,42 @@ fn compiles_the_common_query_plan_to_oracle() {
   );
   assert_eq!(statement.columns[0].name, "c0");
   assert_eq!(statement.columns[0].path, "value.label");
+  assert_eq!(statement.columns[0].scalar_type, ScalarType::String);
+  assert!(!statement.columns[0].nullable);
   assert_eq!(statement.columns[0].relations, ["value"]);
   assert_eq!(statement.bindings[0].name, "p0");
   assert_eq!(statement.bindings[0].parameter, "idOwner");
+}
+
+#[test]
+fn enforces_oracle_version_capabilities() {
+  let graph = relational_graph();
+  let compiler = OracleCompiler::new(OracleVersion::V11g);
+  let operation = QueryOperation {
+    parameters: HashMap::from([("idOwner".into(), json!(42))]),
+    ..QueryOperation::default()
+  };
+
+  let statement = graph.compile_oracle_with(&operation, &compiler).unwrap();
+  assert!(!statement.sql.contains("OFFSET"));
+
+  let paginated = QueryOperation {
+    offset: Some(1),
+    limit: Some(10),
+    ..operation
+  };
+  let error = graph
+    .compile_oracle_with(&paginated, &compiler)
+    .unwrap_err();
+
+  assert!(matches!(
+    error,
+    SqlCompileError::UnsupportedDialectFeature {
+      dialect: "Oracle",
+      version: "11g",
+      feature: "OFFSET/FETCH pagination",
+    }
+  ));
 }
 
 #[test]

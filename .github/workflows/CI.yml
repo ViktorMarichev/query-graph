@@ -39,10 +39,16 @@ jobs:
         run: yarn install
       - name: Oxlint
         run: yarn lint
+      - name: TypeScript
+        run: yarn typecheck
+      - name: Prettier
+        run: yarn prettier . --check
       - name: Cargo fmt
-        run: cargo fmt -- --check
+        run: cargo fmt --all -- --check
+      - name: Cargo test
+        run: cargo test --workspace --all-targets
       - name: Clippy
-        run: cargo clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
   build:
     strategy:
       fail-fast: false
@@ -60,7 +66,7 @@ jobs:
           - host: macos-latest
             target: aarch64-apple-darwin
             build: yarn build --target aarch64-apple-darwin
-    name: stable - ${{ matrix.settings.target }} - node@22
+    name: stable - ${{ matrix.settings.target }} - node@24
     runs-on: ${{ matrix.settings.host }}
     steps:
       - uses: actions/checkout@v6
@@ -223,6 +229,7 @@ jobs:
   publish:
     name: Publish
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
       id-token: write

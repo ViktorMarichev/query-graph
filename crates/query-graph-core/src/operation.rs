@@ -5,12 +5,10 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-  scalar::is_decimal_text, CompiledGraph, ParameterCardinality, ProjectionPath, ScalarType,
-};
+use crate::{scalar::is_decimal_text, CompiledGraph, ProjectionPath, ScalarType};
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct QueryOperation {
   #[serde(default)]
   pub select: Option<Vec<String>>,
@@ -38,7 +36,7 @@ impl QueryOperation {
         .projection
         .fields
         .iter()
-        .filter(|field| field.selectable && field.selected_by_default)
+        .filter(|field| field.selected_by_default)
         .map(|field| field.path.join("."))
         .collect(),
     };
@@ -72,16 +70,6 @@ impl QueryOperation {
         continue;
       };
 
-      let field = &graph.definition().projection.fields[projection_index];
-      if !field.selectable {
-        issues.push(OperationIssue::new(
-          OperationIssueCode::NonSelectableField,
-          format!("select[{index}]"),
-          format!("projection field {path:?} cannot be selected"),
-        ));
-        continue;
-      }
-
       projection_indices.push(projection_index);
     }
 
@@ -98,14 +86,11 @@ impl QueryOperation {
     for parameter in &graph.definition().parameters {
       match self.parameters.get(&parameter.name) {
         Some(value) => {
-          if !is_valid_parameter_value(value, parameter.scalar_type, parameter.cardinality) {
+          if !is_valid_scalar(value, parameter.scalar_type) {
             issues.push(OperationIssue::new(
               OperationIssueCode::InvalidParameterType,
               format!("parameters.{}", parameter.name),
-              format!(
-                "expected {:?} with {:?} cardinality",
-                parameter.scalar_type, parameter.cardinality
-              ),
+              format!("expected {:?}", parameter.scalar_type),
             ));
           }
         }
@@ -133,6 +118,35 @@ impl QueryOperation {
     } else {
       Err(OperationIssues(issues))
     }
+  }
+
+  pub(crate) fn validate_plan_parameters<'a>(
+    &self,
+    parameters: impl IntoIterator<Item = &'a str>,
+  ) -> Result<(), OperationIssues> {
+    let mut missing: Vec<_> = parameters
+      .into_iter()
+      .filter(|parameter| !self.parameters.contains_key(*parameter))
+      .collect();
+    missing.sort_unstable();
+    missing.dedup();
+
+    if missing.is_empty() {
+      return Ok(());
+    }
+
+    Err(OperationIssues(
+      missing
+        .into_iter()
+        .map(|parameter| {
+          OperationIssue::new(
+            OperationIssueCode::MissingParameter,
+            format!("parameters.{parameter}"),
+            format!("parameter {parameter:?} is required by the selected query plan"),
+          )
+        })
+        .collect(),
+    ))
   }
 }
 
@@ -168,7 +182,6 @@ impl OperationIssue {
 pub enum OperationIssueCode {
   EmptySelection,
   UnknownSelection,
-  NonSelectableField,
   DuplicateSelection,
   MissingParameter,
   UnknownParameter,
@@ -212,21 +225,6 @@ impl fmt::Display for OperationIssues {
 
 impl Error for OperationIssues {}
 
-fn is_valid_parameter_value(
-  value: &Value,
-  scalar_type: ScalarType,
-  cardinality: ParameterCardinality,
-) -> bool {
-  match cardinality {
-    ParameterCardinality::One => is_valid_scalar(value, scalar_type),
-    ParameterCardinality::Many => value.as_array().is_some_and(|values| {
-      values
-        .iter()
-        .all(|value| is_valid_scalar(value, scalar_type))
-    }),
-  }
-}
-
 fn is_valid_scalar(value: &Value, scalar_type: ScalarType) -> bool {
   match scalar_type {
     ScalarType::Boolean => value.is_boolean(),
@@ -256,4 +254,57 @@ fn is_safe_javascript_integer(value: f64) -> bool {
   const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
   value.is_finite() && value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER
+}
+
+#[cfg(test)]
+mod tests {
+  use serde_json::json;
+
+  use super::is_valid_scalar;
+  use crate::ScalarType;
+
+  #[test]
+  fn accepts_the_documented_scalar_wire_values() {
+    let examples = [
+      (json!(true), ScalarType::Boolean),
+      (json!(2_147_483_647), ScalarType::Int32),
+      (json!(9_007_199_254_740_991_i64), ScalarType::Int64),
+      (json!("9223372036854775807"), ScalarType::Int64),
+      (json!(1.5), ScalarType::Float64),
+      (json!(1.5), ScalarType::Decimal),
+      (json!("1234567890.123456789"), ScalarType::Decimal),
+      (json!("value"), ScalarType::String),
+      (json!("2026-07-28"), ScalarType::Date),
+      (json!("2026-07-28T10:15:30+06:00"), ScalarType::DateTime),
+      (json!("base64-or-driver-token"), ScalarType::Binary),
+      (json!({"nested": [1, true]}), ScalarType::Json),
+    ];
+
+    for (value, scalar_type) in examples {
+      assert!(
+        is_valid_scalar(&value, scalar_type),
+        "{value} should satisfy {scalar_type:?}"
+      );
+    }
+  }
+
+  #[test]
+  fn rejects_values_outside_the_scalar_wire_contract() {
+    let examples = [
+      (json!(1), ScalarType::Boolean),
+      (json!(2_147_483_648_i64), ScalarType::Int32),
+      (json!(1.5), ScalarType::Int64),
+      (json!("1e3"), ScalarType::Decimal),
+      (json!(false), ScalarType::String),
+      (json!({"year": 2026}), ScalarType::Date),
+      (json!([1, 2, 3]), ScalarType::Binary),
+    ];
+
+    for (value, scalar_type) in examples {
+      assert!(
+        !is_valid_scalar(&value, scalar_type),
+        "{value} should not satisfy {scalar_type:?}"
+      );
+    }
+  }
 }

@@ -1,7 +1,7 @@
-use query_graph::{
+use query_graph_core::{
   ConstraintDefinition, DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition,
-  OrderByDefinition, ParameterDefinition, ProjectionDefinition, ProjectionFieldDefinition,
-  RelationDefinition, ScalarType, SourceDefinition,
+  LiteralValue, OrderByDefinition, ParameterDefinition, ProjectionDefinition,
+  ProjectionFieldDefinition, RelationDefinition, ScalarType, SourceDefinition,
 };
 
 fn attribute_value_definition() -> GraphDefinition {
@@ -88,19 +88,16 @@ fn attribute_value_definition() -> GraphDefinition {
         vec!["value".into(), "id".into()],
         Expression::field("value", "id"),
       )
-      .through(["value"])
       .selected_by_default(),
       ProjectionFieldDefinition::new(
         vec!["value".into(), "value".into()],
         Expression::field("value", "value"),
       )
-      .through(["value"])
       .selected_by_default(),
       ProjectionFieldDefinition::new(
         vec!["value".into(), "requisite".into(), "name".into()],
         Expression::field("requisite", "name"),
-      )
-      .through(["value", "requisite"]),
+      ),
     ],
   };
 
@@ -139,7 +136,7 @@ fn definition_ir_round_trips_through_json() {
   let restored: GraphDefinition = serde_json::from_str(&json).unwrap();
 
   assert_eq!(restored, definition);
-  assert!(json.contains("\"schemaVersion\": 1"));
+  assert!(json.contains("\"schemaVersion\": 3"));
   assert!(json.contains("\"kind\": \"field\""));
   assert!(restored.compile().is_ok());
 }
@@ -155,7 +152,6 @@ fn reports_all_invalid_references_in_one_compilation() {
     Expression::field("link", "idOwner"),
     Expression::parameter("missingParameter"),
   );
-  definition.projection.fields[0].relations = vec!["missingRelation".into()];
 
   let issues = definition.compile().unwrap_err().into_vec();
   let codes: Vec<_> = issues.iter().map(|issue| issue.code).collect();
@@ -163,19 +159,37 @@ fn reports_all_invalid_references_in_one_compilation() {
   assert!(codes.contains(&DefinitionIssueCode::UnknownFieldSource));
   assert!(codes.contains(&DefinitionIssueCode::UnknownField));
   assert!(codes.contains(&DefinitionIssueCode::UnknownParameter));
-  assert!(codes.contains(&DefinitionIssueCode::UnknownProjectionRelation));
 }
 
 #[test]
-fn rejects_projection_expression_outside_its_relation_path() {
+fn rejects_projection_expression_across_relation_branches() {
   let mut definition = attribute_value_definition();
-  definition.projection.fields[0].relations.clear();
+  definition.sources.push(SourceDefinition::new(
+    "other",
+    vec![FieldDefinition::new("id", ScalarType::Int64)],
+  ));
+  definition.relations.push(RelationDefinition::new(
+    "other",
+    "link",
+    "other",
+    Expression::eq(
+      Expression::field("link", "id"),
+      Expression::field("other", "id"),
+    ),
+  ));
+  definition.projection.fields[0].expression = Expression::eq(
+    Expression::field("value", "id"),
+    Expression::field("other", "id"),
+  );
 
   let issues = definition.compile().unwrap_err().into_vec();
 
   assert!(issues
     .iter()
     .any(|issue| issue.code == DefinitionIssueCode::ProjectionExpressionScope));
+  assert!(issues
+    .iter()
+    .any(|issue| issue.message.contains("different relation branches")));
 }
 
 #[test]
@@ -188,4 +202,26 @@ fn rejects_sources_that_cannot_be_reached_from_the_root() {
   assert!(issues.iter().any(|issue| {
     issue.code == DefinitionIssueCode::UnreachableSource && issue.message.contains("requisite")
   }));
+}
+
+#[test]
+fn rejects_invalid_decimal_literals_during_definition_compilation() {
+  let mut definition = GraphDefinition::new("invalidDecimal", "root");
+  definition.sources = vec![SourceDefinition::new(
+    "root",
+    vec![FieldDefinition::new("id", ScalarType::Int64)],
+  )];
+  definition.projection = ProjectionDefinition {
+    fields: vec![ProjectionFieldDefinition::new(
+      vec!["amount".into()],
+      Expression::literal(LiteralValue::Decimal("1e3".into())),
+    )],
+  };
+
+  let issues = definition.compile().unwrap_err();
+
+  assert!(issues
+    .as_slice()
+    .iter()
+    .any(|issue| issue.code == DefinitionIssueCode::InvalidLiteral));
 }

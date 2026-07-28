@@ -2,7 +2,7 @@ import { Bench } from 'tinybench'
 
 import {
   asc,
-  call,
+  coalesce,
   constraint,
   defineGraph,
   eq,
@@ -99,28 +99,21 @@ const attributeValueGraphDefinition = defineGraph({
   ],
   projection: [
     project('value.id', value.field('id'), {
-      through: [valueRelation],
       default: true,
     }),
     project('value.value', value.field('value'), {
-      through: [valueRelation],
       default: true,
     }),
     project('value.requisite.code', requisite.field('code'), {
-      through: [valueRelation, requisiteRelation],
       default: true,
     }),
     project('value.requisite.name', requisite.field('name'), {
-      through: [valueRelation, requisiteRelation],
       default: true,
     }),
     project('value.requisite.type', requisiteType.field('code'), {
-      through: [valueRelation, requisiteRelation, requisiteTypeRelation],
       default: true,
     }),
-    project('value.file.url', call('publicStorageUrl', storage.field('id')), {
-      through: [valueRelation, attachmentRelation, storageRelation],
-    }),
+    project('value.file.storageId', coalesce(storage.field('id'), 0)),
   ],
   defaultOrderBy: [asc(link.field('order')), asc(value.field('order'))],
 })

@@ -1,4 +1,4 @@
-export const GRAPH_DEFINITION_VERSION: 1
+export const GRAPH_DEFINITION_VERSION: 3
 
 export type ScalarType =
   | 'boolean'
@@ -12,10 +12,10 @@ export type ScalarType =
   | 'binary'
   | 'json'
 
-export type ParameterCardinality = 'one' | 'many'
 export type RelationCardinality = 'one' | 'many'
 export type OrderDirection = 'asc' | 'desc'
 export type NullsOrder = 'first' | 'last'
+export type SemanticFunctionName = 'lower' | 'upper' | 'coalesce' | 'concat'
 
 export interface FieldDefinition {
   name: string
@@ -33,7 +33,6 @@ export interface ParameterDefinition {
   name: string
   scalarType: ScalarType
   required?: boolean
-  cardinality?: ParameterCardinality
 }
 
 export interface FieldExpression<Source extends string = string, Field extends string = string> {
@@ -97,7 +96,7 @@ export interface UnaryExpression {
 
 export interface FunctionExpression {
   kind: 'function'
-  name: string
+  name: SemanticFunctionName
   arguments: Expression[]
 }
 
@@ -132,8 +131,6 @@ export interface ConstraintDefinition {
 export interface ProjectionFieldDefinition {
   path: string[]
   expression: Expression
-  relations?: string[]
-  selectable?: boolean
   selectedByDefault?: boolean
 }
 
@@ -152,7 +149,7 @@ export interface OrderByDefinition {
 }
 
 export interface GraphDefinitionInput {
-  schemaVersion: number
+  schemaVersion: typeof GRAPH_DEFINITION_VERSION
   name: string
   root: string
   sources: SourceDefinition[]
@@ -193,6 +190,32 @@ export interface QueryOperation {
   parameters?: Record<string, unknown>
   offset?: number
   limit?: number
+}
+
+export type SqlServerVersion = '2008' | '2012' | '2016' | '2019' | '2022'
+export type OracleVersion = '11g' | '12c' | '19c' | '21c' | '23ai'
+
+export interface SqlServerCompileOptions {
+  version?: SqlServerVersion
+}
+
+export interface OracleCompileOptions {
+  version?: OracleVersion
+}
+
+export type QueryGraphErrorPhase = 'definition' | 'mapping' | 'operation' | 'sql'
+
+export interface QueryGraphDiagnostic {
+  code: string
+  location: string
+  message: string
+}
+
+export interface QueryGraphError extends Error {
+  readonly name: 'QueryGraphError'
+  readonly code: string
+  readonly phase: QueryGraphErrorPhase
+  readonly issues: readonly QueryGraphDiagnostic[]
 }
 
 export interface FieldSpecDefinition {
@@ -245,20 +268,8 @@ export function field<const Source extends string, const Name extends string>(
   name: Name,
 ): FieldExpression<Source, Name>
 
-export interface ParameterOptions {
-  cardinality?: ParameterCardinality
-}
-
-export function requiredParameter<const Name extends string>(
-  name: Name,
-  scalarType: ScalarType,
-  options?: ParameterOptions,
-): ParameterRef<Name>
-export function optionalParameter<const Name extends string>(
-  name: Name,
-  scalarType: ScalarType,
-  options?: ParameterOptions,
-): ParameterRef<Name>
+export function requiredParameter<const Name extends string>(name: Name, scalarType: ScalarType): ParameterRef<Name>
+export function optionalParameter<const Name extends string>(name: Name, scalarType: ScalarType): ParameterRef<Name>
 export function param<const Name extends string>(parameter: Name | ParameterRef<Name>): ParameterExpression<Name>
 
 export function literal(value: LiteralInput): LiteralExpression
@@ -278,7 +289,14 @@ export function or(...expressions: readonly ExpressionInput[]): ExpressionGroup
 export function not(expression: ExpressionInput): UnaryExpression
 export function isNull(expression: ExpressionInput): UnaryExpression
 export function isNotNull(expression: ExpressionInput): UnaryExpression
-export function call(name: string, ...arguments_: readonly ExpressionInput[]): FunctionExpression
+export function lower(expression: ExpressionInput): FunctionExpression
+export function upper(expression: ExpressionInput): FunctionExpression
+export function coalesce(
+  first: ExpressionInput,
+  second: ExpressionInput,
+  ...rest: readonly ExpressionInput[]
+): FunctionExpression
+export function concat(first: ExpressionInput, ...rest: readonly ExpressionInput[]): FunctionExpression
 
 export interface RelationOptions {
   required?: boolean
@@ -300,14 +318,12 @@ export interface ConstraintOptions {
 export function constraint(name: string, predicate: Expression, options?: ConstraintOptions): ConstraintDefinition
 
 export interface ProjectionOptions {
-  through?: readonly (string | RelationRef)[]
-  selectable?: boolean
   default?: boolean
 }
 
 export function project(
   path: string | readonly string[],
-  expression: Expression,
+  expression: ExpressionInput,
   options?: ProjectionOptions,
 ): ProjectionFieldDefinition
 

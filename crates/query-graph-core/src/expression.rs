@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "camelCase")]
+#[serde(
+  tag = "kind",
+  content = "value",
+  rename_all = "camelCase",
+  deny_unknown_fields
+)]
 pub enum LiteralValue {
   Null,
   Boolean(bool),
@@ -10,8 +15,28 @@ pub enum LiteralValue {
   String(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SemanticFunction {
+  Lower,
+  Upper,
+  Coalesce,
+  Concat,
+}
+
+impl SemanticFunction {
+  pub const fn as_str(self) -> &'static str {
+    match self {
+      Self::Lower => "lower",
+      Self::Upper => "upper",
+      Self::Coalesce => "coalesce",
+      Self::Concat => "concat",
+    }
+  }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Expression {
   Field {
     source: String,
@@ -71,7 +96,7 @@ pub enum Expression {
     expression: Box<Expression>,
   },
   Function {
-    name: String,
+    name: SemanticFunction,
     arguments: Vec<Expression>,
   },
 }
@@ -112,42 +137,59 @@ impl Expression {
   }
 
   pub fn for_each_field<'a>(&'a self, visitor: &mut impl FnMut(&'a str, &'a str)) {
+    self.walk(&mut |expression| {
+      if let Self::Field { source, field } = expression {
+        visitor(source, field);
+      }
+    });
+  }
+
+  pub(crate) fn for_each_parameter<'a>(&'a self, visitor: &mut impl FnMut(&'a str)) {
+    self.walk(&mut |expression| {
+      if let Self::Parameter { name } = expression {
+        visitor(name);
+      }
+    });
+  }
+
+  fn walk<'a>(&'a self, visitor: &mut impl FnMut(&'a Self)) {
+    visitor(self);
+
     match self {
-      Self::Field { source, field } => visitor(source, field),
-      Self::Parameter { .. } | Self::Literal { .. } => {}
+      Self::Field { .. } | Self::Parameter { .. } | Self::Literal { .. } => {}
       Self::Eq { left, right }
       | Self::NotEq { left, right }
       | Self::LessThan { left, right }
       | Self::LessThanOrEqual { left, right }
       | Self::GreaterThan { left, right }
       | Self::GreaterThanOrEqual { left, right } => {
-        left.for_each_field(visitor);
-        right.for_each_field(visitor);
+        left.walk(visitor);
+        right.walk(visitor);
       }
       Self::Like {
         expression,
         pattern,
       } => {
-        expression.for_each_field(visitor);
-        pattern.for_each_field(visitor);
+        expression.walk(visitor);
+        pattern.walk(visitor);
       }
       Self::In { expression, values } => {
-        expression.for_each_field(visitor);
+        expression.walk(visitor);
         for value in values {
-          value.for_each_field(visitor);
+          value.walk(visitor);
         }
       }
       Self::And { expressions } | Self::Or { expressions } => {
         for expression in expressions {
-          expression.for_each_field(visitor);
+          expression.walk(visitor);
         }
       }
       Self::Not { expression } | Self::IsNull { expression } | Self::IsNotNull { expression } => {
-        expression.for_each_field(visitor)
+        expression.walk(visitor);
       }
       Self::Function { arguments, .. } => {
         for argument in arguments {
-          argument.for_each_field(visitor);
+          argument.walk(visitor);
         }
       }
     }
