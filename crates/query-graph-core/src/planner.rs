@@ -85,24 +85,27 @@ pub(crate) fn build(
   let mut required_parameters = HashSet::new();
   for projection_index in &operation_plan.projection_indices {
     add_expression_parameters(
+      graph,
       &graph.definition().projection.fields[*projection_index].expression,
       &mut required_parameters,
-    );
+    )?;
   }
   for constraint_index in &constraint_indices {
     add_expression_parameters(
+      graph,
       &graph.definition().constraints[*constraint_index].predicate,
       &mut required_parameters,
-    );
+    )?;
   }
   for order in &graph.definition().default_order_by {
-    add_expression_parameters(&order.expression, &mut required_parameters);
+    add_expression_parameters(graph, &order.expression, &mut required_parameters)?;
   }
   for relation_index in &relation_indices {
     add_expression_parameters(
+      graph,
       &graph.definition().relations[*relation_index].on,
       &mut required_parameters,
-    );
+    )?;
   }
   operation.validate_plan_parameters(required_parameters)?;
 
@@ -163,7 +166,7 @@ fn add_expression_relations(
   relations: &mut HashSet<usize>,
 ) -> Result<(), PlanError> {
   let mut sources = HashSet::new();
-  expression.for_each_field(&mut |source, _| {
+  expression.for_each_outer_field(&mut |source, _| {
     sources.insert(source);
   });
 
@@ -180,10 +183,38 @@ fn add_expression_relations(
   Ok(())
 }
 
-fn add_expression_parameters<'a>(expression: &'a Expression, parameters: &mut HashSet<&'a str>) {
+fn add_expression_parameters<'a>(
+  graph: &'a CompiledGraph,
+  expression: &'a Expression,
+  parameters: &mut HashSet<&'a str>,
+) -> Result<(), PlanError> {
   expression.for_each_parameter(&mut |parameter| {
     parameters.insert(parameter);
   });
+
+  let mut exists_sources = Vec::new();
+  expression.for_each_exists_source(&mut |source| {
+    exists_sources.push(source);
+  });
+
+  for source in exists_sources {
+    let relation_path =
+      graph
+        .relation_path_indices(source)
+        .ok_or_else(|| PlanError::InvalidCompiledGraph {
+          message: format!("exists expression refers to missing source {source:?}"),
+        })?;
+
+    for relation_index in relation_path {
+      graph.definition().relations[*relation_index]
+        .on
+        .for_each_parameter(&mut |parameter| {
+          parameters.insert(parameter);
+        });
+    }
+  }
+
+  Ok(())
 }
 
 fn order_relations(

@@ -1,6 +1,7 @@
 use query_graph_core::{
-  DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition, ProjectionDefinition,
-  ProjectionFieldDefinition, RelationDefinition, ScalarType, SemanticFunction, SourceDefinition,
+  ConstraintDefinition, DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition,
+  ProjectionDefinition, ProjectionFieldDefinition, RelationDefinition, ScalarType,
+  SemanticFunction, SourceDefinition,
 };
 
 fn source(key: &str) -> SourceDefinition {
@@ -20,7 +21,7 @@ fn issue_codes(definition: GraphDefinition) -> Vec<DefinitionIssueCode> {
 #[test]
 fn rejects_the_previous_wire_definition_version() {
   let mut definition = GraphDefinition::new("oldWireVersion", "root");
-  definition.schema_version = 2;
+  definition.schema_version = 3;
   definition.sources = vec![source("root")];
   definition.projection = ProjectionDefinition {
     fields: vec![ProjectionFieldDefinition::new(
@@ -109,6 +110,85 @@ fn rejects_relations_pointing_to_the_root() {
   definition.relations = vec![relation("self", "root", "root")];
 
   assert!(issue_codes(definition).contains(&DefinitionIssueCode::RootHasIncomingRelation));
+}
+
+#[test]
+fn rejects_exists_outside_graph_constraints() {
+  let mut definition = GraphDefinition::new("existsProjection", "root");
+  definition.sources = vec![source("root"), source("child")];
+  definition.relations = vec![relation("child", "root", "child")];
+  definition.projection = ProjectionDefinition {
+    fields: vec![ProjectionFieldDefinition::new(
+      vec!["hasChild".into()],
+      Expression::exists("child"),
+    )],
+  };
+
+  assert!(issue_codes(definition).contains(&DefinitionIssueCode::InvalidExistsContext));
+}
+
+#[test]
+fn validates_exists_target_and_predicate_scope() {
+  let mut definition = GraphDefinition::new("existsScope", "root");
+  definition.sources = vec![source("root"), source("left"), source("right")];
+  definition.relations = vec![
+    relation("left", "root", "left"),
+    relation("right", "root", "right"),
+  ];
+  definition.constraints = vec![
+    ConstraintDefinition::always("root", Expression::exists("root")),
+    ConstraintDefinition::always("missing", Expression::exists("missing")),
+    ConstraintDefinition::always(
+      "crossBranch",
+      Expression::exists_where(
+        "left",
+        Expression::eq(
+          Expression::field("left", "id"),
+          Expression::field("right", "id"),
+        ),
+      ),
+    ),
+  ];
+
+  let codes = issue_codes(definition);
+  assert!(codes.contains(&DefinitionIssueCode::InvalidExistsSource));
+  assert!(codes.contains(&DefinitionIssueCode::UnknownExistsSource));
+  assert!(codes.contains(&DefinitionIssueCode::ExistsExpressionScope));
+}
+
+#[test]
+fn rejects_a_non_boolean_exists_predicate() {
+  let mut definition = GraphDefinition::new("existsPredicateType", "root");
+  definition.sources = vec![source("root"), source("child")];
+  definition.relations = vec![relation("child", "root", "child")];
+  definition.constraints = vec![ConstraintDefinition::always(
+    "child",
+    Expression::exists_where("child", Expression::field("child", "id")),
+  )];
+
+  assert!(issue_codes(definition).contains(&DefinitionIssueCode::InvalidPredicateType));
+}
+
+#[test]
+fn accepts_exists_predicates_over_the_inferred_root_path() {
+  let mut definition = GraphDefinition::new("existsPath", "root");
+  definition.sources = vec![source("root"), source("middle"), source("target")];
+  definition.relations = vec![
+    relation("middle", "root", "middle"),
+    relation("target", "middle", "target"),
+  ];
+  definition.constraints = vec![ConstraintDefinition::always(
+    "target",
+    Expression::exists_where(
+      "target",
+      Expression::eq(
+        Expression::field("middle", "id"),
+        Expression::field("target", "id"),
+      ),
+    ),
+  )];
+
+  assert!(definition.compile().is_ok());
 }
 
 fn relation(name: &str, from: &str, to: &str) -> RelationDefinition {

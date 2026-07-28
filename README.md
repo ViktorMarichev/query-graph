@@ -39,6 +39,8 @@ import {
   defineGraph,
   defineGraphModule,
   eq,
+  exists,
+  isNotNull,
   nullable,
   param,
   project,
@@ -67,7 +69,10 @@ const attributeValuesModule = defineGraphModule({
   sources: [link, value],
   parameters: [idOwner],
   relations: [valueRelation],
-  constraints: [constraint('owner', eq(link.field('idOwner'), param(idOwner)))],
+  constraints: [
+    constraint('owner', eq(link.field('idOwner'), param(idOwner))),
+    constraint('hasValue', exists(value, isNotNull(value.field('value')))),
+  ],
   projection: [
     project('value.value', value.field('value'), {
       default: true,
@@ -105,6 +110,26 @@ Relation path проекции указывать не требуется. Пр�
 на одной ветке. Обращение к двум независимым веткам отклоняется как неоднозначная
 проекция. Planner использует уже вычисленные пути и не повторяет inference при
 каждой компиляции operation.
+
+### Existential constraints
+
+`exists(source, predicate?)` задаёт семантический квантор внутри constraint.
+Указывать SQL-подзапрос или correlation columns не требуется: Rust использует
+уникальный relation path от root до указанного source.
+
+```ts
+constraint('hasService', exists(businessServiceStaff, eq(businessServiceStaff.field('idService'), param(idService))))
+```
+
+Predicate может обращаться к root и sources на выведенном пути. Ссылки на
+соседнюю ветку отклоняются при регистрации definition. `exists` вне constraints
+также отклоняется; отрицание выражается обычным `not(exists(...))`.
+
+Planner воспринимает existential branch как semijoin. Sources этой ветки не
+добавляются во внешние JOIN и `statement.relations`, поэтому relation с
+cardinality `many` не размножает корневые строки и не мешает их пагинации.
+Oracle и SQL Server compiler строят коррелированный `EXISTS` из одной и той же
+семантики definition.
 
 Полученное определение не содержит SQL, имен таблиц, значений конкретного
 драйвера, объектов построителя или исполняемых функций обратного вызова

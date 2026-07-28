@@ -95,6 +95,11 @@ pub enum Expression {
   IsNotNull {
     expression: Box<Expression>,
   },
+  Exists {
+    source: String,
+    #[serde(default)]
+    predicate: Option<Box<Expression>>,
+  },
   Function {
     name: SemanticFunction,
     arguments: Vec<Expression>,
@@ -136,11 +141,44 @@ impl Expression {
     }
   }
 
+  pub fn exists(source: impl Into<String>) -> Self {
+    Self::Exists {
+      source: source.into(),
+      predicate: None,
+    }
+  }
+
+  pub fn exists_where(source: impl Into<String>, predicate: Expression) -> Self {
+    Self::Exists {
+      source: source.into(),
+      predicate: Some(Box::new(predicate)),
+    }
+  }
+
   pub fn for_each_field<'a>(&'a self, visitor: &mut impl FnMut(&'a str, &'a str)) {
     self.walk(&mut |expression| {
       if let Self::Field { source, field } = expression {
         visitor(source, field);
       }
+      true
+    });
+  }
+
+  pub(crate) fn for_each_outer_field<'a>(&'a self, visitor: &mut impl FnMut(&'a str, &'a str)) {
+    self.walk(&mut |expression| {
+      if let Self::Field { source, field } = expression {
+        visitor(source, field);
+      }
+      !matches!(expression, Self::Exists { .. })
+    });
+  }
+
+  pub(crate) fn for_each_exists_source<'a>(&'a self, visitor: &mut impl FnMut(&'a str)) {
+    self.walk(&mut |expression| {
+      if let Self::Exists { source, .. } = expression {
+        visitor(source);
+      }
+      true
     });
   }
 
@@ -149,11 +187,14 @@ impl Expression {
       if let Self::Parameter { name } = expression {
         visitor(name);
       }
+      true
     });
   }
 
-  fn walk<'a>(&'a self, visitor: &mut impl FnMut(&'a Self)) {
-    visitor(self);
+  fn walk<'a>(&'a self, visitor: &mut impl FnMut(&'a Self) -> bool) {
+    if !visitor(self) {
+      return;
+    }
 
     match self {
       Self::Field { .. } | Self::Parameter { .. } | Self::Literal { .. } => {}
@@ -186,6 +227,11 @@ impl Expression {
       }
       Self::Not { expression } | Self::IsNull { expression } | Self::IsNotNull { expression } => {
         expression.walk(visitor);
+      }
+      Self::Exists { predicate, .. } => {
+        if let Some(predicate) = predicate {
+          predicate.walk(visitor);
+        }
       }
       Self::Function { arguments, .. } => {
         for argument in arguments {

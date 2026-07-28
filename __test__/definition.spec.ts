@@ -8,6 +8,7 @@ import {
   defineGraph,
   defineGraphModule,
   eq,
+  exists,
   isNull,
   lower,
   nullable,
@@ -45,7 +46,7 @@ test('builds the versioned wire definition without author-written discriminators
     projection: [project('id', root.field('id'), { default: true })],
   })
 
-  t.is(definition.schemaVersion, 3)
+  t.is(definition.schemaVersion, 4)
   t.false('relations' in definition.projection.fields[0])
   t.deepEqual(definition.constraints[0].predicate, {
     kind: 'eq',
@@ -77,6 +78,63 @@ test('builds the supported semantic function expressions', (t) => {
     kind: 'literal',
     value: { kind: 'string', value: 'Unknown' },
   })
+})
+
+test('builds and compiles a typed exists constraint as a semijoin', (t) => {
+  const staff = source('staff', {
+    id: 'int64',
+  })
+  const staffService = source('staffService', {
+    idStaff: 'int64',
+    idService: 'int64',
+  })
+  const idService = requiredParameter('idService', 'int64')
+  const hasService = exists(staffService, eq(staffService.field('idService'), param(idService)))
+  const sourceIsTyped: Equal<typeof hasService.source, 'staffService'> = true
+  t.true(sourceIsTyped)
+
+  const definition = defineGraph({
+    name: 'businessServiceSpecialists',
+    root: staff,
+    sources: [staff, staffService],
+    parameters: [idService],
+    relations: [
+      relation('staffServices', staff, staffService, eq(staff.field('id'), staffService.field('idStaff')), {
+        cardinality: 'many',
+      }),
+    ],
+    constraints: [constraint('hasService', hasService)],
+    projection: [project('id', staff.field('id'), { default: true })],
+    defaultOrderBy: [asc(staff.field('id'))],
+  })
+
+  t.deepEqual(definition.constraints[0].predicate, {
+    kind: 'exists',
+    source: 'staffService',
+    predicate: {
+      kind: 'eq',
+      left: { kind: 'field', source: 'staffService', field: 'idService' },
+      right: { kind: 'parameter', name: 'idService' },
+    },
+  })
+
+  const statement = registerDefinition(definition)
+    .withRelationalMapping({
+      sources: {
+        staff: { table: 'Staff' },
+        staffService: { table: 'BusinessServiceStaff' },
+      },
+    })
+    .compileSqlServer({
+      parameters: { idService: 42 },
+      limit: 10,
+    })
+
+  t.true(statement.sql.includes('EXISTS ('))
+  t.true(statement.sql.includes('FROM [BusinessServiceStaff] AS [t1]'))
+  t.false(statement.sql.includes('FROM [Staff] AS [t0]\nINNER JOIN'))
+  t.deepEqual(statement.relations, [])
+  t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'idService', scalarType: 'int64' }])
 })
 
 test('composes graph modules into a flat wire definition', (t) => {

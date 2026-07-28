@@ -18,6 +18,7 @@ struct DefinitionValidator<'a> {
   issues: Vec<DefinitionIssue>,
   sources: SourceFields,
   parameters: HashSet<String>,
+  source_scopes: HashMap<String, HashSet<String>>,
 }
 
 impl<'a> DefinitionValidator<'a> {
@@ -27,6 +28,7 @@ impl<'a> DefinitionValidator<'a> {
       issues: Vec::new(),
       sources: HashMap::new(),
       parameters: HashSet::new(),
+      source_scopes: HashMap::new(),
     }
   }
 
@@ -36,6 +38,7 @@ impl<'a> DefinitionValidator<'a> {
     self.validate_root();
     self.index_parameters();
     self.validate_relations();
+    self.source_scopes = topology::infer_source_scopes(self.definition, &self.sources);
     self.validate_constraints();
     self.validate_projection();
     self.validate_ordering();
@@ -180,10 +183,11 @@ impl<'a> DefinitionValidator<'a> {
         ));
       }
 
-      let allowed_sources = HashSet::from([relation.from.as_str(), relation.to.as_str()]);
+      let allowed_sources = HashSet::from([relation.from.clone(), relation.to.clone()]);
       let context = ExpressionContext::scoped(
         &self.sources,
         &self.parameters,
+        &self.source_scopes,
         &allowed_sources,
         DefinitionIssueCode::RelationExpressionScope,
       );
@@ -232,7 +236,8 @@ impl<'a> DefinitionValidator<'a> {
         }
       }
 
-      let context = ExpressionContext::unrestricted(&self.sources, &self.parameters);
+      let context =
+        ExpressionContext::constraint(&self.sources, &self.parameters, &self.source_scopes);
       expression::validate(
         &constraint.predicate,
         &format!("{location}.predicate"),
@@ -290,7 +295,8 @@ impl<'a> DefinitionValidator<'a> {
         ));
       }
 
-      let context = ExpressionContext::unrestricted(&self.sources, &self.parameters);
+      let context =
+        ExpressionContext::unrestricted(&self.sources, &self.parameters, &self.source_scopes);
       expression::validate(
         &field.expression,
         &format!("{location}.expression"),
@@ -334,7 +340,8 @@ impl<'a> DefinitionValidator<'a> {
 
   fn validate_ordering(&mut self) {
     for (order_index, order) in self.definition.default_order_by.iter().enumerate() {
-      let context = ExpressionContext::unrestricted(&self.sources, &self.parameters);
+      let context =
+        ExpressionContext::unrestricted(&self.sources, &self.parameters, &self.source_scopes);
       expression::validate(
         &order.expression,
         &format!("defaultOrderBy[{order_index}].expression"),

@@ -5,41 +5,76 @@ use crate::{scalar::is_decimal_text, Expression, LiteralValue};
 use super::{DefinitionIssue, DefinitionIssueCode};
 
 struct ExpressionScope<'a> {
-  allowed_sources: &'a HashSet<&'a str>,
+  allowed_sources: &'a HashSet<String>,
   issue_code: DefinitionIssueCode,
 }
 
 pub(super) struct ExpressionContext<'a> {
   sources: &'a HashMap<String, HashSet<String>>,
   parameters: &'a HashSet<String>,
+  source_scopes: &'a HashMap<String, HashSet<String>>,
   scope: Option<ExpressionScope<'a>>,
+  allow_exists: bool,
 }
 
 impl<'a> ExpressionContext<'a> {
   pub(super) fn unrestricted(
     sources: &'a HashMap<String, HashSet<String>>,
     parameters: &'a HashSet<String>,
+    source_scopes: &'a HashMap<String, HashSet<String>>,
   ) -> Self {
     Self {
       sources,
       parameters,
+      source_scopes,
       scope: None,
+      allow_exists: false,
+    }
+  }
+
+  pub(super) fn constraint(
+    sources: &'a HashMap<String, HashSet<String>>,
+    parameters: &'a HashSet<String>,
+    source_scopes: &'a HashMap<String, HashSet<String>>,
+  ) -> Self {
+    Self {
+      sources,
+      parameters,
+      source_scopes,
+      scope: None,
+      allow_exists: true,
     }
   }
 
   pub(super) fn scoped(
     sources: &'a HashMap<String, HashSet<String>>,
     parameters: &'a HashSet<String>,
-    allowed_sources: &'a HashSet<&'a str>,
+    source_scopes: &'a HashMap<String, HashSet<String>>,
+    allowed_sources: &'a HashSet<String>,
     scope_issue_code: DefinitionIssueCode,
   ) -> Self {
     Self {
       sources,
       parameters,
+      source_scopes,
       scope: Some(ExpressionScope {
         allowed_sources,
         issue_code: scope_issue_code,
       }),
+      allow_exists: false,
+    }
+  }
+
+  fn within_exists(&self, allowed_sources: &'a HashSet<String>) -> Self {
+    Self {
+      sources: self.sources,
+      parameters: self.parameters,
+      source_scopes: self.source_scopes,
+      scope: Some(ExpressionScope {
+        allowed_sources,
+        issue_code: DefinitionIssueCode::ExistsExpressionScope,
+      }),
+      allow_exists: self.allow_exists,
     }
   }
 }
@@ -121,6 +156,67 @@ pub(super) fn validate(
     Expression::Function { arguments, .. } => {
       validate_children(arguments, &format!("{location}.arguments"), context, issues);
     }
+    Expression::Exists { source, predicate } => {
+      validate_exists(source, predicate.as_deref(), location, context, issues);
+    }
+  }
+}
+
+fn validate_exists(
+  source: &str,
+  predicate: Option<&Expression>,
+  location: &str,
+  context: &ExpressionContext<'_>,
+  issues: &mut Vec<DefinitionIssue>,
+) {
+  if !context.allow_exists {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::InvalidExistsContext,
+      location,
+      "exists expressions are allowed only in graph constraints",
+    ));
+  }
+
+  if !context.sources.contains_key(source) {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::UnknownExistsSource,
+      format!("{location}.source"),
+      format!("exists source {source:?} is not defined"),
+    ));
+    if let Some(predicate) = predicate {
+      validate(predicate, &format!("{location}.predicate"), context, issues);
+    }
+    return;
+  }
+
+  let Some(allowed_sources) = context.source_scopes.get(source) else {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::InvalidExistsSource,
+      format!("{location}.source"),
+      format!("exists source {source:?} is not reachable from the graph root"),
+    ));
+    if let Some(predicate) = predicate {
+      validate(predicate, &format!("{location}.predicate"), context, issues);
+    }
+    return;
+  };
+
+  if allowed_sources.len() == 1 {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::InvalidExistsSource,
+      format!("{location}.source"),
+      "exists source must be a descendant of the graph root",
+    ));
+  }
+
+  if let Some(predicate) = predicate {
+    let predicate_context = context.within_exists(allowed_sources);
+    validate(
+      predicate,
+      &format!("{location}.predicate"),
+      &predicate_context,
+      issues,
+    );
   }
 }
 

@@ -231,6 +231,15 @@ fn infer_expression(
         )
       })
     }
+    Expression::Exists { predicate, .. } => {
+      if let Some(predicate) = predicate {
+        let predicate_location = format!("{location}.predicate");
+        let predicate_type = infer_expression(predicate, &predicate_location, environment, issues);
+        validate_predicate(predicate_type, &predicate_location, issues);
+      }
+
+      Some(InferredType::scalar(crate::ScalarType::Boolean, false))
+    }
     Expression::Function { name, arguments } => {
       let argument_types = infer_expressions(
         arguments,

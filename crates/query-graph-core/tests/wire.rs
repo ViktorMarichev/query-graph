@@ -4,7 +4,7 @@ use serde_json::json;
 #[test]
 fn rejects_unknown_definition_fields() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "name": "strictDefinition",
     "root": "root",
     "sources": [{
@@ -35,7 +35,7 @@ fn rejects_unknown_definition_fields() {
 #[test]
 fn rejects_unknown_semantic_functions_during_deserialization() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 3,
+    "schemaVersion": 4,
     "name": "strictFunctions",
     "root": "root",
     "sources": [{
@@ -63,6 +63,66 @@ fn rejects_unknown_semantic_functions_during_deserialization() {
 
   let error = result.unwrap_err().to_string();
   assert!(error.contains("databaseSpecificFunction"));
+}
+
+#[test]
+fn rejects_unknown_exists_fields_during_deserialization() {
+  let result = serde_json::from_value::<GraphDefinition>(json!({
+    "schemaVersion": 4,
+    "name": "strictExists",
+    "root": "root",
+    "sources": [
+      {
+        "key": "root",
+        "fields": [{
+          "name": "id",
+          "scalarType": "int64"
+        }]
+      },
+      {
+        "key": "child",
+        "fields": [{
+          "name": "idRoot",
+          "scalarType": "int64"
+        }]
+      }
+    ],
+    "relations": [{
+      "name": "child",
+      "from": "root",
+      "to": "child",
+      "on": {
+        "kind": "eq",
+        "left": {
+          "kind": "field",
+          "source": "root",
+          "field": "id"
+        },
+        "right": {
+          "kind": "field",
+          "source": "child",
+          "field": "idRoot"
+        }
+      }
+    }],
+    "constraints": [{
+      "name": "child",
+      "predicate": {
+        "kind": "exists",
+        "source": "child",
+        "predciate": {
+          "kind": "literal",
+          "value": {
+            "kind": "boolean",
+            "value": true
+          }
+        }
+      }
+    }]
+  }));
+
+  let error = result.unwrap_err().to_string();
+  assert!(error.contains("predciate"));
 }
 
 #[test]

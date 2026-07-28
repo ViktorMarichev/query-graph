@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{CompiledGraph, CompiledRelationalMapping, Expression, QueryOperation};
+use crate::{CompiledGraph, CompiledRelationalMapping, Expression, PlanError, QueryOperation};
 
 use super::{ParameterBinding, SqlCompileError, SqlDialect};
 
@@ -72,6 +72,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
         "({} IS NOT NULL)",
         self.render_expression(expression)?
       )),
+      Expression::Exists { source, predicate } => self.render_exists(source, predicate.as_deref()),
       Expression::Function { name, arguments } => {
         let arguments = self.render_expressions(arguments)?;
         Ok(self.dialect.render_function(*name, &arguments))
@@ -115,6 +116,49 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     let expression = self.render_expression(expression)?;
     let values = self.render_expressions(values)?;
     Ok(format!("({expression} IN ({}))", values.join(", ")))
+  }
+
+  fn render_exists(
+    &mut self,
+    source: &str,
+    predicate: Option<&Expression>,
+  ) -> Result<String, SqlCompileError> {
+    let graph = self.graph;
+    let relation_indices = graph.relation_path_indices(source).ok_or_else(|| {
+      SqlCompileError::Plan(PlanError::InvalidCompiledGraph {
+        message: format!("exists expression refers to missing source {source:?}"),
+      })
+    })?;
+
+    if relation_indices.is_empty() {
+      return Err(SqlCompileError::Plan(PlanError::InvalidCompiledGraph {
+        message: format!("exists expression source {source:?} is the graph root"),
+      }));
+    }
+
+    let first = &graph.definition().relations[relation_indices[0]];
+    let mut sql = format!(
+      "EXISTS (\n    SELECT 1\n    FROM {}",
+      self.render_source(&first.to)?
+    );
+
+    for relation_index in &relation_indices[1..] {
+      let relation = &graph.definition().relations[*relation_index];
+      let target = self.render_source(&relation.to)?;
+      let condition = self.render_expression(&relation.on)?;
+      sql.push_str(&format!("\n    INNER JOIN {target}\n      ON {condition}"));
+    }
+
+    let correlation = self.render_expression(&first.on)?;
+    sql.push_str(&format!("\n    WHERE {correlation}"));
+
+    if let Some(predicate) = predicate {
+      let predicate = self.render_expression(predicate)?;
+      sql.push_str(&format!("\n      AND {predicate}"));
+    }
+
+    sql.push_str("\n  )");
+    Ok(sql)
   }
 
   fn render_parameter(&mut self, parameter: &str) -> Result<String, SqlCompileError> {

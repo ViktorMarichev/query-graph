@@ -1,6 +1,6 @@
 'use strict'
 
-const GRAPH_DEFINITION_VERSION = 3
+const GRAPH_DEFINITION_VERSION = 4
 const SCALAR_TYPES = new Set([
   'boolean',
   'int32',
@@ -184,6 +184,19 @@ function isNull(expression) {
 
 function isNotNull(expression) {
   return unaryExpression('isNotNull', expression)
+}
+
+function exists(sourceReference, predicate) {
+  const expression = {
+    kind: 'exists',
+    source: referenceName(sourceReference, 'source'),
+  }
+
+  if (predicate !== undefined) {
+    expression.predicate = asExpression(predicate)
+  }
+
+  return expression
 }
 
 function call(name, ...arguments_) {
@@ -504,6 +517,7 @@ exports.or = or
 exports.not = not
 exports.isNull = isNull
 exports.isNotNull = isNotNull
+exports.exists = exists
 exports.lower = lower
 exports.upper = upper
 exports.coalesce = coalesce

@@ -1,4 +1,4 @@
-export const GRAPH_DEFINITION_VERSION: 3
+export const GRAPH_DEFINITION_VERSION: 4
 
 export type ScalarType =
   | 'boolean'
@@ -94,6 +94,12 @@ export interface UnaryExpression {
   expression: Expression
 }
 
+export interface ExistsExpression<Source extends string = string> {
+  kind: 'exists'
+  source: Source
+  predicate?: Expression
+}
+
 export interface FunctionExpression {
   kind: 'function'
   name: SemanticFunctionName
@@ -109,6 +115,7 @@ export type Expression =
   | InExpression
   | ExpressionGroup
   | UnaryExpression
+  | ExistsExpression
   | FunctionExpression
 
 export interface RelationDefinition {
@@ -289,6 +296,10 @@ export function or(...expressions: readonly ExpressionInput[]): ExpressionGroup
 export function not(expression: ExpressionInput): UnaryExpression
 export function isNull(expression: ExpressionInput): UnaryExpression
 export function isNotNull(expression: ExpressionInput): UnaryExpression
+export function exists<const Source extends string>(
+  source: Source | SourceRef<Source>,
+  predicate?: ExpressionInput,
+): ExistsExpression<Source>
 export function lower(expression: ExpressionInput): FunctionExpression
 export function upper(expression: ExpressionInput): FunctionExpression
 export function coalesce(

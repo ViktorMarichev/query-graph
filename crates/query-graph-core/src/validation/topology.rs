@@ -80,6 +80,44 @@ fn validate_reachability(
   }
 }
 
+pub(super) fn infer_source_scopes(
+  definition: &GraphDefinition,
+  sources: &HashMap<String, HashSet<String>>,
+) -> HashMap<String, HashSet<String>> {
+  if !sources.contains_key(&definition.root) {
+    return HashMap::new();
+  }
+
+  let mut scopes = HashMap::from([(
+    definition.root.clone(),
+    HashSet::from([definition.root.clone()]),
+  )]);
+  let mut queue = VecDeque::from([definition.root.clone()]);
+
+  while let Some(source) = queue.pop_front() {
+    let Some(parent_scope) = scopes.get(&source).cloned() else {
+      continue;
+    };
+
+    for relation in definition
+      .relations
+      .iter()
+      .filter(|relation| relation.from == source && sources.contains_key(&relation.to))
+    {
+      if scopes.contains_key(&relation.to) {
+        continue;
+      }
+
+      let mut scope = parent_scope.clone();
+      scope.insert(relation.to.clone());
+      scopes.insert(relation.to.clone(), scope);
+      queue.push_back(relation.to.clone());
+    }
+  }
+
+  scopes
+}
+
 fn reachable_sources(
   definition: &GraphDefinition,
   sources: &HashMap<String, HashSet<String>>,
