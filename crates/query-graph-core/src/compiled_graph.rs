@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
   type_validation, validation, DefinitionIssues, ExpressionType, FieldDefinition, GraphDefinition,
-  ProjectionFieldDefinition, ProjectionPath, RelationDefinition,
+  OrderingDefinition, ProjectionFieldDefinition, ProjectionPath, RelationDefinition,
 };
 
 #[derive(Debug)]
@@ -25,6 +25,8 @@ pub struct CompiledGraph {
   field_index: Vec<HashMap<String, usize>>,
   parameter_index: HashMap<String, usize>,
   relation_index: HashMap<String, usize>,
+  ordering_index: HashMap<String, usize>,
+  default_ordering_index: Option<usize>,
   projection_index: HashMap<ProjectionPath, usize>,
   projections: Vec<CompiledProjection>,
   summary: bool,
@@ -74,6 +76,17 @@ impl CompiledGraph {
       .enumerate()
       .map(|(index, relation)| (relation.name.clone(), index))
       .collect();
+
+    let ordering_index: HashMap<_, _> = definition
+      .orderings
+      .iter()
+      .enumerate()
+      .map(|(index, ordering)| (ordering.name.clone(), index))
+      .collect();
+    let default_ordering_index = definition
+      .orderings
+      .iter()
+      .position(|ordering| ordering.selected_by_default);
 
     let projection_index = definition
       .projection
@@ -143,6 +156,8 @@ impl CompiledGraph {
       field_index,
       parameter_index,
       relation_index,
+      ordering_index,
+      default_ordering_index,
       projection_index,
       projections,
       summary,
@@ -211,6 +226,25 @@ impl CompiledGraph {
 
   pub(crate) fn relation_index(&self, name: &str) -> Option<usize> {
     self.relation_index.get(name).copied()
+  }
+
+  pub fn ordering(&self, name: &str) -> Option<&OrderingDefinition> {
+    self
+      .ordering_index
+      .get(name)
+      .map(|index| &self.definition.orderings[*index])
+  }
+
+  pub(crate) fn ordering_index(&self, name: &str) -> Option<usize> {
+    self.ordering_index.get(name).copied()
+  }
+
+  pub(crate) fn default_ordering_index(&self) -> Option<usize> {
+    self.default_ordering_index
+  }
+
+  pub(crate) fn ordering_at(&self, ordering_index: usize) -> &OrderingDefinition {
+    &self.definition.orderings[ordering_index]
   }
 
   pub fn projection(&self, path: &str) -> Option<&ProjectionFieldDefinition> {

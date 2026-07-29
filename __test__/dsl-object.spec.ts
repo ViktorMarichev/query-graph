@@ -6,6 +6,7 @@ import {
   dimension as functionalDimension,
   inParameter as functionalInParameter,
   measure as functionalMeasure,
+  ordering as functionalOrdering,
   project as functionalProject,
   relation as functionalRelation,
 } from '../definition.js'
@@ -21,6 +22,7 @@ import {
   firstBy,
   inParameter,
   measure,
+  ordering,
   project,
   relation,
   requiredListParameter,
@@ -31,7 +33,9 @@ type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2 ? true : false
 
 type ProjectionPathOf<Definition> =
-  Definition extends GraphDefinition<infer _Parameter, infer ProjectionPath> ? ProjectionPath : never
+  Definition extends GraphDefinition<infer _Parameter, infer ProjectionPath, infer _OrderingName>
+    ? ProjectionPath
+    : never
 
 test('object DSL produces the canonical functional definition', (t) => {
   const staff = source('staff', { id: 'int64' })
@@ -74,6 +78,13 @@ test('object DSL produces the canonical functional definition', (t) => {
         default: true,
       }),
     ],
+    orderings: [
+      ordering({
+        name: 'idAsc',
+        by: [asc(staff.field('id'))],
+        default: true,
+      }),
+    ],
   })
 
   const functionalDefinition = functionalDefineGraph({
@@ -95,6 +106,13 @@ test('object DSL produces the canonical functional definition', (t) => {
     projection: [
       functionalProject('id', staff.field('id'), { default: true }),
       functionalProject('credentials.idPerson', personStaff.field('idPerson'), {
+        default: true,
+      }),
+    ],
+    orderings: [
+      functionalOrdering({
+        name: 'idAsc',
+        by: [asc(staff.field('id'))],
         default: true,
       }),
     ],
@@ -167,6 +185,11 @@ test('object DSL rejects unknown structural configuration fields', (t) => {
     expression: count(),
     distinct: true,
   }
+  const invalidOrdering = {
+    name: 'idAsc',
+    by: [asc(staff.field('id'))] as const,
+    deafult: true,
+  }
 
   const cases = [
     {
@@ -194,10 +217,31 @@ test('object DSL rejects unknown structural configuration fields', (t) => {
       field: 'distinct',
       invoke: () => measure(invalidMeasure),
     },
+    {
+      factory: 'ordering',
+      field: 'deafult',
+      invoke: () => ordering(invalidOrdering),
+    },
   ]
 
   for (const { factory, field, invoke } of cases) {
     const error = t.throws(invoke)
     t.is(error.message, `${factory} received unknown configuration field ${JSON.stringify(field)}`)
   }
+})
+
+test('object DSL validates ordering configuration before it reaches Rust', (t) => {
+  const staff = source('staff', { id: 'int64' })
+  const byId = asc(staff.field('id'))
+  const invoke = ordering as unknown as (configuration: Record<string, unknown>) => unknown
+
+  t.is(t.throws(() => invoke({ name: '', by: [byId] })).message, 'ordering name must be a non-empty string')
+  t.is(
+    t.throws(() => invoke({ name: 'idAsc', by: [] })).message,
+    'ordering by must contain at least one order expression',
+  )
+  t.is(
+    t.throws(() => invoke({ name: 'idAsc', by: [byId], default: 'yes' })).message,
+    'ordering default must be a boolean',
+  )
 })

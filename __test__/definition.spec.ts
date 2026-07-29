@@ -12,6 +12,7 @@ import {
   isNull,
   lower,
   nullable,
+  ordering,
   param,
   project,
   requiredParameter,
@@ -46,7 +47,7 @@ test('builds the versioned wire definition without author-written discriminators
     projection: [project('id', root.field('id'), { default: true })],
   })
 
-  t.is(definition.schemaVersion, 6)
+  t.is(definition.schemaVersion, 7)
   t.false('relations' in definition.projection.fields[0])
   t.deepEqual(definition.constraints[0].predicate, {
     kind: 'eq',
@@ -105,7 +106,13 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
     ],
     constraints: [constraint('hasService', hasService)],
     projection: [project('id', staff.field('id'), { default: true })],
-    defaultOrderBy: [asc(staff.field('id'))],
+    orderings: [
+      ordering({
+        name: 'default',
+        by: [asc(staff.field('id'))],
+        default: true,
+      }),
+    ],
   })
 
   t.deepEqual(definition.constraints[0].predicate, {
@@ -150,13 +157,17 @@ test('composes graph modules into a flat wire definition', (t) => {
   const idProjection = project('id', root.field('id'), { default: true })
   const childRelation = relation('child', root, child, eq(root.field('id'), child.field('idRoot')))
   const childProjection = project('child.id', child.field('id'))
-  const idOrder = asc(root.field('id'))
+  const idOrdering = ordering({
+    name: 'default',
+    by: [asc(root.field('id'))],
+    default: true,
+  })
 
   const rootModule = defineGraphModule({
     name: 'root',
     sources: [root],
     projection: [idProjection],
-    defaultOrderBy: [idOrder],
+    orderings: [idOrdering],
   })
   const filterModule = defineGraphModule({
     name: 'filter',
@@ -200,7 +211,7 @@ test('composes graph modules into a flat wire definition', (t) => {
     definition.projection.fields.map((field) => field.path),
     [['id'], ['child', 'id']],
   )
-  t.deepEqual(definition.defaultOrderBy, [idOrder])
+  t.deepEqual(definition.orderings, [idOrdering])
   t.false('modules' in definition)
   t.true(Object.isFrozen(combinedModule))
   t.true(Object.isFrozen(combinedModule.sources))

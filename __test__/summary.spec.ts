@@ -11,6 +11,7 @@ import {
   eq,
   gte,
   measure,
+  ordering,
   param,
   relation,
   requiredParameter,
@@ -56,10 +57,16 @@ test('builds and compiles a typed summary graph', (t) => {
         default: true,
       }),
     ],
-    defaultOrderBy: [desc(staffCount)],
+    orderings: [
+      ordering({
+        name: 'staffCountDesc',
+        by: [desc(staffCount)],
+        default: true,
+      }),
+    ],
   })
 
-  t.is(definition.schemaVersion, 6)
+  t.is(definition.schemaVersion, 7)
   t.deepEqual(
     definition.projection.fields.map(({ path, role }) => [path.join('.'), role]),
     [

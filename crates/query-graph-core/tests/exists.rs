@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use query_graph_core::{
   ConstraintDefinition, Expression, FieldDefinition, GraphDefinition, MappedQueryGraph,
-  OperationIssueCode, OrderByDefinition, ParameterDefinition, PlanError, ProjectionDefinition,
-  ProjectionFieldDefinition, QueryOperation, RelationDefinition, RelationalMapping, ScalarType,
-  SourceDefinition, SourceMapping, SqlCompileError,
+  OperationIssueCode, OrderByDefinition, OrderingDefinition, ParameterDefinition, PlanError,
+  ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationDefinition,
+  RelationalMapping, ScalarType, SourceDefinition, SourceMapping, SqlCompileError,
 };
 use serde_json::json;
 
@@ -99,7 +99,11 @@ fn definition() -> GraphDefinition {
     )
     .selected_by_default()],
   };
-  definition.default_order_by = vec![OrderByDefinition::asc(Expression::field("staff", "id"))];
+  definition.orderings = vec![OrderingDefinition::new(
+    "default",
+    [OrderByDefinition::asc(Expression::field("staff", "id"))],
+  )
+  .selected_by_default()];
   definition
 }
 

@@ -188,10 +188,9 @@ pub(crate) fn compile(
     sql.push_str(&format!("\nHAVING\n  {}", predicates?.join("\n  AND ")));
   }
 
-  if !graph.definition().default_order_by.is_empty() {
-    let order_items: Result<Vec<_>, _> = graph
-      .definition()
-      .default_order_by
+  let order_by = plan.order_by(graph);
+  if !order_by.is_empty() {
+    let order_items: Result<Vec<_>, _> = order_by
       .iter()
       .map(|order| renderer.render_order(order))
       .collect();
@@ -199,7 +198,7 @@ pub(crate) fn compile(
   }
 
   if plan.offset().is_some() || plan.limit().is_some() {
-    if graph.definition().default_order_by.is_empty() {
+    if order_by.is_empty() {
       return Err(SqlCompileError::PaginationRequiresOrder {
         dialect: dialect.name(),
       });

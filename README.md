@@ -26,7 +26,7 @@ JavaScript.
 - именованные связи;
 - семантические ограничения;
 - выходную проекцию;
-- сортировку по умолчанию.
+- именованные варианты сортировки.
 
 `registerDefinition` один раз передает определение в Rust. Rust валидирует все
 ссылки, создает переиспользуемые индексы и возвращает нативный дескриптор
@@ -37,6 +37,7 @@ import { registerDefinition } from 'query-graph'
 import {
   asc,
   constraint,
+  desc,
   defineGraph,
   defineGraphModule,
   eq,
@@ -45,13 +46,14 @@ import {
   inParameter,
   isNotNull,
   nullable,
+  ordering,
   param,
   project,
   relation,
   requiredListParameter,
   requiredParameter,
   source,
-} from 'query-graph/definition'
+} from 'query-graph/dsl'
 
 const link = source('link', {
   idOwner: 'int64',
@@ -64,7 +66,11 @@ const value = source('value', {
 })
 
 const idOwner = requiredParameter('idOwner', 'int64')
-const valueRelation = relation('value', link, value, eq(link.field('idControllerObjectValue'), value.field('id')), {
+const valueRelation = relation({
+  name: 'value',
+  from: link,
+  to: value,
+  on: eq(link.field('idControllerObjectValue'), value.field('id')),
   required: true,
 })
 
@@ -74,11 +80,19 @@ const attributeValuesModule = defineGraphModule({
   parameters: [idOwner],
   relations: [valueRelation],
   constraints: [
-    constraint('owner', eq(link.field('idOwner'), param(idOwner))),
-    constraint('hasValue', exists(value, isNotNull(value.field('value')))),
+    constraint({
+      name: 'owner',
+      predicate: eq(link.field('idOwner'), param(idOwner)),
+    }),
+    constraint({
+      name: 'hasValue',
+      predicate: exists(value, isNotNull(value.field('value'))),
+    }),
   ],
   projection: [
-    project('value.value', value.field('value'), {
+    project({
+      path: 'value.value',
+      expression: value.field('value'),
       default: true,
     }),
   ],
@@ -117,11 +131,13 @@ Relation path проекции указывать не требуется. Пр�
 
 ### Варианты DSL
 
-Canonical `GraphDefinition` не зависит от authoring DSL. Основной пакет сохраняет
-functional API в `query-graph/definition`, а альтернативные DSL можно устанавливать
-отдельно, не добавляя новый planner или SQL compiler.
+Canonical `GraphDefinition` не зависит от authoring DSL. Основной authoring API
+доступен через `query-graph/dsl` и использует объектные конфигурации. Позиционный
+`query-graph/definition` сохранён как адаптер совместимости для существующего кода;
+новые графы на него ориентировать не следует.
 
-Объектный вариант поставляется отдельным workspace/npm-пакетом:
+Отдельный пакет `@query-graph/dsl-object` является тонким фасадом над тем же API.
+Он полезен, когда DSL нужен как отдельная зависимость:
 
 ```bash
 npm install query-graph @query-graph/dsl-object
@@ -161,10 +177,11 @@ const definition = defineGraph({
 const graph = registerDefinition(definition)
 ```
 
-Object DSL предоставляет собственный ограниченный authoring API и не обязан
-повторять каждый экспорт functional DSL.
+Фасад не содержит второй реализации и напрямую переэкспортирует
+`query-graph/dsl`. Расширение позиционного compatibility API не меняет поверхность
+объектного DSL.
 
-Оба DSL формируют один и тот же versioned wire-контракт. Сторонний DSL также может
+Оба входа формируют один и тот же versioned wire-контракт. Сторонний DSL также может
 создавать `GraphDefinitionInput`; Rust проверяет его при `registerDefinition`.
 
 ### Existential constraints
@@ -174,7 +191,10 @@ Object DSL предоставляет собственный ограничен�
 уникальный relation path от root до указанного source.
 
 ```ts
-constraint('hasService', exists(businessServiceStaff, eq(businessServiceStaff.field('idService'), param(idService))))
+constraint({
+  name: 'hasService',
+  predicate: exists(businessServiceStaff, eq(businessServiceStaff.field('idService'), param(idService))),
+})
 ```
 
 Predicate может обращаться к root и sources на выведенном пути. Ссылки на
@@ -202,21 +222,21 @@ const definition = defineGraph({
   sources: [staff, businessServiceStaff],
   parameters: [idServices],
   relations: [
-    relation(
-      'staffServices',
-      staff,
-      businessServiceStaff,
-      eq(staff.field('id'), businessServiceStaff.field('idStaff')),
-      { cardinality: 'many' },
-    ),
+    relation({
+      name: 'staffServices',
+      from: staff,
+      to: businessServiceStaff,
+      on: eq(staff.field('id'), businessServiceStaff.field('idStaff')),
+      cardinality: 'many',
+    }),
   ],
   constraints: [
-    constraint(
-      'services',
-      exists(businessServiceStaff, inParameter(businessServiceStaff.field('idService'), idServices)),
-    ),
+    constraint({
+      name: 'services',
+      predicate: exists(businessServiceStaff, inParameter(businessServiceStaff.field('idService'), idServices)),
+    }),
   ],
-  projection: [project('id', staff.field('id'), { default: true })],
+  projection: [project({ path: 'id', expression: staff.field('id'), default: true })],
 })
 ```
 
@@ -238,6 +258,30 @@ adapter исполнения берет значение из исходного
 список остается присутствующим параметром и компилируется в ложный предикат
 `1 = 0`; недопустимый SQL `IN ()` не создается.
 
+### Именованные сортировки
+
+Definition объявляет допустимые способы упорядочивания, а operation выбирает один из них по имени:
+
+```ts
+const definition = defineGraph({
+  // ...
+  orderings: [
+    ordering({ name: 'createdDesc', by: [desc(items.field('dateCreate'))], default: true }),
+    ordering({ name: 'nameAsc', by: [asc(items.field('name'))] }),
+  ],
+})
+
+relationalGraph.compileOracle({
+  ordering: 'nameAsc',
+  parameters,
+})
+```
+
+Поле `default: true` можно указать только у одного варианта. Если operation не передает
+`ordering`, planner использует default-вариант; без него SQL строится без `ORDER BY`.
+TypeScript выводит union имен из definition и подключенных graph modules. Rust проверяет имя
+повторно и планирует только связи и параметры выбранной сортировки.
+
 ### To-one selection
 
 `cardinality: 'one'` описывает контракт связи. Если физический источник может
@@ -245,7 +289,11 @@ adapter исполнения берет значение из исходного
 одной строки:
 
 ```ts
-const credentials = relation('credentials', staff, personStaff, eq(staff.field('id'), personStaff.field('idStaff')), {
+const credentials = relation({
+  name: 'credentials',
+  from: staff,
+  to: personStaff,
+  on: eq(staff.field('id'), personStaff.field('idStaff')),
   selection: firstBy(asc(personStaff.field('idPerson')), asc(personStaff.field('id'))),
 })
 ```
@@ -266,11 +314,17 @@ SQL Server renderer использует `OUTER/CROSS APPLY` и `TOP (1)`, Oracl
 SQL-конструкции `GROUP BY` и `HAVING`:
 
 ```ts
-const serviceId = dimension('serviceId', service.field('id'), {
+const serviceId = dimension({
+  path: 'serviceId',
+  expression: service.field('id'),
   default: true,
 })
 
-const staffCount = measure('staffCount', countDistinct(serviceStaff.field('idStaff')), { default: true })
+const staffCount = measure({
+  path: 'staffCount',
+  expression: countDistinct(serviceStaff.field('idStaff')),
+  default: true,
+})
 
 const definition = defineSummaryGraph({
   name: 'serviceSummary',
@@ -278,17 +332,33 @@ const definition = defineSummaryGraph({
   sources: [service, serviceStaff],
   parameters: [idOrganisation, minimumStaff],
   relations: [
-    relation('staff', service, serviceStaff, eq(service.field('id'), serviceStaff.field('idService')), {
+    relation({
+      name: 'staff',
+      from: service,
+      to: serviceStaff,
+      on: eq(service.field('id'), serviceStaff.field('idService')),
       cardinality: 'many',
     }),
   ],
   constraints: [
-    constraint('organisation', eq(service.field('idOrganisation'), param(idOrganisation))),
-    constraint('minimumStaff', gte(staffCount, param(minimumStaff))),
+    constraint({
+      name: 'organisation',
+      predicate: eq(service.field('idOrganisation'), param(idOrganisation)),
+    }),
+    constraint({
+      name: 'minimumStaff',
+      predicate: gte(staffCount, param(minimumStaff)),
+    }),
   ],
   dimensions: [serviceId],
   measures: [staffCount],
-  defaultOrderBy: [desc(staffCount)],
+  orderings: [
+    ordering({
+      name: 'staffCountDesc',
+      by: [desc(staffCount)],
+      default: true,
+    }),
+  ],
 })
 ```
 

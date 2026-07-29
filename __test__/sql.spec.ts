@@ -4,8 +4,10 @@ import {
   asc,
   constraint,
   defineGraph,
+  desc,
   eq,
   nullable,
+  ordering,
   param,
   project,
   relation,
@@ -44,7 +46,17 @@ const definition = defineGraph({
       default: true,
     }),
   ],
-  defaultOrderBy: [asc(link.field('order'))],
+  orderings: [
+    ordering({
+      name: 'default',
+      by: [asc(link.field('order'))],
+      default: true,
+    }),
+    ordering({
+      name: 'valueDesc',
+      by: [desc(value.field('id'))],
+    }),
+  ],
 })
 
 const mapping = {
@@ -86,6 +98,7 @@ test('compiles a mapped graph to SQL Server', (t) => {
   t.regex(statement.sql, /FROM \[dbo\]\.\[ControllerAttributeValueLink\] AS \[t0\]/)
   t.regex(statement.sql, /INNER JOIN \[ControllerObjectValue\] AS \[t1\]/)
   t.regex(statement.sql, /\(\[t0\]\.\[owner_id\] = @p0\)/)
+  t.regex(statement.sql, /ORDER BY\n  \[t0\]\.\[order\] ASC/)
   t.regex(statement.sql, /OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY$/)
 })
 
@@ -109,7 +122,37 @@ test('compiles the same mapped graph to Oracle', (t) => {
   t.regex(statement.sql, /FROM "dbo"\."ControllerAttributeValueLink" "t0"/)
   t.regex(statement.sql, /INNER JOIN "ControllerObjectValue" "t1"/)
   t.regex(statement.sql, /\("t0"\."owner_id" = :p0\)/)
+  t.regex(statement.sql, /ORDER BY\n  "t0"\."order" ASC/)
   t.regex(statement.sql, /OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY$/)
+})
+
+test('selects the same named ordering for SQL Server and Oracle', (t) => {
+  const graph = registerDefinition(definition).withRelationalMapping(mapping)
+  const operation = {
+    ordering: 'valueDesc' as const,
+    parameters: { idOwner: 42 },
+  }
+
+  t.regex(graph.compileSqlServer(operation).sql, /ORDER BY\n  \[t1\]\.\[id\] DESC$/)
+  t.regex(graph.compileOracle(operation).sql, /ORDER BY\n  "t1"\."id" DESC$/)
+})
+
+test('returns an unknown named ordering as an operation error', (t) => {
+  const graph = registerDefinition(definition).withRelationalMapping(mapping)
+  const error = t.throws(() =>
+    graph.compileSqlServer({
+      // @ts-expect-error The runtime boundary must still reject untyped callers.
+      ordering: 'missing',
+      parameters: { idOwner: 42 },
+    }),
+  ) as QueryGraphError
+
+  t.is(error.code, 'QUERY_GRAPH_OPERATION_INVALID')
+  t.is(error.phase, 'operation')
+  t.like(error.issues[0], {
+    code: 'unknownOrdering',
+    location: 'ordering',
+  })
 })
 
 test('enforces compiler version capabilities', (t) => {

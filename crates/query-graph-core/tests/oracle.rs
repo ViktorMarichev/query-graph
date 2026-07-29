@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use query_graph_core::{
   ConstraintDefinition, Expression, FieldDefinition, GraphDefinition, LiteralValue,
   MappedQueryGraph, NullsOrder, OracleCompiler, OracleVersion, OrderByDefinition,
-  ParameterDefinition, ProjectionDefinition, ProjectionFieldDefinition, QueryOperation,
-  RelationDefinition, RelationalMapping, ScalarType, SemanticFunction, SourceDefinition,
-  SourceMapping, SqlCompileError, TableName,
+  OrderingDefinition, ParameterDefinition, ProjectionDefinition, ProjectionFieldDefinition,
+  QueryOperation, RelationDefinition, RelationalMapping, ScalarType, SemanticFunction,
+  SourceDefinition, SourceMapping, SqlCompileError, TableName,
 };
 use serde_json::json;
 
@@ -68,11 +68,15 @@ fn definition() -> GraphDefinition {
     )
     .selected_by_default()],
   };
-  definition.default_order_by = vec![OrderByDefinition {
-    expression: Expression::field("link", "order"),
-    direction: query_graph_core::OrderDirection::Asc,
-    nulls: Some(NullsOrder::Last),
-  }];
+  definition.orderings = vec![OrderingDefinition::new(
+    "default",
+    [OrderByDefinition {
+      expression: Expression::field("link", "order"),
+      direction: query_graph_core::OrderDirection::Asc,
+      nulls: Some(NullsOrder::Last),
+    }],
+  )
+  .selected_by_default()];
   definition
 }
 

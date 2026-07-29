@@ -8,6 +8,7 @@ import {
   eq,
   isNull,
   nullable,
+  ordering,
   param,
   project,
   relation,
@@ -115,7 +116,13 @@ const attributeValueGraphDefinition = defineGraph({
     }),
     project('value.file.storageId', coalesce(storage.field('id'), 0)),
   ],
-  defaultOrderBy: [asc(link.field('order')), asc(value.field('order'))],
+  orderings: [
+    ordering({
+      name: 'default',
+      by: [asc(link.field('order')), asc(value.field('order'))],
+      default: true,
+    }),
+  ],
 })
 
 const relationalMapping = {

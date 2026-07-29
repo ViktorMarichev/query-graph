@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CompiledGraph, DefinitionIssues, Expression};
 
-pub const GRAPH_DEFINITION_VERSION: u32 = 6;
+pub const GRAPH_DEFINITION_VERSION: u32 = 7;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -20,7 +20,7 @@ pub struct GraphDefinition {
   #[serde(default)]
   pub projection: ProjectionDefinition,
   #[serde(default)]
-  pub default_order_by: Vec<OrderByDefinition>,
+  pub orderings: Vec<OrderingDefinition>,
 }
 
 impl GraphDefinition {
@@ -34,7 +34,7 @@ impl GraphDefinition {
       relations: Vec::new(),
       constraints: Vec::new(),
       projection: ProjectionDefinition::default(),
-      default_order_by: Vec::new(),
+      orderings: Vec::new(),
     }
   }
 
@@ -381,6 +381,34 @@ pub enum ProjectionFieldRole {
 impl ProjectionFieldRole {
   const fn is_value(&self) -> bool {
     matches!(self, Self::Value)
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OrderingDefinition {
+  pub name: String,
+  #[serde(rename = "orderBy")]
+  pub order_by: Vec<OrderByDefinition>,
+  #[serde(default, rename = "default")]
+  pub selected_by_default: bool,
+}
+
+impl OrderingDefinition {
+  pub fn new(
+    name: impl Into<String>,
+    order_by: impl IntoIterator<Item = OrderByDefinition>,
+  ) -> Self {
+    Self {
+      name: name.into(),
+      order_by: order_by.into_iter().collect(),
+      selected_by_default: false,
+    }
+  }
+
+  pub fn selected_by_default(mut self) -> Self {
+    self.selected_by_default = true;
+    self
   }
 }
 

@@ -1,6 +1,6 @@
 use query_graph_core::{
   ConstraintDefinition, DefinitionIssueCode, Expression, ExpressionType, FieldDefinition,
-  GraphDefinition, LiteralValue, OrderByDefinition, ProjectionDefinition,
+  GraphDefinition, LiteralValue, OrderByDefinition, OrderingDefinition, ProjectionDefinition,
   ProjectionFieldDefinition, RelationDefinition, ScalarType, SemanticFunction, SourceDefinition,
 };
 
@@ -206,7 +206,11 @@ fn rejects_untyped_projections_and_non_orderable_values() {
       Expression::literal(LiteralValue::Null),
     )],
   };
-  definition.default_order_by = vec![OrderByDefinition::asc(Expression::field("root", "payload"))];
+  definition.orderings = vec![OrderingDefinition::new(
+    "default",
+    [OrderByDefinition::asc(Expression::field("root", "payload"))],
+  )
+  .selected_by_default()];
 
   let codes = issue_codes(definition);
 

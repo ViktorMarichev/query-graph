@@ -19,9 +19,9 @@ mod validation;
 pub use compiled_graph::CompiledGraph;
 pub use definition::{
   ConstraintCondition, ConstraintDefinition, FieldDefinition, GraphDefinition, NullsOrder,
-  OrderByDefinition, OrderDirection, ParameterDefinition, ParameterShape, ProjectionDefinition,
-  ProjectionFieldDefinition, ProjectionFieldRole, RelationCardinality, RelationDefinition,
-  RelationSelection, ScalarType, SourceDefinition, GRAPH_DEFINITION_VERSION,
+  OrderByDefinition, OrderDirection, OrderingDefinition, ParameterDefinition, ParameterShape,
+  ProjectionDefinition, ProjectionFieldDefinition, ProjectionFieldRole, RelationCardinality,
+  RelationDefinition, RelationSelection, ScalarType, SourceDefinition, GRAPH_DEFINITION_VERSION,
 };
 pub use expression::{AggregateFunction, Expression, LiteralValue, SemanticFunction};
 pub use mapping::{

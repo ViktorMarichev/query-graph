@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use query_graph_core::{
   ConstraintDefinition, Expression, FieldDefinition, GraphDefinition, LiteralValue,
-  MappedQueryGraph, MappingIssueCode, OrderByDefinition, ParameterDefinition, PlanError,
-  ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationCardinality,
+  MappedQueryGraph, MappingIssueCode, OrderByDefinition, OrderingDefinition, ParameterDefinition,
+  PlanError, ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationCardinality,
   RelationDefinition, RelationalMapping, ScalarType, SemanticFunction, SourceDefinition,
   SourceMapping, SqlCompileError, SqlServerCompiler, SqlServerVersion, TableName,
 };
@@ -93,10 +93,14 @@ fn definition() -> GraphDefinition {
       ),
     ],
   };
-  definition.default_order_by = vec![
-    OrderByDefinition::asc(Expression::field("link", "order")),
-    OrderByDefinition::asc(Expression::field("value", "order")),
-  ];
+  definition.orderings = vec![OrderingDefinition::new(
+    "default",
+    [
+      OrderByDefinition::asc(Expression::field("link", "order")),
+      OrderByDefinition::asc(Expression::field("value", "order")),
+    ],
+  )
+  .selected_by_default()];
   definition
 }
 
@@ -417,7 +421,11 @@ fn plans_relation_paths_required_only_by_ordering() {
     Expression::field("link", "idOwner"),
   )
   .selected_by_default()];
-  definition.default_order_by = vec![OrderByDefinition::asc(Expression::field("detail", "name"))];
+  definition.orderings = vec![OrderingDefinition::new(
+    "default",
+    [OrderByDefinition::asc(Expression::field("detail", "name"))],
+  )
+  .selected_by_default()];
   let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
 
   let statement = graph

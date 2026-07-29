@@ -45,7 +45,7 @@ impl<'a> DefinitionValidator<'a> {
     self.source_scopes = topology::infer_source_scopes(self.definition, &self.sources);
     self.validate_constraints();
     self.validate_projection();
-    self.validate_ordering();
+    self.validate_orderings();
     aggregation::validate(self.definition, &mut self.issues);
     topology::validate(self.definition, &self.sources, &mut self.issues);
 
@@ -393,16 +393,57 @@ impl<'a> DefinitionValidator<'a> {
     }
   }
 
-  fn validate_ordering(&mut self) {
-    for (order_index, order) in self.definition.default_order_by.iter().enumerate() {
-      let context =
-        ExpressionContext::unrestricted(&self.sources, &self.parameters, &self.source_scopes);
-      expression::validate(
-        &order.expression,
-        &format!("defaultOrderBy[{order_index}].expression"),
-        &context,
-        &mut self.issues,
-      );
+  fn validate_orderings(&mut self) {
+    let mut names = HashSet::new();
+    let mut default_count = 0;
+
+    for (ordering_index, ordering) in self.definition.orderings.iter().enumerate() {
+      let location = format!("orderings[{ordering_index}]");
+
+      if ordering.name.trim().is_empty() {
+        self.issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::EmptyOrderingName,
+          format!("{location}.name"),
+          "ordering name must not be empty",
+        ));
+      } else if !names.insert(ordering.name.clone()) {
+        self.issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::DuplicateOrdering,
+          format!("{location}.name"),
+          format!("ordering {:?} is defined more than once", ordering.name),
+        ));
+      }
+
+      if ordering.selected_by_default {
+        default_count += 1;
+      }
+
+      if ordering.order_by.is_empty() {
+        self.issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::EmptyOrdering,
+          format!("{location}.orderBy"),
+          "ordering must contain at least one order item",
+        ));
+      }
+
+      for (order_index, order) in ordering.order_by.iter().enumerate() {
+        let context =
+          ExpressionContext::unrestricted(&self.sources, &self.parameters, &self.source_scopes);
+        expression::validate(
+          &order.expression,
+          &format!("{location}.orderBy[{order_index}].expression"),
+          &context,
+          &mut self.issues,
+        );
+      }
+    }
+
+    if default_count > 1 {
+      self.issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::MultipleDefaultOrderings,
+        "orderings",
+        "only one ordering can be selected by default",
+      ));
     }
   }
 }

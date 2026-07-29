@@ -4,7 +4,7 @@ use std::fmt;
 
 use crate::{
   compiled_graph::ConstraintPhase, CompiledGraph, ConstraintCondition, Expression, OperationIssues,
-  QueryOperation, RelationCardinality,
+  OrderByDefinition, QueryOperation, RelationCardinality,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,6 +13,7 @@ pub(crate) struct QueryPlan {
   relation_indices: Box<[usize]>,
   pre_aggregation_constraint_indices: Box<[usize]>,
   post_aggregation_constraint_indices: Box<[usize]>,
+  ordering_index: Option<usize>,
   offset: Option<u64>,
   limit: Option<u64>,
 }
@@ -34,6 +35,13 @@ impl QueryPlan {
     &self.post_aggregation_constraint_indices
   }
 
+  pub(crate) fn order_by<'a>(&self, graph: &'a CompiledGraph) -> &'a [OrderByDefinition] {
+    self
+      .ordering_index
+      .map(|index| graph.ordering_at(index).order_by.as_slice())
+      .unwrap_or(&[])
+  }
+
   pub fn offset(&self) -> Option<u64> {
     self.offset
   }
@@ -48,6 +56,10 @@ pub(crate) fn build(
   operation: &QueryOperation,
 ) -> Result<QueryPlan, PlanError> {
   let operation_plan = operation.validate(graph)?;
+  let order_by = operation_plan
+    .ordering_index
+    .map(|index| graph.ordering_at(index).order_by.as_slice())
+    .unwrap_or(&[]);
   let constraint_indices: Vec<_> = graph
     .definition()
     .constraints
@@ -91,7 +103,7 @@ pub(crate) fn build(
     )?;
   }
 
-  for order in &graph.definition().default_order_by {
+  for order in order_by {
     add_expression_relations(graph, &order.expression, &mut required_relations)?;
   }
 
@@ -118,7 +130,7 @@ pub(crate) fn build(
       &mut required_parameters,
     )?;
   }
-  for order in &graph.definition().default_order_by {
+  for order in order_by {
     add_expression_parameters(graph, &order.expression, &mut required_parameters)?;
   }
   for relation_index in &relation_indices {
@@ -158,6 +170,7 @@ pub(crate) fn build(
     relation_indices: relation_indices.into_boxed_slice(),
     pre_aggregation_constraint_indices: pre_aggregation_constraint_indices.into_boxed_slice(),
     post_aggregation_constraint_indices: post_aggregation_constraint_indices.into_boxed_slice(),
+    ordering_index: operation_plan.ordering_index,
     offset: operation.offset,
     limit: operation.limit,
   })

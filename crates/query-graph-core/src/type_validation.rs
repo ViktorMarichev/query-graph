@@ -111,16 +111,19 @@ pub(crate) fn analyze(
     projection_types.push(resolved);
   }
 
-  for (index, order) in definition.default_order_by.iter().enumerate() {
-    let location = format!("defaultOrderBy[{index}].expression");
-    let expression_type = infer_expression(&order.expression, &location, &environment, &mut issues);
-    if let Some(expression_type) = expression_type {
-      if let Err(error) = type_system::require_orderable(expression_type) {
-        issues.push(DefinitionIssue::new(
-          DefinitionIssueCode::InvalidOrderExpression,
-          location,
-          error.message,
-        ));
+  for (ordering_index, ordering) in definition.orderings.iter().enumerate() {
+    for (order_index, order) in ordering.order_by.iter().enumerate() {
+      let location = format!("orderings[{ordering_index}].orderBy[{order_index}].expression");
+      let expression_type =
+        infer_expression(&order.expression, &location, &environment, &mut issues);
+      if let Some(expression_type) = expression_type {
+        if let Err(error) = type_system::require_orderable(expression_type) {
+          issues.push(DefinitionIssue::new(
+            DefinitionIssueCode::InvalidOrderExpression,
+            location,
+            error.message,
+          ));
+        }
       }
     }
   }

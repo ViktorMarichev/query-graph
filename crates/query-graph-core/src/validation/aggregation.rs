@@ -68,10 +68,12 @@ pub(super) fn validate(definition: &GraphDefinition, issues: &mut Vec<Definition
     }
   }
 
-  for (index, order) in definition.default_order_by.iter().enumerate() {
-    let location = format!("defaultOrderBy[{index}].expression");
-    validate_nested_aggregates(&order.expression, &location, false, issues);
-    validate_grouped_expression(&order.expression, &location, &dimensions, issues);
+  for (ordering_index, ordering) in definition.orderings.iter().enumerate() {
+    for (order_index, order) in ordering.order_by.iter().enumerate() {
+      let location = format!("orderings[{ordering_index}].orderBy[{order_index}].expression");
+      validate_nested_aggregates(&order.expression, &location, false, issues);
+      validate_grouped_expression(&order.expression, &location, &dimensions, issues);
+    }
   }
 }
 
@@ -94,13 +96,15 @@ fn validate_record_graph(definition: &GraphDefinition, issues: &mut Vec<Definiti
     );
   }
 
-  for (index, order) in definition.default_order_by.iter().enumerate() {
-    reject_aggregate(
-      &order.expression,
-      &format!("defaultOrderBy[{index}].expression"),
-      "aggregate ordering requires a summary graph",
-      issues,
-    );
+  for (ordering_index, ordering) in definition.orderings.iter().enumerate() {
+    for (order_index, order) in ordering.order_by.iter().enumerate() {
+      reject_aggregate(
+        &order.expression,
+        &format!("orderings[{ordering_index}].orderBy[{order_index}].expression"),
+        "aggregate ordering requires a summary graph",
+        issues,
+      );
+    }
   }
 }
 

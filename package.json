@@ -16,6 +16,11 @@
       "types": "./definition.d.ts",
       "require": "./definition.js",
       "default": "./definition.js"
+    },
+    "./dsl": {
+      "types": "./dsl.d.ts",
+      "require": "./dsl.js",
+      "default": "./dsl.js"
     }
   },
   "license": "MIT",
@@ -30,6 +35,8 @@
   "files": [
     "definition.d.ts",
     "definition.js",
+    "dsl.d.ts",
+    "dsl.js",
     "index.d.ts",
     "index.js"
   ],

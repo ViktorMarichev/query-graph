@@ -13,6 +13,7 @@ import {
   like,
   optionalListParameter,
   optionalParameter,
+  ordering,
   param,
   project,
   relation,
@@ -42,6 +43,13 @@ test('propagates definition parameters and projection paths to query operations'
     parameters: [idOrganisation],
     constraints: [constraint('organisation', eq(staff.field('idOrganisation'), param(idOrganisation)))],
     projection: [project('id', staff.field('id'), { default: true })],
+    orderings: [
+      ordering({
+        name: 'idAsc',
+        by: [asc(staff.field('id'))],
+        default: true,
+      }),
+    ],
   })
 
   const credentials = relation('credentials', staff, personStaff, eq(staff.field('id'), personStaff.field('idStaff')), {
@@ -67,6 +75,12 @@ test('propagates definition parameters and projection paths to query operations'
         default: true,
       }),
     ],
+    orderings: [
+      ordering({
+        name: 'nameAsc',
+        by: [asc(staff.field('name'))],
+      }),
+    ],
   })
 
   const graph = registerDefinition(definition)
@@ -79,6 +93,7 @@ test('propagates definition parameters and projection paths to query operations'
 
   relationalGraph.compileSqlServer({
     select: ['id', 'credentials.idPerson'],
+    ordering: 'nameAsc',
     parameters: {
       idOrganisation: 12,
       search: 'Ann%',
@@ -130,6 +145,12 @@ test('propagates definition parameters and projection paths to query operations'
     relationalGraph.compileSqlServer({
       // @ts-expect-error Selection is restricted to declared projection paths.
       select: ['credentials.unknown'],
+      parameters: { idOrganisation: 12 },
+    })
+
+    relationalGraph.compileSqlServer({
+      // @ts-expect-error Ordering is restricted to names declared by the graph and its modules.
+      ordering: 'missing',
       parameters: { idOrganisation: 12 },
     })
 

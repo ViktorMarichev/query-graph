@@ -1,6 +1,6 @@
 use query_graph_core::{
   ConstraintDefinition, DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition,
-  LiteralValue, OrderByDefinition, ParameterDefinition, ProjectionDefinition,
+  LiteralValue, OrderByDefinition, OrderingDefinition, ParameterDefinition, ProjectionDefinition,
   ProjectionFieldDefinition, RelationDefinition, ScalarType, SourceDefinition,
 };
 
@@ -101,10 +101,14 @@ fn attribute_value_definition() -> GraphDefinition {
     ],
   };
 
-  definition.default_order_by = vec![
-    OrderByDefinition::asc(Expression::field("link", "order")),
-    OrderByDefinition::asc(Expression::field("value", "order")),
-  ];
+  definition.orderings = vec![OrderingDefinition::new(
+    "default",
+    [
+      OrderByDefinition::asc(Expression::field("link", "order")),
+      OrderByDefinition::asc(Expression::field("value", "order")),
+    ],
+  )
+  .selected_by_default()];
 
   definition
 }
@@ -136,7 +140,7 @@ fn definition_ir_round_trips_through_json() {
   let restored: GraphDefinition = serde_json::from_str(&json).unwrap();
 
   assert_eq!(restored, definition);
-  assert!(json.contains("\"schemaVersion\": 6"));
+  assert!(json.contains("\"schemaVersion\": 7"));
   assert!(json.contains("\"kind\": \"field\""));
   assert!(restored.compile().is_ok());
 }

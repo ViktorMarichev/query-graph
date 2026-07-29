@@ -1,8 +1,8 @@
 # `@query-graph/dsl-object`
 
 Объектный authoring DSL для [`query-graph`](https://www.npmjs.com/package/query-graph).
-Он создаёт тот же canonical graph definition, что и `query-graph/definition`;
-валидация, планирование и компиляция SQL остаются в Rust.
+Он формирует семантическое определение графа без SQL; валидация, планирование и
+компиляция остаются в Rust.
 
 ```bash
 npm install query-graph @query-graph/dsl-object
@@ -50,10 +50,11 @@ const definition = defineGraph({
 const graph = registerDefinition(definition)
 ```
 
-Пакет предоставляет намеренно ограниченный authoring API, а не зеркальную копию
-`query-graph/definition`. Общие фабрики sources, parameters, expressions и
-композиции делегируются canonical functional implementation. Объектные аргументы
-используются структурными фабриками:
+Пакет не содержит собственной реализации и напрямую переэкспортирует канонический
+объектный API из `query-graph/dsl`. Поэтому у него нет второй копии фабрик,
+валидации конфигурации или типов.
+
+Структурные фабрики принимают объектные конфигурации и отклоняют неизвестные поля:
 
 - `relation({ name, from, to, on, ...options })`;
 - `constraint({ name, predicate, when? })`;
@@ -61,6 +62,5 @@ const graph = registerDefinition(definition)
 - `dimension({ path, expression, default? })`;
 - `measure({ path, expression, default? })`.
 
-Wire-level `GRAPH_DEFINITION_VERSION` и дублирующий standalone `field(source,
-name)` остаются в `query-graph/definition`. Расширение functional DSL не становится
-частью object DSL автоматически.
+Позиционные сигнатуры сохранены отдельно в `query-graph/definition` только как
+адаптер совместимости. Они не переэкспортируются этим пакетом.

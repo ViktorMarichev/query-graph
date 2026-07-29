@@ -4,7 +4,7 @@ use serde_json::json;
 #[test]
 fn rejects_unknown_definition_fields() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 6,
+    "schemaVersion": 7,
     "name": "strictDefinition",
     "root": "root",
     "sources": [{
@@ -35,7 +35,7 @@ fn rejects_unknown_definition_fields() {
 #[test]
 fn rejects_unknown_semantic_functions_during_deserialization() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 6,
+    "schemaVersion": 7,
     "name": "strictFunctions",
     "root": "root",
     "sources": [{
@@ -68,7 +68,7 @@ fn rejects_unknown_semantic_functions_during_deserialization() {
 #[test]
 fn rejects_unknown_exists_fields_during_deserialization() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 6,
+    "schemaVersion": 7,
     "name": "strictExists",
     "root": "root",
     "sources": [

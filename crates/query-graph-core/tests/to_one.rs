@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use query_graph_core::{
   DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition, LiteralValue,
   MappedQueryGraph, OperationIssueCode, OracleCompiler, OracleVersion, OrderByDefinition,
-  ParameterDefinition, PlanError, ProjectionDefinition, ProjectionFieldDefinition, QueryOperation,
-  RelationDefinition, RelationalMapping, ScalarType, SourceDefinition, SourceMapping,
-  SqlCompileError,
+  OrderingDefinition, ParameterDefinition, PlanError, ProjectionDefinition,
+  ProjectionFieldDefinition, QueryOperation, RelationDefinition, RelationalMapping, ScalarType,
+  SourceDefinition, SourceMapping, SqlCompileError,
 };
 
 fn definition(required: bool) -> GraphDefinition {
@@ -57,7 +57,11 @@ fn definition(required: bool) -> GraphDefinition {
       .selected_by_default(),
     ],
   };
-  definition.default_order_by = vec![OrderByDefinition::asc(Expression::field("staff", "id"))];
+  definition.orderings = vec![OrderingDefinition::new(
+    "default",
+    [OrderByDefinition::asc(Expression::field("staff", "id"))],
+  )
+  .selected_by_default()];
   definition
 }
 

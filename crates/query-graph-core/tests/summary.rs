@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use query_graph_core::{
   AggregateFunction, ConstraintDefinition, DefinitionIssueCode, Expression, FieldDefinition,
-  GraphDefinition, MappedQueryGraph, OrderByDefinition, ParameterDefinition, PlanError,
-  ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationDefinition,
+  GraphDefinition, MappedQueryGraph, OrderByDefinition, OrderingDefinition, ParameterDefinition,
+  PlanError, ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationDefinition,
   RelationalMapping, ScalarType, SourceDefinition, SourceMapping, SqlCompileError,
 };
 use serde_json::json;
@@ -101,7 +101,11 @@ fn definition() -> GraphDefinition {
       .selected_by_default(),
     ],
   };
-  definition.default_order_by = vec![OrderByDefinition::desc(staff_count())];
+  definition.orderings =
+    vec![
+      OrderingDefinition::new("default", [OrderByDefinition::desc(staff_count())])
+        .selected_by_default(),
+    ];
   definition
 }
 
@@ -197,7 +201,7 @@ fn renders_count_without_an_expression_as_count_all() {
         .measure()
         .selected_by_default(),
     ];
-  definition.default_order_by.clear();
+  definition.orderings.clear();
   let graph = MappedQueryGraph::new(
     definition.compile().unwrap(),
     RelationalMapping {
@@ -253,10 +257,14 @@ fn rejects_invalid_summary_roles_and_group_scope() {
       vec!["regularOrganisation".into()],
       Expression::field("service", "idOrganisation"),
     ));
-  definition.default_order_by = vec![OrderByDefinition::asc(Expression::field(
-    "service",
-    "idOrganisation",
-  ))];
+  definition.orderings = vec![OrderingDefinition::new(
+    "default",
+    [OrderByDefinition::asc(Expression::field(
+      "service",
+      "idOrganisation",
+    ))],
+  )
+  .selected_by_default()];
 
   let issues = definition.compile().unwrap_err();
   let codes: Vec<_> = issues.as_slice().iter().map(|issue| issue.code).collect();
@@ -275,7 +283,7 @@ fn rejects_nested_aggregates() {
     Expression::sum(Expression::count_of(Expression::field("staff", "idStaff"))),
   )
   .measure()];
-  definition.default_order_by.clear();
+  definition.orderings.clear();
 
   let issues = definition.compile().unwrap_err();
 
@@ -321,7 +329,7 @@ fn validates_aggregate_arguments_and_result_types() {
     )
     .measure(),
   ];
-  invalid.default_order_by.clear();
+  invalid.orderings.clear();
 
   let issues = invalid.compile().unwrap_err();
   let codes: Vec<_> = issues.as_slice().iter().map(|issue| issue.code).collect();
@@ -340,7 +348,7 @@ fn rejects_predicate_aggregate_arguments() {
     )),
   )
   .measure()];
-  definition.default_order_by.clear();
+  definition.orderings.clear();
 
   let issues = definition.compile().unwrap_err();
 
@@ -366,7 +374,7 @@ fn rejects_dimensions_without_equality_semantics() {
     .dimension(),
     ProjectionFieldDefinition::new(vec!["rows".into()], Expression::count()).measure(),
   ];
-  definition.default_order_by.clear();
+  definition.orderings.clear();
 
   let issues = definition.compile().unwrap_err();
 

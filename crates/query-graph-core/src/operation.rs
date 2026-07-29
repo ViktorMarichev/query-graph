@@ -16,6 +16,8 @@ pub struct QueryOperation {
   #[serde(default)]
   pub select: Option<Vec<String>>,
   #[serde(default)]
+  pub ordering: Option<String>,
+  #[serde(default)]
   pub parameters: HashMap<String, Value>,
   #[serde(default)]
   pub offset: Option<u64>,
@@ -76,6 +78,21 @@ impl QueryOperation {
       projection_indices.push(projection_index);
     }
 
+    let ordering_index = match self.ordering.as_deref() {
+      Some(name) => match graph.ordering_index(name) {
+        Some(index) => Some(index),
+        None => {
+          issues.push(OperationIssue::new(
+            OperationIssueCode::UnknownOrdering,
+            "ordering",
+            format!("ordering {name:?} is not defined by the graph"),
+          ));
+          None
+        }
+      },
+      None => graph.default_ordering_index(),
+    };
+
     for parameter in self.parameters.keys() {
       if graph.parameter(parameter).is_none() {
         issues.push(OperationIssue::new(
@@ -111,7 +128,10 @@ impl QueryOperation {
     }
 
     if issues.is_empty() {
-      Ok(ValidatedQueryOperation { projection_indices })
+      Ok(ValidatedQueryOperation {
+        projection_indices,
+        ordering_index,
+      })
     } else {
       Err(OperationIssues(issues))
     }
@@ -150,6 +170,7 @@ impl QueryOperation {
 #[derive(Debug)]
 pub(crate) struct ValidatedQueryOperation {
   pub projection_indices: Vec<usize>,
+  pub ordering_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -180,6 +201,7 @@ pub enum OperationIssueCode {
   EmptySelection,
   UnknownSelection,
   DuplicateSelection,
+  UnknownOrdering,
   MissingParameter,
   UnknownParameter,
   InvalidParameterType,
