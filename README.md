@@ -55,51 +55,65 @@ import {
   source,
 } from '@query-graph/core/dsl'
 
-const link = source('link', {
-  idOwner: 'int64',
-  idControllerObjectValue: 'int64',
-})
-
-const value = source('value', {
+const users = source('users', {
   id: 'int64',
-  value: nullable('string'),
+  email: 'string',
 })
 
-const idOwner = requiredParameter('idOwner', 'int64')
-const valueRelation = relation({
-  name: 'value',
-  from: link,
-  to: value,
-  on: eq(link.field('idControllerObjectValue'), value.field('id')),
+const profiles = source('profiles', {
+  id: 'int64',
+  userId: 'int64',
+  displayName: nullable('string'),
+})
+
+const userId = requiredParameter('userId', 'int64')
+const profileRelation = relation({
+  name: 'profile',
+  from: users,
+  to: profiles,
+  on: eq(users.field('id'), profiles.field('userId')),
+  cardinality: 'one',
   required: true,
+  selection: firstBy(asc(profiles.field('id'))),
 })
 
-const attributeValuesModule = defineGraphModule({
-  name: 'attributeValues',
-  sources: [link, value],
-  parameters: [idOwner],
-  relations: [valueRelation],
+const userProfileModule = defineGraphModule({
+  name: 'userProfile',
+  sources: [users, profiles],
+  parameters: [userId],
+  relations: [profileRelation],
   constraints: [
     constraint({
-      predicate: eq(link.field('idOwner'), param(idOwner)),
+      predicate: eq(users.field('id'), param(userId)),
     }),
     constraint({
-      predicate: exists(value, isNotNull(value.field('value'))),
+      predicate: exists(profiles, isNotNull(profiles.field('displayName'))),
     }),
   ],
   projection: [
     project({
-      path: 'value.value',
-      expression: value.field('value'),
+      path: 'id',
+      expression: users.field('id'),
+      default: true,
+    }),
+    project({
+      path: 'profile.displayName',
+      expression: profiles.field('displayName'),
+    }),
+  ],
+  orderings: [
+    ordering({
+      name: 'idAsc',
+      by: [asc(users.field('id'))],
       default: true,
     }),
   ],
 })
 
 const definition = defineGraph({
-  name: 'attributeValues',
-  root: link,
-  modules: [attributeValuesModule],
+  name: 'userProfile',
+  root: users,
+  modules: [userProfileModule],
 })
 
 const graph = registerDefinition(definition)
@@ -149,30 +163,30 @@ npm install @query-graph/core @query-graph/dsl-object
 import { registerDefinition } from '@query-graph/core'
 import { asc, defineGraph, eq, firstBy, project, relation, source } from '@query-graph/dsl-object'
 
-const staff = source('staff', { id: 'int64' })
-const personStaff = source('personStaff', {
+const users = source('users', { id: 'int64' })
+const profiles = source('profiles', {
   id: 'int64',
-  idStaff: 'int64',
-  idPerson: 'int64',
+  userId: 'int64',
+  displayName: 'string',
 })
 
 const definition = defineGraph({
-  name: 'staff',
-  root: staff,
-  sources: [staff, personStaff],
+  name: 'users',
+  root: users,
+  sources: [users, profiles],
   relations: [
     relation({
-      name: 'credentials',
-      from: staff,
-      to: personStaff,
-      on: eq(staff.field('id'), personStaff.field('idStaff')),
+      name: 'profile',
+      from: users,
+      to: profiles,
+      on: eq(users.field('id'), profiles.field('userId')),
       cardinality: 'one',
-      selection: firstBy(asc(personStaff.field('idPerson')), asc(personStaff.field('id'))),
+      selection: firstBy(asc(profiles.field('id'))),
     }),
   ],
   projection: [
-    project({ path: 'id', expression: staff.field('id'), default: true }),
-    project({ path: 'credentials.idPerson', expression: personStaff.field('idPerson') }),
+    project({ path: 'id', expression: users.field('id'), default: true }),
+    project({ path: 'profile.displayName', expression: profiles.field('displayName') }),
   ],
 })
 
@@ -194,7 +208,7 @@ const graph = registerDefinition(definition)
 
 ```ts
 constraint({
-  predicate: exists(businessServiceStaff, eq(businessServiceStaff.field('idService'), param(idService))),
+  predicate: exists(memberships, eq(memberships.field('teamId'), param(teamId))),
 })
 ```
 
@@ -213,7 +227,7 @@ Oracle и SQL Server compiler строят коррелированный `EXIST
 
 ```ts
 constraint({
-  predicate: exists(categoryLinks, categoryPredicate, { from: attributeValues }),
+  predicate: exists(permissions, permissionPredicate, { from: memberships }),
 })
 ```
 
@@ -228,28 +242,38 @@ constraint({
 `number | number[]`.
 
 ```ts
-const idServices = requiredListParameter('idServices', 'int64')
+const users = source('users', {
+  id: 'int64',
+})
+
+const memberships = source('memberships', {
+  id: 'int64',
+  userId: 'int64',
+  teamId: 'int64',
+})
+
+const teamIds = requiredListParameter('teamIds', 'int64')
 
 const definition = defineGraph({
-  name: 'staffByServices',
-  root: staff,
-  sources: [staff, businessServiceStaff],
-  parameters: [idServices],
+  name: 'usersByTeams',
+  root: users,
+  sources: [users, memberships],
+  parameters: [teamIds],
   relations: [
     relation({
-      name: 'staffServices',
-      from: staff,
-      to: businessServiceStaff,
-      on: eq(staff.field('id'), businessServiceStaff.field('idStaff')),
+      name: 'memberships',
+      from: users,
+      to: memberships,
+      on: eq(users.field('id'), memberships.field('userId')),
       cardinality: 'many',
     }),
   ],
   constraints: [
     constraint({
-      predicate: exists(businessServiceStaff, inParameter(businessServiceStaff.field('idService'), idServices)),
+      predicate: exists(memberships, inParameter(memberships.field('teamId'), teamIds)),
     }),
   ],
-  projection: [project({ path: 'id', expression: staff.field('id'), default: true })],
+  projection: [project({ path: 'id', expression: users.field('id'), default: true })],
 })
 ```
 
@@ -257,15 +281,15 @@ Operation передает обычный массив:
 
 ```ts
 const statement = relationalGraph.compileSqlServer({
-  parameters: { idServices: [12, 18, 24] },
+  parameters: { teamIds: [12, 18, 24] },
 })
 ```
 
 Compiler разворачивает его в `IN (@p0, @p1, @p2)`. Каждый элемент получает
-binding `{ parameter: 'idServices', index, scalarType: 'int64' }`, по которому
+binding `{ parameter: 'teamIds', index, scalarType: 'int64' }`, по которому
 adapter исполнения берет значение из исходного массива. Rust проверяет каждый
 элемент отдельно и возвращает путь ошибки наподобие
-`parameters.idServices[2]`.
+`parameters.teamIds[2]`.
 
 Отсутствующий optional list отключает constraint с `when`. Переданный пустой
 список остается присутствующим параметром и компилируется в ложный предикат
@@ -302,12 +326,12 @@ TypeScript выводит union имен из definition и подключенн
 одной строки:
 
 ```ts
-const credentials = relation({
-  name: 'credentials',
-  from: staff,
-  to: personStaff,
-  on: eq(staff.field('id'), personStaff.field('idStaff')),
-  selection: firstBy(asc(personStaff.field('idPerson')), asc(personStaff.field('id'))),
+const profile = relation({
+  name: 'profile',
+  from: users,
+  to: profiles,
+  on: eq(users.field('id'), profiles.field('userId')),
+  selection: firstBy(asc(profiles.field('id'))),
 })
 ```
 
@@ -327,46 +351,60 @@ SQL Server renderer использует `OUTER/CROSS APPLY` и `TOP (1)`, Oracl
 SQL-конструкции `GROUP BY` и `HAVING`:
 
 ```ts
-const serviceId = dimension({
-  path: 'serviceId',
-  expression: service.field('id'),
+const teams = source('teams', {
+  id: 'int64',
+  workspaceId: 'int64',
+})
+
+const memberships = source('memberships', {
+  id: 'int64',
+  userId: 'int64',
+  teamId: 'int64',
+})
+
+const workspaceId = requiredParameter('workspaceId', 'int64')
+const minimumMembers = requiredParameter('minimumMembers', 'int64')
+
+const teamId = dimension({
+  path: 'teamId',
+  expression: teams.field('id'),
   default: true,
 })
 
-const staffCount = measure({
-  path: 'staffCount',
-  expression: countDistinct(serviceStaff.field('idStaff')),
+const memberCount = measure({
+  path: 'memberCount',
+  expression: countDistinct(memberships.field('userId')),
   default: true,
 })
 
 const definition = defineSummaryGraph({
-  name: 'serviceSummary',
-  root: service,
-  sources: [service, serviceStaff],
-  parameters: [idOrganisation, minimumStaff],
+  name: 'teamSummary',
+  root: teams,
+  sources: [teams, memberships],
+  parameters: [workspaceId, minimumMembers],
   relations: [
     relation({
-      name: 'staff',
-      from: service,
-      to: serviceStaff,
-      on: eq(service.field('id'), serviceStaff.field('idService')),
+      name: 'members',
+      from: teams,
+      to: memberships,
+      on: eq(teams.field('id'), memberships.field('teamId')),
       cardinality: 'many',
     }),
   ],
   constraints: [
     constraint({
-      predicate: eq(service.field('idOrganisation'), param(idOrganisation)),
+      predicate: eq(teams.field('workspaceId'), param(workspaceId)),
     }),
     constraint({
-      predicate: gte(staffCount, param(minimumStaff)),
+      predicate: gte(memberCount, param(minimumMembers)),
     }),
   ],
-  dimensions: [serviceId],
-  measures: [staffCount],
+  dimensions: [teamId],
+  measures: [memberCount],
   orderings: [
     ordering({
-      name: 'staffCountDesc',
-      by: [desc(staffCount)],
+      name: 'memberCountDesc',
+      by: [desc(memberCount)],
       default: true,
     }),
   ],
@@ -443,10 +481,9 @@ TypeScript проверяет имена источников, полей и с�
 const relationalGraph = registerDefinition(definition).withRelationalMapping(mapping)
 
 relationalGraph.compileSqlServer({
-  select: ['id', 'credentials.idPerson'],
+  select: ['id', 'profile.displayName'],
   parameters: {
-    idOrganisation: 42,
-    personIds: [7, 11],
+    userId: 42,
   },
 })
 ```
@@ -494,17 +531,21 @@ Wire errors, semantic validation и SQL compilation имеют разные ве
 ```ts
 const relationalGraph = graph.withRelationalMapping({
   sources: {
-    link: {
+    users: {
       table: {
         schema: 'dbo',
-        name: 'ControllerAttributeValueLink',
-      },
-      columns: {
-        idOwner: 'owner_id',
+        name: 'users',
       },
     },
-    value: {
-      table: 'ControllerObjectValue',
+    profiles: {
+      table: {
+        schema: 'dbo',
+        name: 'user_profiles',
+      },
+      columns: {
+        userId: 'user_id',
+        displayName: 'display_name',
+      },
     },
   },
 })
@@ -515,9 +556,9 @@ const relationalGraph = graph.withRelationalMapping({
 
 ```ts
 const operation = {
-  select: ['value.value'],
+  select: ['id', 'profile.displayName'],
   parameters: {
-    idOwner: 42,
+    userId: 42,
   },
   offset: 0,
   limit: 25,
@@ -532,7 +573,7 @@ console.table(statement.relations)
 ```
 
 `statement.bindings` связывает сгенерированные имена, например `p0`, с
-логическими параметрами, например `idOwner`, и содержит их scalar type.
+логическими параметрами, например `userId`, и содержит их scalar type.
 Потребитель берет значения из `operation.parameters` и передает их
 своему драйверу базы данных.
 

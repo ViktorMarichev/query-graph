@@ -12,36 +12,36 @@ npm install @query-graph/core @query-graph/dsl-object
 import { registerDefinition } from '@query-graph/core'
 import { asc, defineGraph, eq, firstBy, project, relation, source } from '@query-graph/dsl-object'
 
-const staff = source('staff', { id: 'int64' })
-const personStaff = source('personStaff', {
+const users = source('users', { id: 'int64' })
+const profiles = source('profiles', {
   id: 'int64',
-  idStaff: 'int64',
-  idPerson: 'int64',
+  userId: 'int64',
+  displayName: 'string',
 })
 
 const definition = defineGraph({
-  name: 'staff',
-  root: staff,
-  sources: [staff, personStaff],
+  name: 'users',
+  root: users,
+  sources: [users, profiles],
   relations: [
     relation({
-      name: 'credentials',
-      from: staff,
-      to: personStaff,
-      on: eq(staff.field('id'), personStaff.field('idStaff')),
+      name: 'profile',
+      from: users,
+      to: profiles,
+      on: eq(users.field('id'), profiles.field('userId')),
       cardinality: 'one',
-      selection: firstBy(asc(personStaff.field('idPerson')), asc(personStaff.field('id'))),
+      selection: firstBy(asc(profiles.field('id'))),
     }),
   ],
   projection: [
     project({
       path: 'id',
-      expression: staff.field('id'),
+      expression: users.field('id'),
       default: true,
     }),
     project({
-      path: 'credentials.idPerson',
-      expression: personStaff.field('idPerson'),
+      path: 'profile.displayName',
+      expression: profiles.field('displayName'),
       default: true,
     }),
   ],
