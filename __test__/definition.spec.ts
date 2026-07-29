@@ -44,7 +44,7 @@ test('builds the versioned wire definition without author-written discriminators
     projection: [project('id', root.field('id'), { default: true })],
   })
 
-  t.is(definition.schemaVersion, 8)
+  t.is(definition.schemaVersion, 9)
   t.false('relations' in definition.projection.fields[0])
   t.deepEqual(definition.constraints[0].predicate, {
     kind: 'eq',
@@ -88,8 +88,14 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
   })
   const idService = requiredParameter('idService', 'int64')
   const hasService = exists(staffService, eq(staffService.field('idService'), param(idService)))
+  const anchoredHasService = exists(staffService, hasService.predicate, { from: staff })
   const sourceIsTyped: Equal<typeof hasService.source, 'staffService'> = true
+  const fromIsTyped: Equal<typeof anchoredHasService.from, 'staff' | undefined> = true
   t.true(sourceIsTyped)
+  t.true(fromIsTyped)
+  t.is(anchoredHasService.from, 'staff')
+  const optionsError = t.throws(() => exists(staffService, undefined, { from: staff, typo: true } as never))
+  t.regex(optionsError.message, /unknown configuration field "typo"/)
 
   const definition = defineGraph({
     name: 'businessServiceSpecialists',
@@ -101,7 +107,7 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
         cardinality: 'many',
       }),
     ],
-    constraints: [constraint(hasService)],
+    constraints: [constraint(anchoredHasService)],
     projection: [project('id', staff.field('id'), { default: true })],
     orderings: [
       ordering({
@@ -115,6 +121,7 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
   t.deepEqual(definition.constraints[0].predicate, {
     kind: 'exists',
     source: 'staffService',
+    from: 'staff',
     predicate: {
       kind: 'eq',
       left: { kind: 'field', source: 'staffService', field: 'idService' },

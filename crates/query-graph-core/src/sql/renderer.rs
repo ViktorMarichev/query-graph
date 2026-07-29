@@ -85,7 +85,11 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
         "({} IS NOT NULL)",
         self.render_expression(expression)?
       )),
-      Expression::Exists { source, predicate } => self.render_exists(source, predicate.as_deref()),
+      Expression::Exists {
+        source,
+        from,
+        predicate,
+      } => self.render_exists(source, from.as_deref(), predicate.as_deref()),
       Expression::Function { name, arguments } => {
         let arguments = self.render_expressions(arguments)?;
         Ok(self.dialect.render_function(*name, &arguments))
@@ -225,18 +229,22 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
   fn render_exists(
     &mut self,
     source: &str,
+    from: Option<&str>,
     predicate: Option<&Expression>,
   ) -> Result<String, SqlCompileError> {
     let graph = self.graph;
-    let relation_indices = graph.relation_path_indices(source).ok_or_else(|| {
-      SqlCompileError::Plan(PlanError::InvalidCompiledGraph {
-        message: format!("exists expression refers to missing source {source:?}"),
-      })
-    })?;
+    let from = from.unwrap_or(graph.root().key.as_str());
+    let relation_indices = graph
+      .relation_path_indices_between(from, source)
+      .ok_or_else(|| {
+        SqlCompileError::Plan(PlanError::InvalidCompiledGraph {
+          message: format!("exists expression source {source:?} is not reachable from {from:?}"),
+        })
+      })?;
 
     if relation_indices.is_empty() {
       return Err(SqlCompileError::Plan(PlanError::InvalidCompiledGraph {
-        message: format!("exists expression source {source:?} is the graph root"),
+        message: format!("exists expression source {source:?} cannot be correlated from {from:?}"),
       }));
     }
 

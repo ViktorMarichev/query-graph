@@ -1309,13 +1309,35 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@query-graph/core@workspace:., @query-graph/core@workspace:^":
+  version: 0.0.0-use.local
+  resolution: "@query-graph/core@workspace:."
+  dependencies:
+    "@emnapi/core": "npm:^1.5.0"
+    "@emnapi/runtime": "npm:^1.5.0"
+    "@napi-rs/cli": "npm:^3.2.0"
+    "@oxc-node/core": "npm:^0.1.0"
+    "@taplo/cli": "npm:^0.7.0"
+    "@tybys/wasm-util": "npm:^0.10.0"
+    ava: "npm:^7.0.0"
+    chalk: "npm:^5.6.2"
+    husky: "npm:^9.1.7"
+    lint-staged: "npm:^16.1.6"
+    npm-run-all2: "npm:^8.0.4"
+    oxlint: "npm:^1.14.0"
+    prettier: "npm:^3.6.2"
+    tinybench: "npm:^6.0.0"
+    typescript: "npm:^6.0.0"
+  languageName: unknown
+  linkType: soft
+
 "@query-graph/dsl-object@workspace:packages/dsl-object":
   version: 0.0.0-use.local
   resolution: "@query-graph/dsl-object@workspace:packages/dsl-object"
   dependencies:
-    query-graph: "workspace:^"
+    "@query-graph/core": "workspace:^"
   peerDependencies:
-    query-graph: ^1.0.0
+    "@query-graph/core": ^1.0.0
   languageName: unknown
   linkType: soft
 
@@ -2767,28 +2789,6 @@ __metadata:
   checksum: 10c0/555ea39a1de48a30601938aedb76d682871d33b6dee015281c37108921514b11e1792928b1648c2e5589acc73c8ef0fb5e585fb4c718e340a28b86799e90fb34
   languageName: node
   linkType: hard
-
-"query-graph@workspace:., query-graph@workspace:^":
-  version: 0.0.0-use.local
-  resolution: "query-graph@workspace:."
-  dependencies:
-    "@emnapi/core": "npm:^1.5.0"
-    "@emnapi/runtime": "npm:^1.5.0"
-    "@napi-rs/cli": "npm:^3.2.0"
-    "@oxc-node/core": "npm:^0.1.0"
-    "@taplo/cli": "npm:^0.7.0"
-    "@tybys/wasm-util": "npm:^0.10.0"
-    ava: "npm:^7.0.0"
-    chalk: "npm:^5.6.2"
-    husky: "npm:^9.1.7"
-    lint-staged: "npm:^16.1.6"
-    npm-run-all2: "npm:^8.0.4"
-    oxlint: "npm:^1.14.0"
-    prettier: "npm:^3.6.2"
-    tinybench: "npm:^6.0.0"
-    typescript: "npm:^6.0.0"
-  languageName: unknown
-  linkType: soft
 
 "queue-microtask@npm:^1.2.2":
   version: 1.2.3

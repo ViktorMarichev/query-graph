@@ -134,7 +134,7 @@ fn definition_ir_round_trips_through_json() {
   let restored: GraphDefinition = serde_json::from_str(&json).unwrap();
 
   assert_eq!(restored, definition);
-  assert!(json.contains("\"schemaVersion\": 8"));
+  assert!(json.contains("\"schemaVersion\": 9"));
   assert!(json.contains("\"kind\": \"field\""));
   assert!(restored.compile().is_ok());
 }

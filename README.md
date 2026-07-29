@@ -33,7 +33,7 @@ JavaScript.
 `QueryGraph`.
 
 ```ts
-import { registerDefinition } from 'query-graph'
+import { registerDefinition } from '@query-graph/core'
 import {
   asc,
   constraint,
@@ -53,7 +53,7 @@ import {
   requiredListParameter,
   requiredParameter,
   source,
-} from 'query-graph/dsl'
+} from '@query-graph/core/dsl'
 
 const link = source('link', {
   idOwner: 'int64',
@@ -134,19 +134,19 @@ Relation path проекции указывать не требуется. Пр�
 ### Варианты DSL
 
 Canonical `GraphDefinition` не зависит от authoring DSL. Основной authoring API
-доступен через `query-graph/dsl` и использует объектные конфигурации. Позиционный
-`query-graph/definition` сохранён как адаптер совместимости для существующего кода;
+доступен через `@query-graph/core/dsl` и использует объектные конфигурации. Позиционный
+`@query-graph/core/definition` сохранён как адаптер совместимости для существующего кода;
 новые графы на него ориентировать не следует.
 
 Отдельный пакет `@query-graph/dsl-object` является тонким фасадом над тем же API.
 Он полезен, когда DSL нужен как отдельная зависимость:
 
 ```bash
-npm install query-graph @query-graph/dsl-object
+npm install @query-graph/core @query-graph/dsl-object
 ```
 
 ```ts
-import { registerDefinition } from 'query-graph'
+import { registerDefinition } from '@query-graph/core'
 import { asc, defineGraph, eq, firstBy, project, relation, source } from '@query-graph/dsl-object'
 
 const staff = source('staff', { id: 'int64' })
@@ -180,7 +180,7 @@ const graph = registerDefinition(definition)
 ```
 
 Фасад не содержит второй реализации и напрямую переэкспортирует
-`query-graph/dsl`. Расширение позиционного compatibility API не меняет поверхность
+`@query-graph/core/dsl`. Расширение позиционного compatibility API не меняет поверхность
 объектного DSL.
 
 Оба входа формируют один и тот же versioned wire-контракт. Сторонний DSL также может
@@ -207,6 +207,19 @@ Planner воспринимает existential branch как semijoin. Sources э�
 cardinality `many` не размножает корневые строки и не мешает их пагинации.
 Oracle и SQL Server compiler строят коррелированный `EXISTS` из одной и той же
 семантики definition.
+
+По умолчанию `exists` коррелируется от root. Для semijoin относительно уже
+выбранного внешнего source можно явно указать точку корреляции:
+
+```ts
+constraint({
+  predicate: exists(categoryLinks, categoryPredicate, { from: attributeValues }),
+})
+```
+
+`from` должен быть строгим предком целевого source на relation path. Planner
+оставляет путь до `from` во внешнем запросе, а оставшийся путь компилирует как
+коррелированный semijoin.
 
 ### Параметры-списки
 
@@ -456,7 +469,7 @@ definition, N-API вызов, runtime-валидация Rust и SQL compilation
 - `issues` — массив `{ code, location, message }`.
 
 ```ts
-import type { QueryGraphError } from 'query-graph/definition'
+import type { QueryGraphError } from '@query-graph/core/definition'
 
 try {
   relationalGraph.compileSqlServer(operation)

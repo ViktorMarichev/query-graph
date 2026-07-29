@@ -1,6 +1,6 @@
 'use strict'
 
-const GRAPH_DEFINITION_VERSION = 8
+const GRAPH_DEFINITION_VERSION = 9
 const SCALAR_TYPES = new Set([
   'boolean',
   'int32',
@@ -19,6 +19,7 @@ const SUMMARY_FIELD_BRAND = Symbol('SummaryField')
 const RELATION_CONFIGURATION_KEYS = new Set(['name', 'from', 'to', 'on', 'required', 'cardinality', 'selection'])
 const CONSTRAINT_CONFIGURATION_KEYS = new Set(['predicate', 'when'])
 const PROJECTION_CONFIGURATION_KEYS = new Set(['path', 'expression', 'default'])
+const EXISTS_CONFIGURATION_KEYS = new Set(['from'])
 const ORDERING_CONFIGURATION_KEYS = new Set(['name', 'by', 'default'])
 
 function configurationOf(factory, value, allowedKeys) {
@@ -230,10 +231,18 @@ function isNotNull(expression) {
   return unaryExpression('isNotNull', expression)
 }
 
-function exists(sourceReference, predicate) {
+function exists(sourceReference, predicate, options) {
   const expression = {
     kind: 'exists',
     source: referenceName(sourceReference, 'source'),
+  }
+
+  if (options !== undefined) {
+    const configuration = configurationOf('exists', options, EXISTS_CONFIGURATION_KEYS)
+    if (configuration.from === undefined) {
+      throw new TypeError('exists requires configuration field "from"')
+    }
+    expression.from = referenceName(configuration.from, 'source')
   }
 
   if (predicate !== undefined) {

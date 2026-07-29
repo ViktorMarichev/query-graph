@@ -125,6 +125,8 @@ pub enum Expression {
   },
   Exists {
     source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    from: Option<String>,
     #[serde(default)]
     predicate: Option<Box<Expression>>,
   },
@@ -177,6 +179,7 @@ impl Expression {
   pub fn exists(source: impl Into<String>) -> Self {
     Self::Exists {
       source: source.into(),
+      from: None,
       predicate: None,
     }
   }
@@ -191,6 +194,27 @@ impl Expression {
   pub fn exists_where(source: impl Into<String>, predicate: Expression) -> Self {
     Self::Exists {
       source: source.into(),
+      from: None,
+      predicate: Some(Box::new(predicate)),
+    }
+  }
+
+  pub fn exists_from(source: impl Into<String>, from: impl Into<String>) -> Self {
+    Self::Exists {
+      source: source.into(),
+      from: Some(from.into()),
+      predicate: None,
+    }
+  }
+
+  pub fn exists_from_where(
+    source: impl Into<String>,
+    from: impl Into<String>,
+    predicate: Expression,
+  ) -> Self {
+    Self::Exists {
+      source: source.into(),
+      from: Some(from.into()),
       predicate: Some(Box::new(predicate)),
     }
   }
@@ -251,19 +275,29 @@ impl Expression {
     });
   }
 
-  pub(crate) fn for_each_outer_field<'a>(&'a self, visitor: &mut impl FnMut(&'a str, &'a str)) {
-    self.walk(&mut |expression| {
-      if let Self::Field { source, field } = expression {
-        visitor(source, field);
+  pub(crate) fn for_each_outer_source<'a>(&'a self, visitor: &mut impl FnMut(&'a str)) {
+    self.walk(&mut |expression| match expression {
+      Self::Field { source, .. } => {
+        visitor(source);
+        true
       }
-      !matches!(expression, Self::Exists { .. })
+      Self::Exists { from, .. } => {
+        if let Some(from) = from {
+          visitor(from);
+        }
+        false
+      }
+      _ => true,
     });
   }
 
-  pub(crate) fn for_each_exists_source<'a>(&'a self, visitor: &mut impl FnMut(&'a str)) {
+  pub(crate) fn for_each_exists_source<'a>(
+    &'a self,
+    visitor: &mut impl FnMut(&'a str, Option<&'a str>),
+  ) {
     self.walk(&mut |expression| {
-      if let Self::Exists { source, .. } = expression {
-        visitor(source);
+      if let Self::Exists { source, from, .. } = expression {
+        visitor(source, from.as_deref());
       }
       true
     });

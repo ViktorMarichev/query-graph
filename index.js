@@ -78,8 +78,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-android-arm64')
-        const bindingPackageVersion = require('query-graph-android-arm64/package.json').version
+        const binding = require('@query-graph/core-android-arm64')
+        const bindingPackageVersion = require('@query-graph/core-android-arm64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -94,8 +94,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-android-arm-eabi')
-        const bindingPackageVersion = require('query-graph-android-arm-eabi/package.json').version
+        const binding = require('@query-graph/core-android-arm-eabi')
+        const bindingPackageVersion = require('@query-graph/core-android-arm-eabi/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -114,8 +114,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-win32-x64-msvc')
-        const bindingPackageVersion = require('query-graph-win32-x64-msvc/package.json').version
+        const binding = require('@query-graph/core-win32-x64-msvc')
+        const bindingPackageVersion = require('@query-graph/core-win32-x64-msvc/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -130,8 +130,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-win32-ia32-msvc')
-        const bindingPackageVersion = require('query-graph-win32-ia32-msvc/package.json').version
+        const binding = require('@query-graph/core-win32-ia32-msvc')
+        const bindingPackageVersion = require('@query-graph/core-win32-ia32-msvc/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -146,8 +146,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-win32-arm64-msvc')
-        const bindingPackageVersion = require('query-graph-win32-arm64-msvc/package.json').version
+        const binding = require('@query-graph/core-win32-arm64-msvc')
+        const bindingPackageVersion = require('@query-graph/core-win32-arm64-msvc/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -165,8 +165,8 @@ function requireNative() {
       loadErrors.push(e)
     }
     try {
-      const binding = require('query-graph-darwin-universal')
-      const bindingPackageVersion = require('query-graph-darwin-universal/package.json').version
+      const binding = require('@query-graph/core-darwin-universal')
+      const bindingPackageVersion = require('@query-graph/core-darwin-universal/package.json').version
       if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
         throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
       }
@@ -181,8 +181,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-darwin-x64')
-        const bindingPackageVersion = require('query-graph-darwin-x64/package.json').version
+        const binding = require('@query-graph/core-darwin-x64')
+        const bindingPackageVersion = require('@query-graph/core-darwin-x64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -197,8 +197,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-darwin-arm64')
-        const bindingPackageVersion = require('query-graph-darwin-arm64/package.json').version
+        const binding = require('@query-graph/core-darwin-arm64')
+        const bindingPackageVersion = require('@query-graph/core-darwin-arm64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -217,8 +217,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-freebsd-x64')
-        const bindingPackageVersion = require('query-graph-freebsd-x64/package.json').version
+        const binding = require('@query-graph/core-freebsd-x64')
+        const bindingPackageVersion = require('@query-graph/core-freebsd-x64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -233,8 +233,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-freebsd-arm64')
-        const bindingPackageVersion = require('query-graph-freebsd-arm64/package.json').version
+        const binding = require('@query-graph/core-freebsd-arm64')
+        const bindingPackageVersion = require('@query-graph/core-freebsd-arm64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -254,8 +254,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-x64-musl')
-          const bindingPackageVersion = require('query-graph-linux-x64-musl/package.json').version
+          const binding = require('@query-graph/core-linux-x64-musl')
+          const bindingPackageVersion = require('@query-graph/core-linux-x64-musl/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -270,8 +270,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-x64-gnu')
-          const bindingPackageVersion = require('query-graph-linux-x64-gnu/package.json').version
+          const binding = require('@query-graph/core-linux-x64-gnu')
+          const bindingPackageVersion = require('@query-graph/core-linux-x64-gnu/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -288,8 +288,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-arm64-musl')
-          const bindingPackageVersion = require('query-graph-linux-arm64-musl/package.json').version
+          const binding = require('@query-graph/core-linux-arm64-musl')
+          const bindingPackageVersion = require('@query-graph/core-linux-arm64-musl/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -304,8 +304,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-arm64-gnu')
-          const bindingPackageVersion = require('query-graph-linux-arm64-gnu/package.json').version
+          const binding = require('@query-graph/core-linux-arm64-gnu')
+          const bindingPackageVersion = require('@query-graph/core-linux-arm64-gnu/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -322,8 +322,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-arm-musleabihf')
-          const bindingPackageVersion = require('query-graph-linux-arm-musleabihf/package.json').version
+          const binding = require('@query-graph/core-linux-arm-musleabihf')
+          const bindingPackageVersion = require('@query-graph/core-linux-arm-musleabihf/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -338,8 +338,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-arm-gnueabihf')
-          const bindingPackageVersion = require('query-graph-linux-arm-gnueabihf/package.json').version
+          const binding = require('@query-graph/core-linux-arm-gnueabihf')
+          const bindingPackageVersion = require('@query-graph/core-linux-arm-gnueabihf/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -356,8 +356,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-loong64-musl')
-          const bindingPackageVersion = require('query-graph-linux-loong64-musl/package.json').version
+          const binding = require('@query-graph/core-linux-loong64-musl')
+          const bindingPackageVersion = require('@query-graph/core-linux-loong64-musl/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -372,8 +372,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-loong64-gnu')
-          const bindingPackageVersion = require('query-graph-linux-loong64-gnu/package.json').version
+          const binding = require('@query-graph/core-linux-loong64-gnu')
+          const bindingPackageVersion = require('@query-graph/core-linux-loong64-gnu/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -390,8 +390,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-riscv64-musl')
-          const bindingPackageVersion = require('query-graph-linux-riscv64-musl/package.json').version
+          const binding = require('@query-graph/core-linux-riscv64-musl')
+          const bindingPackageVersion = require('@query-graph/core-linux-riscv64-musl/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -406,8 +406,8 @@ function requireNative() {
           loadErrors.push(e)
         }
         try {
-          const binding = require('query-graph-linux-riscv64-gnu')
-          const bindingPackageVersion = require('query-graph-linux-riscv64-gnu/package.json').version
+          const binding = require('@query-graph/core-linux-riscv64-gnu')
+          const bindingPackageVersion = require('@query-graph/core-linux-riscv64-gnu/package.json').version
           if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
             throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
           }
@@ -423,8 +423,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-linux-ppc64-gnu')
-        const bindingPackageVersion = require('query-graph-linux-ppc64-gnu/package.json').version
+        const binding = require('@query-graph/core-linux-ppc64-gnu')
+        const bindingPackageVersion = require('@query-graph/core-linux-ppc64-gnu/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -439,8 +439,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-linux-s390x-gnu')
-        const bindingPackageVersion = require('query-graph-linux-s390x-gnu/package.json').version
+        const binding = require('@query-graph/core-linux-s390x-gnu')
+        const bindingPackageVersion = require('@query-graph/core-linux-s390x-gnu/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -459,8 +459,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-openharmony-arm64')
-        const bindingPackageVersion = require('query-graph-openharmony-arm64/package.json').version
+        const binding = require('@query-graph/core-openharmony-arm64')
+        const bindingPackageVersion = require('@query-graph/core-openharmony-arm64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -475,8 +475,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-openharmony-x64')
-        const bindingPackageVersion = require('query-graph-openharmony-x64/package.json').version
+        const binding = require('@query-graph/core-openharmony-x64')
+        const bindingPackageVersion = require('@query-graph/core-openharmony-x64/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -491,8 +491,8 @@ function requireNative() {
         loadErrors.push(e)
       }
       try {
-        const binding = require('query-graph-openharmony-arm')
-        const bindingPackageVersion = require('query-graph-openharmony-arm/package.json').version
+        const binding = require('@query-graph/core-openharmony-arm')
+        const bindingPackageVersion = require('@query-graph/core-openharmony-arm/package.json').version
         if (bindingPackageVersion !== '1.0.0' && process.env.NAPI_RS_ENFORCE_VERSION_CHECK && process.env.NAPI_RS_ENFORCE_VERSION_CHECK !== '0') {
           throw new Error(`Native binding package version mismatch, expected 1.0.0 but got ${bindingPackageVersion}. You can reinstall dependencies to fix this issue.`)
         }
@@ -523,7 +523,7 @@ if (!nativeBinding || process.env.NAPI_RS_FORCE_WASI) {
   }
   if (!nativeBinding) {
     try {
-      wasiBinding = require('query-graph-wasm32-wasi')
+      wasiBinding = require('@query-graph/core-wasm32-wasi')
       nativeBinding = wasiBinding
     } catch (err) {
       if (process.env.NAPI_RS_FORCE_WASI) {

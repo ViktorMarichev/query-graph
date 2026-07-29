@@ -23,11 +23,20 @@
     "node": ">= 20"
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ViktorMarichev/query-graph.git",
+    "directory": "packages/dsl-object"
+  },
+  "homepage": "https://github.com/ViktorMarichev/query-graph/tree/main/packages/dsl-object#readme",
+  "bugs": {
+    "url": "https://github.com/ViktorMarichev/query-graph/issues"
+  },
   "peerDependencies": {
-    "query-graph": "^1.0.0"
+    "@query-graph/core": "^1.0.0"
   },
   "devDependencies": {
-    "query-graph": "workspace:^"
+    "@query-graph/core": "workspace:^"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",

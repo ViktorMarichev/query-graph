@@ -1,1 +1,1 @@
-export * from 'query-graph/dsl'
+export * from '@query-graph/core/dsl'

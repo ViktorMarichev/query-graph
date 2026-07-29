@@ -17,7 +17,7 @@ import type {
   SourceRef,
 } from './dsl.js'
 
-export const GRAPH_DEFINITION_VERSION: 8
+export const GRAPH_DEFINITION_VERSION: 9
 
 export function field<
   const Key extends string,

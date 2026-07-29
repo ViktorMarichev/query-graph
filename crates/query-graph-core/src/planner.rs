@@ -227,7 +227,7 @@ fn add_expression_relations(
   relations: &mut HashSet<usize>,
 ) -> Result<(), PlanError> {
   let mut sources = HashSet::new();
-  expression.for_each_outer_field(&mut |source, _| {
+  expression.for_each_outer_source(&mut |source| {
     sources.insert(source);
   });
 
@@ -254,17 +254,17 @@ fn add_expression_parameters<'a>(
   });
 
   let mut exists_sources = Vec::new();
-  expression.for_each_exists_source(&mut |source| {
-    exists_sources.push(source);
+  expression.for_each_exists_source(&mut |source, from| {
+    exists_sources.push((source, from));
   });
 
-  for source in exists_sources {
-    let relation_path =
-      graph
-        .relation_path_indices(source)
-        .ok_or_else(|| PlanError::InvalidCompiledGraph {
-          message: format!("exists expression refers to missing source {source:?}"),
-        })?;
+  for (source, from) in exists_sources {
+    let from = from.unwrap_or(graph.root().key.as_str());
+    let relation_path = graph
+      .relation_path_indices_between(from, source)
+      .ok_or_else(|| PlanError::InvalidCompiledGraph {
+        message: format!("exists expression source {source:?} is not reachable from {from:?}"),
+      })?;
 
     for relation_index in relation_path {
       let relation = &graph.definition().relations[*relation_index];

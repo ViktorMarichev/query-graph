@@ -168,14 +168,26 @@ pub(super) fn validate(
         validate_child(expression, location, "expression", context, issues);
       }
     }
-    Expression::Exists { source, predicate } => {
-      validate_exists(source, predicate.as_deref(), location, context, issues);
+    Expression::Exists {
+      source,
+      from,
+      predicate,
+    } => {
+      validate_exists(
+        source,
+        from.as_deref(),
+        predicate.as_deref(),
+        location,
+        context,
+        issues,
+      );
     }
   }
 }
 
 fn validate_exists(
   source: &str,
+  from: Option<&str>,
   predicate: Option<&Expression>,
   location: &str,
   context: &ExpressionContext<'_>,
@@ -212,6 +224,29 @@ fn validate_exists(
     }
     return;
   };
+  if let Some(from) = from {
+    if !context.sources.contains_key(from) {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::UnknownExistsSource,
+        format!("{location}.from"),
+        format!("exists correlation source {from:?} is not defined"),
+      ));
+    } else if from == source || !allowed_sources.contains(from) {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::InvalidExistsSource,
+        format!("{location}.from"),
+        format!("exists source {source:?} is not a descendant of correlation source {from:?}"),
+      ));
+    } else if let Some(scope) = &context.scope {
+      if !scope.allowed_sources.contains(from) {
+        issues.push(DefinitionIssue::new(
+          scope.issue_code,
+          format!("{location}.from"),
+          format!("exists correlation source {from:?} is outside the current expression scope"),
+        ));
+      }
+    }
+  }
 
   if allowed_sources.len() == 1 {
     issues.push(DefinitionIssue::new(

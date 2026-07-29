@@ -185,6 +185,24 @@ fn accepts_exists_predicates_over_the_inferred_root_path() {
   assert!(definition.compile().is_ok());
 }
 
+#[test]
+fn validates_exists_correlation_source() {
+  let mut definition = GraphDefinition::new("existsFrom", "root");
+  definition.sources = vec![source("root"), source("left"), source("right")];
+  definition.relations = vec![
+    relation("left", "root", "left"),
+    relation("right", "root", "right"),
+  ];
+  definition.constraints = vec![
+    ConstraintDefinition::always(Expression::exists_from("right", "left")),
+    ConstraintDefinition::always(Expression::exists_from("right", "missing")),
+  ];
+
+  let codes = issue_codes(definition);
+  assert!(codes.contains(&DefinitionIssueCode::InvalidExistsSource));
+  assert!(codes.contains(&DefinitionIssueCode::UnknownExistsSource));
+}
+
 fn relation(name: &str, from: &str, to: &str) -> RelationDefinition {
   RelationDefinition::new(
     name,

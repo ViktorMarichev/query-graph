@@ -296,6 +296,16 @@ impl CompiledGraph {
     Some(&self.relation_paths[source_index])
   }
 
+  pub(crate) fn relation_path_indices_between(&self, from: &str, to: &str) -> Option<&[usize]> {
+    let from_path = self.relation_path_indices(from)?;
+    let to_path = self.relation_path_indices(to)?;
+    if !to_path.starts_with(from_path) {
+      return None;
+    }
+
+    Some(&to_path[from_path.len()..])
+  }
+
   pub fn relation_path(&self, source: &str) -> Option<impl Iterator<Item = &RelationDefinition>> {
     let source_index = *self.source_index.get(source)?;
     Some(

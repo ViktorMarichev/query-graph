@@ -1,5 +1,5 @@
 {
-  "name": "query-graph",
+  "name": "@query-graph/core",
   "version": "1.0.0",
   "description": "Native query graph planner and SQL compiler for Node.js",
   "workspaces": [
@@ -24,6 +24,14 @@
     }
   },
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ViktorMarichev/query-graph.git"
+  },
+  "homepage": "https://github.com/ViktorMarichev/query-graph#readme",
+  "bugs": {
+    "url": "https://github.com/ViktorMarichev/query-graph/issues"
+  },
   "keywords": [
     "query-graph",
     "sql",
@@ -61,16 +69,18 @@
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
     "build": "napi build --platform --release",
     "build:debug": "napi build --platform",
+    "check:versions": "node scripts/sync-version.mjs --check",
     "format": "run-p format:prettier format:rs format:toml",
     "format:prettier": "prettier . -w",
     "format:toml": "taplo format",
     "format:rs": "cargo fmt",
     "lint": "oxlint .",
-    "prepublishOnly": "napi prepublish -t npm",
+    "prepublishOnly": "yarn check:versions && napi prepublish -t npm",
+    "preversion": "yarn release:check",
+    "release:check": "yarn build && yarn lint && yarn typecheck && yarn test && yarn prettier . --check && cargo fmt --all -- --check && cargo test --workspace --all-targets && cargo clippy --workspace --all-targets --all-features -- -D warnings && yarn check:versions",
     "typecheck": "tsc -p __test__/tsconfig.json --noEmit",
     "test": "ava",
-    "preversion": "napi build --platform && git add .",
-    "version": "napi version",
+    "version": "node scripts/sync-version.mjs && napi build --platform --release && node scripts/sync-version.mjs --check && git add package.json packages/dsl-object/package.json yarn.lock Cargo.toml crates/query-graph-core/Cargo.toml Cargo.lock index.js index.d.ts",
     "prepare": "husky"
   },
   "devDependencies": {

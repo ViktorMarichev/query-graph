@@ -250,3 +250,35 @@ fn requires_optional_parameters_used_by_the_exists_relation_path() {
       && issue.location == "parameters.relationStaffId"
   }));
 }
+
+#[test]
+fn anchors_exists_to_an_outer_relation_source() {
+  let mut definition = definition();
+  definition.parameters.clear();
+  definition.constraints[0].predicate = Expression::exists_from("accessRole", "staffRole");
+  definition.projection.fields.push(
+    ProjectionFieldDefinition::new(
+      vec!["roleId".into()],
+      Expression::field("staffRole", "idRole"),
+    )
+    .selected_by_default(),
+  );
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+  let statement = graph.compile_oracle(&QueryOperation::default()).unwrap();
+
+  assert!(statement.sql.contains(concat!(
+    "JOIN \"StaffRole\" \"t1\"\n",
+    "  ON (\"t0\".\"id\" = \"t1\".\"idStaff\")"
+  )));
+  assert!(statement.sql.contains(
+    "EXISTS (\n    SELECT 1\n    FROM \"AccessRole\" \"t2\"\n    WHERE (\"t1\".\"idRole\" = \"t2\".\"id\")"
+  ));
+  assert_eq!(
+    statement
+      .relations
+      .iter()
+      .map(|relation| relation.name.as_str())
+      .collect::<Vec<_>>(),
+    vec!["staffRoles"]
+  );
+}

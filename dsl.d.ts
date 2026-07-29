@@ -116,9 +116,10 @@ export interface UnaryExpression {
   expression: Expression
 }
 
-export interface ExistsExpression<Source extends string = string> {
+export interface ExistsExpression<Source extends string = string, From extends string = string> {
   kind: 'exists'
   source: Source
+  from?: From
   predicate?: Expression
 }
 
@@ -226,7 +227,7 @@ export interface FirstBySelection {
 export type RelationSelection = FirstBySelection
 
 export interface GraphDefinitionInput {
-  schemaVersion: 8
+  schemaVersion: 9
   name: string
   root: string
   sources: SourceDefinition[]
@@ -490,7 +491,16 @@ export function isNotNull(expression: ExpressionInput): UnaryExpression
 export function exists<const Source extends string>(
   source: Source | SourceRef<Source>,
   predicate?: ExpressionInput,
-): ExistsExpression<Source>
+): ExistsExpression<Source, never>
+export interface ExistsConfiguration<From extends string = string> {
+  from: From | SourceRef<From>
+}
+export function exists<const Source extends string, const From extends string>(
+  source: Source | SourceRef<Source>,
+  predicate: ExpressionInput | undefined,
+  configuration: ExistsConfiguration<From>,
+): ExistsExpression<Source, From>
+
 export function lower(expression: ExpressionInput): FunctionExpression
 export function upper(expression: ExpressionInput): FunctionExpression
 export function coalesce(

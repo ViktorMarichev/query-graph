@@ -2,7 +2,7 @@
 
 const objectDsl = require('./dsl.js')
 
-const GRAPH_DEFINITION_VERSION = 8
+const GRAPH_DEFINITION_VERSION = 9
 
 function field(sourceReference, name) {
   if (typeof sourceReference === 'string') {
