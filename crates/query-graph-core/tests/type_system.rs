@@ -150,10 +150,9 @@ fn requires_boolean_relation_and_constraint_predicates() {
     "child",
     Expression::field("root", "id"),
   )];
-  definition.constraints = vec![ConstraintDefinition::always(
-    "name",
-    Expression::field("root", "name"),
-  )];
+  definition.constraints = vec![ConstraintDefinition::always(Expression::field(
+    "root", "name",
+  ))];
 
   let codes = issue_codes(definition);
 

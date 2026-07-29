@@ -59,7 +59,7 @@ test('expands list parameters and exposes element indices to the consumer', (t) 
     root: staff,
     sources: [staff],
     parameters: [ids],
-    constraints: [constraint('ids', inParameter(staff.field('id'), ids))],
+    constraints: [constraint(inParameter(staff.field('id'), ids))],
     projection: [project('id', staff.field('id'), { default: true })],
   })
   const graph = registerDefinition(definition).withRelationalMapping({

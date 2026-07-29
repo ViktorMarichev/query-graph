@@ -4,7 +4,7 @@ use serde_json::json;
 #[test]
 fn rejects_unknown_definition_fields() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 7,
+    "schemaVersion": 8,
     "name": "strictDefinition",
     "root": "root",
     "sources": [{
@@ -33,9 +33,37 @@ fn rejects_unknown_definition_fields() {
 }
 
 #[test]
+fn rejects_legacy_constraint_names() {
+  let result = serde_json::from_value::<GraphDefinition>(json!({
+    "schemaVersion": 8,
+    "name": "strictConstraints",
+    "root": "root",
+    "sources": [{
+      "key": "root",
+      "fields": [{
+        "name": "id",
+        "scalarType": "int64"
+      }]
+    }],
+    "constraints": [{
+      "name": "active",
+      "predicate": {
+        "kind": "literal",
+        "value": {
+          "kind": "boolean",
+          "value": true
+        }
+      }
+    }]
+  }));
+
+  assert!(result.unwrap_err().to_string().contains("name"));
+}
+
+#[test]
 fn rejects_unknown_semantic_functions_during_deserialization() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 7,
+    "schemaVersion": 8,
     "name": "strictFunctions",
     "root": "root",
     "sources": [{
@@ -68,7 +96,7 @@ fn rejects_unknown_semantic_functions_during_deserialization() {
 #[test]
 fn rejects_unknown_exists_fields_during_deserialization() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 7,
+    "schemaVersion": 8,
     "name": "strictExists",
     "root": "root",
     "sources": [
@@ -106,7 +134,6 @@ fn rejects_unknown_exists_fields_during_deserialization() {
       }
     }],
     "constraints": [{
-      "name": "child",
       "predicate": {
         "kind": "exists",
         "source": "child",

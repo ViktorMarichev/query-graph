@@ -46,20 +46,14 @@ fn definition() -> GraphDefinition {
   )
   .many()];
   definition.constraints = vec![
-    ConstraintDefinition::always(
-      "organisation",
-      Expression::eq(
-        Expression::field("service", "idOrganisation"),
-        Expression::parameter("idOrganisation"),
-      ),
-    ),
-    ConstraintDefinition::always(
-      "minimumStaff",
-      Expression::GreaterThanOrEqual {
-        left: Box::new(staff_count()),
-        right: Box::new(Expression::parameter("minimumStaff")),
-      },
-    ),
+    ConstraintDefinition::always(Expression::eq(
+      Expression::field("service", "idOrganisation"),
+      Expression::parameter("idOrganisation"),
+    )),
+    ConstraintDefinition::always(Expression::GreaterThanOrEqual {
+      left: Box::new(staff_count()),
+      right: Box::new(Expression::parameter("minimumStaff")),
+    }),
   ];
   definition.projection = ProjectionDefinition {
     fields: vec![

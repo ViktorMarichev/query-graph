@@ -161,7 +161,6 @@ export interface RelationDefinition {
 export type ConstraintCondition = { kind: 'always' } | { kind: 'parameterPresent'; parameter: string }
 
 export interface ConstraintDefinition {
-  name: string
   when?: ConstraintCondition
   predicate: Expression
 }
@@ -227,7 +226,7 @@ export interface FirstBySelection {
 export type RelationSelection = FirstBySelection
 
 export interface GraphDefinitionInput {
-  schemaVersion: 7
+  schemaVersion: 8
   name: string
   root: string
   sources: SourceDefinition[]
@@ -521,7 +520,6 @@ export interface RelationConfiguration<Name extends string = string> {
 export function relation<const Name extends string>(configuration: RelationConfiguration<Name>): RelationRef<Name>
 
 export interface ConstraintConfiguration {
-  name: string
   predicate: Expression
   when?: string | ParameterRef
 }

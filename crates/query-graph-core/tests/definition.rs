@@ -66,20 +66,14 @@ fn attribute_value_definition() -> GraphDefinition {
   ];
 
   definition.constraints = vec![
-    ConstraintDefinition::always(
-      "owner",
-      Expression::eq(
-        Expression::field("link", "idOwner"),
-        Expression::parameter("idOwner"),
-      ),
-    ),
-    ConstraintDefinition::always(
-      "organisation",
-      Expression::eq(
-        Expression::field("link", "idOrganisation"),
-        Expression::parameter("idOrganisation"),
-      ),
-    ),
+    ConstraintDefinition::always(Expression::eq(
+      Expression::field("link", "idOwner"),
+      Expression::parameter("idOwner"),
+    )),
+    ConstraintDefinition::always(Expression::eq(
+      Expression::field("link", "idOrganisation"),
+      Expression::parameter("idOrganisation"),
+    )),
   ];
 
   definition.projection = ProjectionDefinition {
@@ -140,7 +134,7 @@ fn definition_ir_round_trips_through_json() {
   let restored: GraphDefinition = serde_json::from_str(&json).unwrap();
 
   assert_eq!(restored, definition);
-  assert!(json.contains("\"schemaVersion\": 7"));
+  assert!(json.contains("\"schemaVersion\": 8"));
   assert!(json.contains("\"kind\": \"field\""));
   assert!(restored.compile().is_ok());
 }

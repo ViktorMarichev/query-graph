@@ -2,7 +2,7 @@
 
 const objectDsl = require('./dsl.js')
 
-const GRAPH_DEFINITION_VERSION = 7
+const GRAPH_DEFINITION_VERSION = 8
 
 function field(sourceReference, name) {
   if (typeof sourceReference === 'string') {
@@ -28,9 +28,8 @@ function relation(name, from, to, on, options = {}) {
   })
 }
 
-function constraint(name, predicate, options = {}) {
+function constraint(predicate, options = {}) {
   return objectDsl.constraint({
-    name,
     predicate,
     when: options.when,
   })

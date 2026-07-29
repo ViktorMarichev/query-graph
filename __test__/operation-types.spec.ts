@@ -41,7 +41,7 @@ test('propagates definition parameters and projection paths to query operations'
     name: 'staff',
     sources: [staff],
     parameters: [idOrganisation],
-    constraints: [constraint('organisation', eq(staff.field('idOrganisation'), param(idOrganisation)))],
+    constraints: [constraint(eq(staff.field('idOrganisation'), param(idOrganisation)))],
     projection: [project('id', staff.field('id'), { default: true })],
     orderings: [
       ordering({
@@ -65,8 +65,8 @@ test('propagates definition parameters and projection paths to query operations'
     parameters: [search, personIds],
     relations: [credentials],
     constraints: [
-      constraint('search', like(staff.field('name'), param(search)), { when: search }),
-      constraint('personIds', exists(personStaff, inParameter(personStaff.field('idPerson'), personIds)), {
+      constraint(like(staff.field('name'), param(search)), { when: search }),
+      constraint(exists(personStaff, inParameter(personStaff.field('idPerson'), personIds)), {
         when: personIds,
       }),
     ],

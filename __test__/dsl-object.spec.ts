@@ -65,7 +65,6 @@ test('object DSL produces the canonical functional definition', (t) => {
     ],
     constraints: [
       constraint({
-        name: 'ids',
         predicate: inParameter(staff.field('id'), ids),
         when: ids,
       }),
@@ -98,11 +97,7 @@ test('object DSL produces the canonical functional definition', (t) => {
         selection,
       }),
     ],
-    constraints: [
-      functionalConstraint('ids', functionalInParameter(staff.field('id'), ids), {
-        when: ids,
-      }),
-    ],
+    constraints: [functionalConstraint(functionalInParameter(staff.field('id'), ids), { when: ids })],
     projection: [
       functionalProject('id', staff.field('id'), { default: true }),
       functionalProject('credentials.idPerson', personStaff.field('idPerson'), {
@@ -119,6 +114,7 @@ test('object DSL produces the canonical functional definition', (t) => {
   })
 
   t.deepEqual(objectDefinition, functionalDefinition)
+  t.false('name' in objectDefinition.constraints[0])
   t.is(registerDefinition(objectDefinition).name, 'staffCredentials')
 
   type ProjectionPath = ProjectionPathOf<typeof objectDefinition>
@@ -166,9 +162,12 @@ test('object DSL rejects unknown structural configuration fields', (t) => {
     cardinallity: 'many',
   }
   const invalidConstraint = {
-    name: 'active',
     predicate,
     wheen: 'id',
+  }
+  const namedConstraint = {
+    name: 'active',
+    predicate,
   }
   const invalidProject = {
     path: 'id',
@@ -201,6 +200,11 @@ test('object DSL rejects unknown structural configuration fields', (t) => {
       factory: 'constraint',
       field: 'wheen',
       invoke: () => constraint(invalidConstraint),
+    },
+    {
+      factory: 'constraint',
+      field: 'name',
+      invoke: () => constraint(namedConstraint),
     },
     {
       factory: 'project',

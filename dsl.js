@@ -1,6 +1,6 @@
 'use strict'
 
-const GRAPH_DEFINITION_VERSION = 7
+const GRAPH_DEFINITION_VERSION = 8
 const SCALAR_TYPES = new Set([
   'boolean',
   'int32',
@@ -17,7 +17,7 @@ const GRAPH_MODULE_BRAND = Symbol('GraphModule')
 const SUMMARY_FIELD_BRAND = Symbol('SummaryField')
 
 const RELATION_CONFIGURATION_KEYS = new Set(['name', 'from', 'to', 'on', 'required', 'cardinality', 'selection'])
-const CONSTRAINT_CONFIGURATION_KEYS = new Set(['name', 'predicate', 'when'])
+const CONSTRAINT_CONFIGURATION_KEYS = new Set(['predicate', 'when'])
 const PROJECTION_CONFIGURATION_KEYS = new Set(['path', 'expression', 'default'])
 const ORDERING_CONFIGURATION_KEYS = new Set(['name', 'by', 'default'])
 
@@ -325,7 +325,6 @@ function relation(value) {
 function constraint(value) {
   const configuration = configurationOf('constraint', value, CONSTRAINT_CONFIGURATION_KEYS)
   const definition = {
-    name: configuration.name,
     predicate: asExpression(configuration.predicate),
   }
   if (configuration.when !== undefined) {
@@ -500,7 +499,7 @@ function composeDefinitionContent(configuration) {
     sources: new Map(),
     parameters: new Map(),
     relations: new Map(),
-    constraints: new Map(),
+    constraints: new Set(),
     projection: new Map(),
     orderings: new Map(),
   }
@@ -535,14 +534,7 @@ function addDefinitionPart(content, indexes, part, owner) {
     owner,
     (relation) => relation.name,
   )
-  addNamedDefinitions(
-    content.constraints,
-    indexes.constraints,
-    part.constraints,
-    'constraint',
-    owner,
-    (constraint) => constraint.name,
-  )
+  addIdentityDefinitions(content.constraints, indexes.constraints, part.constraints)
   addNamedDefinitions(content.projection, indexes.projection, part.projection, 'projection', owner, (projection) =>
     projection.path.join('.'),
   )
@@ -570,6 +562,15 @@ function addNamedDefinitions(target, index, definitions, type, owner, getKey) {
 
     if (existing.definition !== definition) {
       throw new TypeError(`Conflicting ${type} ${JSON.stringify(key)} from ${existing.owner} and ${owner}`)
+    }
+  }
+}
+
+function addIdentityDefinitions(target, index, definitions) {
+  for (const definition of definitions ?? []) {
+    if (!index.has(definition)) {
+      index.add(definition)
+      target.push(definition)
     }
   }
 }

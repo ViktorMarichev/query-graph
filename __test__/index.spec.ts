@@ -36,7 +36,7 @@ const definition = defineGraph({
   sources: [link, value],
   parameters: [idOwner],
   relations: [valueRelation],
-  constraints: [constraint('owner', eq(link.field('idOwner'), param(idOwner)))],
+  constraints: [constraint(eq(link.field('idOwner'), param(idOwner)))],
   projection: [
     project('value.id', value.field('id'), {
       default: true,
@@ -85,7 +85,7 @@ test('returns structured expression type errors to Node.js', (t) => {
     name: 'invalidTypes',
     root: link,
     sources: [link],
-    constraints: [constraint('owner', eq(link.field('idOwner'), 'not an id'))],
+    constraints: [constraint(eq(link.field('idOwner'), 'not an id'))],
     projection: [project('id', link.field('id'), { default: true })],
   })
 

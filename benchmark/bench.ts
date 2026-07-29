@@ -94,9 +94,9 @@ const attributeValueGraphDefinition = defineGraph({
   parameters: [idOwner, idOrganisation],
   relations: [valueRelation, requisiteRelation, requisiteTypeRelation, attachmentRelation, storageRelation],
   constraints: [
-    constraint('owner', eq(link.field('idOwner'), param(idOwner))),
-    constraint('organisation', eq(link.field('idOrganisation'), param(idOrganisation))),
-    constraint('active', isNull(link.field('dateDelete'))),
+    constraint(eq(link.field('idOwner'), param(idOwner))),
+    constraint(eq(link.field('idOrganisation'), param(idOrganisation))),
+    constraint(isNull(link.field('dateDelete'))),
   ],
   projection: [
     project('value.id', value.field('id'), {

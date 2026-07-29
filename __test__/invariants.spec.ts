@@ -13,7 +13,7 @@ test('accepts safe JavaScript integers for int64 parameters', (t) => {
       root,
       sources: [root],
       parameters: [id],
-      constraints: [constraint('id', eq(root.field('id'), param(id)))],
+      constraints: [constraint(eq(root.field('id'), param(id)))],
       projection: [project('id', root.field('id'), { default: true })],
     }),
   ).withRelationalMapping({
@@ -40,7 +40,7 @@ test('rejects non-decimal strings for decimal parameters', (t) => {
       root,
       sources: [root],
       parameters: [amount],
-      constraints: [constraint('amount', eq(root.field('amount'), param(amount)))],
+      constraints: [constraint(eq(root.field('amount'), param(amount)))],
       projection: [project('amount', root.field('amount'), { default: true })],
     }),
   ).withRelationalMapping({

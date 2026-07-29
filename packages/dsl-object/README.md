@@ -57,7 +57,7 @@ const graph = registerDefinition(definition)
 Структурные фабрики принимают объектные конфигурации и отклоняют неизвестные поля:
 
 - `relation({ name, from, to, on, ...options })`;
-- `constraint({ name, predicate, when? })`;
+- `constraint({ predicate, when? })`;
 - `project({ path, expression, default? })`;
 - `dimension({ path, expression, default? })`;
 - `measure({ path, expression, default? })`.

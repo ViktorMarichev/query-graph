@@ -21,7 +21,7 @@ fn issue_codes(definition: GraphDefinition) -> Vec<DefinitionIssueCode> {
 #[test]
 fn rejects_the_previous_wire_definition_version() {
   let mut definition = GraphDefinition::new("oldWireVersion", "root");
-  definition.schema_version = 6;
+  definition.schema_version = 7;
   definition.sources = vec![source("root")];
   definition.projection = ProjectionDefinition {
     fields: vec![ProjectionFieldDefinition::new(
@@ -136,18 +136,15 @@ fn validates_exists_target_and_predicate_scope() {
     relation("right", "root", "right"),
   ];
   definition.constraints = vec![
-    ConstraintDefinition::always("root", Expression::exists("root")),
-    ConstraintDefinition::always("missing", Expression::exists("missing")),
-    ConstraintDefinition::always(
-      "crossBranch",
-      Expression::exists_where(
-        "left",
-        Expression::eq(
-          Expression::field("left", "id"),
-          Expression::field("right", "id"),
-        ),
+    ConstraintDefinition::always(Expression::exists("root")),
+    ConstraintDefinition::always(Expression::exists("missing")),
+    ConstraintDefinition::always(Expression::exists_where(
+      "left",
+      Expression::eq(
+        Expression::field("left", "id"),
+        Expression::field("right", "id"),
       ),
-    ),
+    )),
   ];
 
   let codes = issue_codes(definition);
@@ -161,10 +158,10 @@ fn rejects_a_non_boolean_exists_predicate() {
   let mut definition = GraphDefinition::new("existsPredicateType", "root");
   definition.sources = vec![source("root"), source("child")];
   definition.relations = vec![relation("child", "root", "child")];
-  definition.constraints = vec![ConstraintDefinition::always(
+  definition.constraints = vec![ConstraintDefinition::always(Expression::exists_where(
     "child",
-    Expression::exists_where("child", Expression::field("child", "id")),
-  )];
+    Expression::field("child", "id"),
+  ))];
 
   assert!(issue_codes(definition).contains(&DefinitionIssueCode::InvalidPredicateType));
 }
@@ -177,16 +174,13 @@ fn accepts_exists_predicates_over_the_inferred_root_path() {
     relation("middle", "root", "middle"),
     relation("target", "middle", "target"),
   ];
-  definition.constraints = vec![ConstraintDefinition::always(
+  definition.constraints = vec![ConstraintDefinition::always(Expression::exists_where(
     "target",
-    Expression::exists_where(
-      "target",
-      Expression::eq(
-        Expression::field("middle", "id"),
-        Expression::field("target", "id"),
-      ),
+    Expression::eq(
+      Expression::field("middle", "id"),
+      Expression::field("target", "id"),
     ),
-  )];
+  ))];
 
   assert!(definition.compile().is_ok());
 }

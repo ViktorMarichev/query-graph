@@ -47,8 +47,8 @@ test('builds and compiles a typed summary graph', (t) => {
       }),
     ],
     constraints: [
-      constraint('organisation', eq(service.field('idOrganisation'), param(idOrganisation))),
-      constraint('minimumStaff', gte(staffCount, param(minimumStaff))),
+      constraint(eq(service.field('idOrganisation'), param(idOrganisation))),
+      constraint(gte(staffCount, param(minimumStaff))),
     ],
     dimensions: [serviceId],
     measures: [
@@ -66,7 +66,7 @@ test('builds and compiles a typed summary graph', (t) => {
     ],
   })
 
-  t.is(definition.schemaVersion, 7)
+  t.is(definition.schemaVersion, 8)
   t.deepEqual(
     definition.projection.fields.map(({ path, role }) => [path.join('.'), role]),
     [
@@ -128,8 +128,8 @@ test('builds and compiles a typed summary graph', (t) => {
       }),
     ],
     constraints: [
-      constraint('organisation', eq(service.field('idOrganisation'), param(idOrganisation))),
-      constraint('minimumStaff', gte(staffCount, param(minimumStaff))),
+      constraint(eq(service.field('idOrganisation'), param(idOrganisation))),
+      constraint(gte(staffCount, param(minimumStaff))),
     ],
     dimensions: [serviceId],
     measures: [

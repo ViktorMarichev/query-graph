@@ -20,13 +20,12 @@ fn definition(required: bool) -> GraphDefinition {
     ParameterDefinition::optional_list("ids", ScalarType::Int64)
   }];
   definition.constraints = vec![if required {
-    ConstraintDefinition::always(
+    ConstraintDefinition::always(Expression::in_parameter(
+      Expression::field("staff", "id"),
       "ids",
-      Expression::in_parameter(Expression::field("staff", "id"), "ids"),
-    )
+    ))
   } else {
     ConstraintDefinition::when_parameter(
-      "ids",
       "ids",
       Expression::in_parameter(Expression::field("staff", "id"), "ids"),
     )

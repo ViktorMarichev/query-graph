@@ -82,16 +82,13 @@ fn definition() -> GraphDefinition {
       ),
     ),
   ];
-  definition.constraints = vec![ConstraintDefinition::always(
-    "hasProvisionOfServiceAccess",
-    Expression::exists_where(
-      "event",
-      Expression::eq(
-        Expression::field("event", "code"),
-        Expression::parameter("eventCode"),
-      ),
+  definition.constraints = vec![ConstraintDefinition::always(Expression::exists_where(
+    "event",
+    Expression::eq(
+      Expression::field("event", "code"),
+      Expression::parameter("eventCode"),
     ),
-  )];
+  ))];
   definition.projection = ProjectionDefinition {
     fields: vec![ProjectionFieldDefinition::new(
       vec!["id".into()],

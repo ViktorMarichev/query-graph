@@ -40,14 +40,11 @@ test('builds the versioned wire definition without author-written discriminators
     root,
     sources: [root],
     parameters: [id],
-    constraints: [
-      constraint('id', eq(root.field('id'), param(id))),
-      constraint('active', isNull(root.field('dateDelete'))),
-    ],
+    constraints: [constraint(eq(root.field('id'), param(id))), constraint(isNull(root.field('dateDelete')))],
     projection: [project('id', root.field('id'), { default: true })],
   })
 
-  t.is(definition.schemaVersion, 7)
+  t.is(definition.schemaVersion, 8)
   t.false('relations' in definition.projection.fields[0])
   t.deepEqual(definition.constraints[0].predicate, {
     kind: 'eq',
@@ -104,7 +101,7 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
         cardinality: 'many',
       }),
     ],
-    constraints: [constraint('hasService', hasService)],
+    constraints: [constraint(hasService)],
     projection: [project('id', staff.field('id'), { default: true })],
     orderings: [
       ordering({
@@ -163,6 +160,8 @@ test('composes graph modules into a flat wire definition', (t) => {
     default: true,
   })
 
+  const idConstraint = constraint(eq(root.field('id'), param(id)))
+  const activeConstraint = constraint(isNull(root.field('dateDelete')))
   const rootModule = defineGraphModule({
     name: 'root',
     sources: [root],
@@ -174,10 +173,7 @@ test('composes graph modules into a flat wire definition', (t) => {
     sources: [root, child],
     parameters: [id],
     relations: [childRelation],
-    constraints: [
-      constraint('id', eq(root.field('id'), param(id))),
-      constraint('active', isNull(root.field('dateDelete'))),
-    ],
+    constraints: [idConstraint, activeConstraint],
     projection: [childProjection],
   })
   const combinedModule = defineGraphModule({
@@ -188,7 +184,7 @@ test('composes graph modules into a flat wire definition', (t) => {
   const definition = defineGraph({
     name: 'composed',
     root,
-    modules: [combinedModule, rootModule],
+    modules: [combinedModule, rootModule, filterModule],
   })
 
   t.deepEqual(
@@ -199,10 +195,7 @@ test('composes graph modules into a flat wire definition', (t) => {
     definition.parameters.map((parameter) => parameter.name),
     ['id'],
   )
-  t.deepEqual(
-    definition.constraints.map((definitionConstraint) => definitionConstraint.name),
-    ['id', 'active'],
-  )
+  t.deepEqual(definition.constraints, [idConstraint, activeConstraint])
   t.deepEqual(
     definition.relations.map((definitionRelation) => definitionRelation.name),
     ['child'],
@@ -220,6 +213,30 @@ test('composes graph modules into a flat wire definition', (t) => {
   t.true(Object.isFrozen(combinedModule.relations[0].on))
   t.true(Object.isFrozen(definition))
   t.true(Object.isFrozen(definition.projection.fields))
+})
+
+test('deduplicates reused constraints by identity and retains distinct constraints', (t) => {
+  const root = source('root', {
+    id: 'int64',
+    dateDelete: nullable('dateTime'),
+  })
+  const reusedConstraint = constraint(isNull(root.field('dateDelete')))
+  const distinctConstraint = constraint(isNull(root.field('dateDelete')))
+  const filterModule = defineGraphModule({
+    name: 'filter',
+    sources: [root],
+    constraints: [reusedConstraint],
+  })
+
+  const definition = defineGraph({
+    name: 'constraintIdentity',
+    root,
+    modules: [filterModule],
+    constraints: [reusedConstraint, distinctConstraint],
+    projection: [project('id', root.field('id'), { default: true })],
+  })
+
+  t.deepEqual(definition.constraints, [reusedConstraint, distinctConstraint])
 })
 
 test('rejects conflicting definitions from graph modules', (t) => {
@@ -252,7 +269,7 @@ test('passes a DSL definition to Rust without an intermediate compiler', (t) => 
     name: 'root',
     sources: [root],
     parameters: [id],
-    constraints: [constraint('id', eq(root.field('id'), param(id)))],
+    constraints: [constraint(eq(root.field('id'), param(id)))],
     projection: [project('id', root.field('id'), { default: true })],
   })
   const definition = defineGraph({

@@ -61,19 +61,13 @@ fn definition() -> GraphDefinition {
     ),
   ];
   definition.constraints = vec![
-    ConstraintDefinition::always(
-      "owner",
-      Expression::eq(
-        Expression::field("link", "idOwner"),
-        Expression::parameter("idOwner"),
-      ),
-    ),
-    ConstraintDefinition::always(
-      "active",
-      Expression::IsNull {
-        expression: Box::new(Expression::field("link", "dateDelete")),
-      },
-    ),
+    ConstraintDefinition::always(Expression::eq(
+      Expression::field("link", "idOwner"),
+      Expression::parameter("idOwner"),
+    )),
+    ConstraintDefinition::always(Expression::IsNull {
+      expression: Box::new(Expression::field("link", "dateDelete")),
+    }),
   ];
   definition.projection = ProjectionDefinition {
     fields: vec![
@@ -375,13 +369,12 @@ fn requires_optional_parameters_referenced_by_an_active_constraint() {
     "filterOwner",
     ScalarType::Int64,
   ));
-  definition.constraints.push(ConstraintDefinition::always(
-    "optionalOwnerFilter",
-    Expression::eq(
+  definition
+    .constraints
+    .push(ConstraintDefinition::always(Expression::eq(
       Expression::field("link", "idOwner"),
       Expression::parameter("filterOwner"),
-    ),
-  ));
+    )));
   let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
 
   let error = graph

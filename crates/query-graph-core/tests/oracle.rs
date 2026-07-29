@@ -41,19 +41,13 @@ fn definition() -> GraphDefinition {
   )
   .required()];
   definition.constraints = vec![
-    ConstraintDefinition::always(
-      "owner",
-      Expression::eq(
-        Expression::field("link", "idOwner"),
-        Expression::parameter("idOwner"),
-      ),
-    ),
-    ConstraintDefinition::always(
-      "active",
-      Expression::IsNull {
-        expression: Box::new(Expression::field("link", "dateDelete")),
-      },
-    ),
+    ConstraintDefinition::always(Expression::eq(
+      Expression::field("link", "idOwner"),
+      Expression::parameter("idOwner"),
+    )),
+    ConstraintDefinition::always(Expression::IsNull {
+      expression: Box::new(Expression::field("link", "dateDelete")),
+    }),
   ];
   definition.projection = ProjectionDefinition {
     fields: vec![ProjectionFieldDefinition::new(

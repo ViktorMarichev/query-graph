@@ -81,11 +81,9 @@ const attributeValuesModule = defineGraphModule({
   relations: [valueRelation],
   constraints: [
     constraint({
-      name: 'owner',
       predicate: eq(link.field('idOwner'), param(idOwner)),
     }),
     constraint({
-      name: 'hasValue',
       predicate: exists(value, isNotNull(value.field('value'))),
     }),
   ],
@@ -112,9 +110,13 @@ const graph = registerDefinition(definition)
 корневого источника, и его нельзя зарегистрировать или скомпилировать отдельно.
 
 `defineGraph` объединяет вложенные модули и локальные элементы в один плоский
-`GraphDefinition`. Повторно использованные объекты дедуплицируются, а разные
-определения с одинаковым именем приводят к ошибке композиции. Сведения о модулях
-не передаются в Rust и не входят в wire-формат.
+`GraphDefinition`. Повторно подключенный объект дедуплицируется по identity. Для
+именованных элементов разные определения с одним ключом приводят к ошибке
+композиции.
+
+Constraints не имеют имени: повторно использованный constraint добавляется один
+раз, а разные constraint-объекты сохраняются и объединяются через `AND`. Сведения
+о модулях не передаются в Rust и не входят в wire-формат.
 
 Вспомогательные функции API описания графа формируют версионируемое и
 сериализуемое промежуточное представление `GraphDefinition`. Дискриминаторы
@@ -192,7 +194,6 @@ const graph = registerDefinition(definition)
 
 ```ts
 constraint({
-  name: 'hasService',
   predicate: exists(businessServiceStaff, eq(businessServiceStaff.field('idService'), param(idService))),
 })
 ```
@@ -232,7 +233,6 @@ const definition = defineGraph({
   ],
   constraints: [
     constraint({
-      name: 'services',
       predicate: exists(businessServiceStaff, inParameter(businessServiceStaff.field('idService'), idServices)),
     }),
   ],
@@ -342,11 +342,9 @@ const definition = defineSummaryGraph({
   ],
   constraints: [
     constraint({
-      name: 'organisation',
       predicate: eq(service.field('idOrganisation'), param(idOrganisation)),
     }),
     constraint({
-      name: 'minimumStaff',
       predicate: gte(staffCount, param(minimumStaff)),
     }),
   ],

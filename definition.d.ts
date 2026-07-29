@@ -17,7 +17,7 @@ import type {
   SourceRef,
 } from './dsl.js'
 
-export const GRAPH_DEFINITION_VERSION: 7
+export const GRAPH_DEFINITION_VERSION: 8
 
 export function field<
   const Key extends string,
@@ -47,7 +47,7 @@ export interface ConstraintOptions {
   when?: string | ParameterRef
 }
 
-export function constraint(name: string, predicate: Expression, options?: ConstraintOptions): ConstraintDefinition
+export function constraint(predicate: Expression, options?: ConstraintOptions): ConstraintDefinition
 
 export interface ProjectionOptions {
   default?: boolean

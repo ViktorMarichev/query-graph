@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CompiledGraph, DefinitionIssues, Expression};
 
-pub const GRAPH_DEFINITION_VERSION: u32 = 7;
+pub const GRAPH_DEFINITION_VERSION: u32 = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -285,28 +285,21 @@ impl RelationSelection {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConstraintDefinition {
-  pub name: String,
   #[serde(default)]
   pub when: ConstraintCondition,
   pub predicate: Expression,
 }
 
 impl ConstraintDefinition {
-  pub fn always(name: impl Into<String>, predicate: Expression) -> Self {
+  pub fn always(predicate: Expression) -> Self {
     Self {
-      name: name.into(),
       when: ConstraintCondition::Always,
       predicate,
     }
   }
 
-  pub fn when_parameter(
-    name: impl Into<String>,
-    parameter: impl Into<String>,
-    predicate: Expression,
-  ) -> Self {
+  pub fn when_parameter(parameter: impl Into<String>, predicate: Expression) -> Self {
     Self {
-      name: name.into(),
       when: ConstraintCondition::ParameterPresent {
         parameter: parameter.into(),
       },

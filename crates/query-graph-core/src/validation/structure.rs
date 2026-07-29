@@ -275,11 +275,8 @@ impl<'a> DefinitionValidator<'a> {
   }
 
   fn validate_constraints(&mut self) {
-    let mut names = HashSet::new();
-
     for (constraint_index, constraint) in self.definition.constraints.iter().enumerate() {
       let location = format!("constraints[{constraint_index}]");
-      self.validate_constraint_name(constraint_index, &mut names);
 
       if let ConstraintCondition::ParameterPresent { parameter } = &constraint.when {
         if !self.parameters.contains_key(parameter) {
@@ -299,25 +296,6 @@ impl<'a> DefinitionValidator<'a> {
         &context,
         &mut self.issues,
       );
-    }
-  }
-
-  fn validate_constraint_name(&mut self, constraint_index: usize, names: &mut HashSet<String>) {
-    let constraint = &self.definition.constraints[constraint_index];
-    let location = format!("constraints[{constraint_index}].name");
-
-    if constraint.name.trim().is_empty() {
-      self.issues.push(DefinitionIssue::new(
-        DefinitionIssueCode::EmptyConstraintName,
-        location,
-        "constraint name must not be empty",
-      ));
-    } else if !names.insert(constraint.name.clone()) {
-      self.issues.push(DefinitionIssue::new(
-        DefinitionIssueCode::DuplicateConstraint,
-        location,
-        format!("constraint {:?} is defined more than once", constraint.name),
-      ));
     }
   }
 

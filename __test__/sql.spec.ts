@@ -37,7 +37,7 @@ const definition = defineGraph({
   sources: [link, value],
   parameters: [idOwner],
   relations: [valueRelation],
-  constraints: [constraint('owner', eq(link.field('idOwner'), param(idOwner)))],
+  constraints: [constraint(eq(link.field('idOwner'), param(idOwner)))],
   projection: [
     project('value.id', value.field('id'), {
       default: true,

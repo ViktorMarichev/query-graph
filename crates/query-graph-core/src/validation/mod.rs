@@ -58,8 +58,6 @@ pub enum DefinitionIssueCode {
   InvalidExistsSource,
   ExistsExpressionScope,
   InvalidParameterShape,
-  EmptyConstraintName,
-  DuplicateConstraint,
   UnknownFieldSource,
   UnknownField,
   UnknownParameter,

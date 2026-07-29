@@ -152,7 +152,6 @@ fn reports_first_by_as_unsupported_on_oracle_11g() {
 fn supports_first_by_relations_inside_exists_paths() {
   let mut definition = definition(false);
   definition.constraints = vec![query_graph_core::ConstraintDefinition::always(
-    "hasCredentials",
     Expression::exists("personStaff"),
   )];
   definition.projection.fields.truncate(1);
@@ -225,7 +224,6 @@ fn requires_parameters_used_by_first_by_inside_an_exists_path() {
     ],
   });
   definition.constraints = vec![query_graph_core::ConstraintDefinition::always(
-    "hasCredentials",
     Expression::exists("personStaff"),
   )];
   definition.projection.fields.truncate(1);
