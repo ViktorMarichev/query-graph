@@ -1337,7 +1337,7 @@ __metadata:
   dependencies:
     "@query-graph/core": "workspace:^"
   peerDependencies:
-    "@query-graph/core": ^1.0.0
+    "@query-graph/core": ^1.1.0
   languageName: unknown
   linkType: soft
 
