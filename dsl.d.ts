@@ -32,6 +32,44 @@ export type SemanticFunctionName = 'lower' | 'upper' | 'coalesce' | 'concat'
 export type AggregateFunctionName = 'count' | 'countDistinct' | 'sum' | 'average' | 'minimum' | 'maximum'
 export type ProjectionFieldRole = 'value' | 'dimension' | 'measure'
 
+type BooleanOr<Value extends boolean> = true extends Value ? true : false
+
+export interface SourceFieldNullability<Source extends string = string, FieldNullable extends boolean = boolean> {
+  kind: 'sourceField'
+  source: Source
+  fieldNullable: FieldNullable
+}
+
+export interface AnyNullability<Values = unknown> {
+  kind: 'any'
+  values: Values
+}
+
+export interface AllNullability<Values = unknown> {
+  kind: 'all'
+  values: Values
+}
+
+export type NullabilityExpression = boolean | SourceFieldNullability | AnyNullability | AllNullability
+
+declare const expressionTypeMetadata: unique symbol
+
+export interface ExpressionTypeMetadata<
+  Type extends ScalarType | null = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+> {
+  readonly [expressionTypeMetadata]: {
+    scalarType: Type
+    nullability: Nullability
+  }
+}
+
+export type TypedExpression<
+  Definition extends Expression = Expression,
+  Type extends ScalarType | null = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+> = Definition & ExpressionTypeMetadata<Type, Nullability>
+
 export interface FieldDefinition {
   name: string
   scalarType: ScalarType
@@ -149,12 +187,18 @@ export type Expression =
   | FunctionExpression
   | AggregateExpression
 
-export interface RelationDefinition {
-  name: string
-  from: string
-  to: string
-  cardinality?: RelationCardinality
-  required?: boolean
+export interface RelationDefinition<
+  Name extends string = string,
+  From extends string = string,
+  To extends string = string,
+  Required extends boolean = boolean,
+  Cardinality extends RelationCardinality = RelationCardinality,
+> {
+  name: Name
+  from: From
+  to: To
+  cardinality?: Cardinality
+  required?: Required
   selection?: RelationSelection
   on: Expression
 }
@@ -177,34 +221,108 @@ export type JoinProjectionPath<Segments extends readonly string[]> = number exte
         : string
 
 declare const projectionPathType: unique symbol
+declare const projectionScalarType: unique symbol
+declare const projectionNullabilityType: unique symbol
+declare const projectionDefaultType: unique symbol
 declare const summaryFieldType: unique symbol
+declare const typedProjectionPathType: unique symbol
+declare const typedProjectionScalarType: unique symbol
+declare const typedProjectionNullabilityType: unique symbol
+declare const typedProjectionDefaultType: unique symbol
 
-export interface ProjectionFieldDefinition<Path extends string = string> {
+export interface ProjectionTypeMetadata<
+  Path extends string = string,
+  Type extends ScalarType = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+  SelectedByDefault extends boolean = boolean,
+> {
+  readonly [typedProjectionPathType]: Path
+  readonly [typedProjectionScalarType]: Type
+  readonly [typedProjectionNullabilityType]: Nullability
+  readonly [typedProjectionDefaultType]: SelectedByDefault
+}
+
+export type TypedProjectionField<
+  Path extends string = string,
+  Type extends ScalarType = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+  SelectedByDefault extends boolean = boolean,
+> = ProjectionFieldDefinition<Path, Type, Nullability, SelectedByDefault> &
+  ProjectionTypeMetadata<Path, Type, Nullability, SelectedByDefault>
+
+export type TypedDimensionDefinition<
+  Path extends string = string,
+  Type extends ScalarType = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+  SelectedByDefault extends boolean = boolean,
+> = DimensionDefinition<Path, Type, Nullability, SelectedByDefault> &
+  ProjectionTypeMetadata<Path, Type, Nullability, SelectedByDefault>
+
+export type TypedMeasureDefinition<
+  Path extends string = string,
+  Type extends ScalarType = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+  SelectedByDefault extends boolean = boolean,
+> = MeasureDefinition<Path, Type, Nullability, SelectedByDefault> &
+  ProjectionTypeMetadata<Path, Type, Nullability, SelectedByDefault>
+
+export interface ProjectionFieldDefinition<
+  Path extends string = string,
+  Type extends ScalarType = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+  SelectedByDefault extends boolean = boolean,
+> {
   path: string[]
   readonly [projectionPathType]?: Path
+  readonly [projectionScalarType]?: Type
+  readonly [projectionNullabilityType]?: Nullability
+  readonly [projectionDefaultType]?: SelectedByDefault
   expression: Expression
   role?: ProjectionFieldRole
   selectedByDefault?: boolean
 }
 
-export interface DimensionDefinition<Path extends string = string> extends ProjectionFieldDefinition<Path> {
+export interface DimensionDefinition<
+  Path extends string = string,
+  Type extends ScalarType = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+  SelectedByDefault extends boolean = boolean,
+> extends ProjectionFieldDefinition<Path, Type, Nullability, SelectedByDefault> {
   readonly [summaryFieldType]: 'dimension'
   role: 'dimension'
 }
 
-export interface MeasureDefinition<Path extends string = string> extends ProjectionFieldDefinition<Path> {
+export interface MeasureDefinition<
+  Path extends string = string,
+  Type extends ScalarType = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+  SelectedByDefault extends boolean = boolean,
+> extends ProjectionFieldDefinition<Path, Type, Nullability, SelectedByDefault> {
   readonly [summaryFieldType]: 'measure'
   role: 'measure'
 }
 
-export type SummaryFieldDefinition<Path extends string = string> = DimensionDefinition<Path> | MeasureDefinition<Path>
+export type SummaryFieldDefinition<
+  Path extends string = string,
+  Type extends ScalarType = ScalarType,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+  SelectedByDefault extends boolean = boolean,
+> =
+  | DimensionDefinition<Path, Type, Nullability, SelectedByDefault>
+  | MeasureDefinition<Path, Type, Nullability, SelectedByDefault>
 
-export interface ProjectionDefinition<Path extends string = string> {
-  fields: ProjectionFieldDefinition<Path>[]
+export interface ProjectionDefinition<
+  Path extends string = string,
+  Field extends ProjectionFieldDefinition = ProjectionFieldDefinition<Path>,
+> {
+  fields: Field[]
 }
 
-export interface ProjectionDefinitionInput<Path extends string = string> {
-  fields?: ProjectionFieldDefinition<Path>[]
+export interface ProjectionDefinitionInput<
+  Path extends string = string,
+  Field extends ProjectionFieldDefinition = ProjectionFieldDefinition<Path>,
+> {
+  fields?: Field[]
 }
 
 export interface OrderByDefinition {
@@ -242,11 +360,15 @@ export interface GraphDefinition<
   Parameter extends ParameterDefinition = ParameterDefinition,
   ProjectionPath extends string = string,
   OrderingName extends string = string,
+  ProjectionField extends ProjectionFieldDefinition = ProjectionFieldDefinition<ProjectionPath>,
+  Relation extends RelationDefinition = RelationDefinition,
+  Root extends string = string,
 > extends GraphDefinitionInput {
+  root: Root
   parameters: Parameter[]
-  relations: RelationDefinition[]
+  relations: Relation[]
   constraints: ConstraintDefinition[]
-  projection: ProjectionDefinition<ProjectionPath>
+  projection: ProjectionDefinition<ProjectionPath, ProjectionField>
   orderings: OrderingDefinition<OrderingName>[]
 }
 
@@ -278,23 +400,52 @@ export interface QueryOperationBase<SelectPath extends string = string, Ordering
 }
 
 export type DefinitionParameter<Definition extends GraphDefinitionInput> =
-  Definition extends GraphDefinition<infer Parameter, infer _ProjectionPath, infer _OrderingName>
+  Definition extends GraphDefinition<
+    infer Parameter,
+    infer _ProjectionPath,
+    infer _OrderingName,
+    infer _ProjectionField,
+    infer _Relation,
+    infer _Root
+  >
     ? Parameter
     : NonNullable<Definition['parameters']>[number]
 
 export type DefinitionProjectionPath<Definition extends GraphDefinitionInput> =
-  Definition extends GraphDefinition<infer _Parameter, infer ProjectionPath, infer _OrderingName>
+  Definition extends GraphDefinition<
+    infer _Parameter,
+    infer ProjectionPath,
+    infer _OrderingName,
+    infer _ProjectionField,
+    infer _Relation,
+    infer _Root
+  >
     ? ProjectionPath
     : Definition['projection'] extends ProjectionDefinitionInput<infer ProjectionPath>
       ? ProjectionPath
       : string
 
 export type DefinitionOrderingName<Definition extends GraphDefinitionInput> =
-  Definition extends GraphDefinition<infer _Parameter, infer _ProjectionPath, infer OrderingName>
+  Definition extends GraphDefinition<
+    infer _Parameter,
+    infer _ProjectionPath,
+    infer OrderingName,
+    infer _ProjectionField,
+    infer _Relation,
+    infer _Root
+  >
     ? OrderingName
     : NonNullable<Definition['orderings']>[number] extends OrderingDefinition<infer OrderingName>
       ? OrderingName
       : never
+
+export type DefinitionProjectionField<Definition extends GraphDefinitionInput> = NonNullable<
+  NonNullable<Definition['projection']>['fields']
+>[number]
+
+export type DefinitionRelation<Definition extends GraphDefinitionInput> = NonNullable<Definition['relations']>[number]
+
+export type DefinitionRoot<Definition extends GraphDefinitionInput> = Definition['root']
 
 export type ParameterValue<Parameter extends ParameterDefinition> = Parameter extends { shape: 'list' }
   ? readonly ScalarParameterValue<Parameter['scalarType']>[]
@@ -332,7 +483,10 @@ export type QueryOperation<Definition extends GraphDefinitionInput = GraphDefini
 > &
   OperationParameterInput<Definition>
 
+declare const graphDefinitionType: unique symbol
+
 export interface QueryGraph<Definition extends GraphDefinitionInput = GraphDefinitionInput> {
+  readonly [graphDefinitionType]?: Definition
   readonly name: string
   readonly root: string
   readonly sourceCount: number
@@ -346,6 +500,7 @@ export interface QueryGraph<Definition extends GraphDefinitionInput = GraphDefin
 }
 
 export interface RelationalQueryGraph<Definition extends GraphDefinitionInput = GraphDefinitionInput> {
+  readonly [graphDefinitionType]?: Definition
   readonly name: string
   compileSqlServer(
     operation: QueryOperation<Definition>,
@@ -356,6 +511,255 @@ export interface RelationalQueryGraph<Definition extends GraphDefinitionInput = 
     options?: OracleCompileOptions,
   ): import('./index.js').CompiledSqlStatement
 }
+
+export interface ScalarOutputTypeMap {
+  boolean: unknown
+  int32: unknown
+  int64: unknown
+  float64: unknown
+  decimal: unknown
+  string: unknown
+  date: unknown
+  dateTime: unknown
+  binary: unknown
+  json: unknown
+}
+
+export interface DefaultScalarOutputTypeMap extends ScalarOutputTypeMap {
+  boolean: boolean
+  int32: number
+  int64: number | string
+  float64: number
+  decimal: number | string
+  string: string
+  date: string
+  dateTime: string
+  binary: string
+  json: JsonValue
+}
+
+export type DefinitionOf<Subject extends GraphDefinitionInput | QueryGraph | RelationalQueryGraph> =
+  Subject extends GraphDefinitionInput
+    ? Subject
+    : Subject extends QueryGraph<infer Definition>
+      ? Definition
+      : Subject extends RelationalQueryGraph<infer Definition>
+        ? Definition
+        : never
+
+type IncomingRelation<Definition extends GraphDefinitionInput, Source extends string> =
+  DefinitionRelation<Definition> extends infer Candidate
+    ? Candidate extends RelationDefinition<infer _Name, infer _From, infer To, infer _Required, infer _Cardinality>
+      ? Source extends To
+        ? Candidate
+        : never
+      : never
+    : never
+
+type RelationPathNullability<
+  Definition extends GraphDefinitionInput,
+  Relation,
+  Visited extends string,
+  Depth extends readonly unknown[],
+> =
+  Relation extends RelationDefinition<infer _Name, infer From, infer _To, infer Required, infer _Cardinality>
+    ? BooleanOr<
+        | (Required extends true ? false : true)
+        | SourceOuterNullable<Definition, From, Visited, readonly [...Depth, unknown]>
+      >
+    : boolean
+
+type SourceOuterNullable<
+  Definition extends GraphDefinitionInput,
+  Source extends string,
+  Visited extends string = never,
+  Depth extends readonly unknown[] = readonly [],
+> = Depth['length'] extends 12
+  ? boolean
+  : string extends Source
+    ? boolean
+    : string extends DefinitionRoot<Definition>
+      ? boolean
+      : Source extends DefinitionRoot<Definition>
+        ? false
+        : Source extends Visited
+          ? boolean
+          : [IncomingRelation<Definition, Source>] extends [never]
+            ? boolean
+            : BooleanOr<
+                RelationPathNullability<Definition, IncomingRelation<Definition, Source>, Visited | Source, Depth>
+              >
+
+type CombineAllNullability<Left extends boolean, Right extends boolean> = [Left] extends [false]
+  ? false
+  : [Right] extends [false]
+    ? false
+    : [Left] extends [true]
+      ? Right
+      : [Right] extends [true]
+        ? Left
+        : boolean
+
+type EvaluateAnyNullability<
+  Definition extends GraphDefinitionInput,
+  Values,
+  Depth extends readonly unknown[],
+> = Values extends readonly []
+  ? false
+  : Values extends readonly [
+        infer First extends NullabilityExpression,
+        ...infer Rest extends readonly NullabilityExpression[],
+      ]
+    ? BooleanOr<
+        | EvaluateNullability<Definition, First, readonly [...Depth, unknown]>
+        | EvaluateAnyNullability<Definition, Rest, readonly [...Depth, unknown]>
+      >
+    : Values extends readonly (infer Value extends NullabilityExpression)[]
+      ? BooleanOr<EvaluateNullability<Definition, Value, readonly [...Depth, unknown]>>
+      : boolean
+
+type EvaluateAllNullability<
+  Definition extends GraphDefinitionInput,
+  Values,
+  Depth extends readonly unknown[],
+> = Values extends readonly []
+  ? true
+  : Values extends readonly [
+        infer First extends NullabilityExpression,
+        ...infer Rest extends readonly NullabilityExpression[],
+      ]
+    ? CombineAllNullability<
+        EvaluateNullability<Definition, First, readonly [...Depth, unknown]>,
+        EvaluateAllNullability<Definition, Rest, readonly [...Depth, unknown]>
+      >
+    : boolean
+
+type EvaluateNullability<
+  Definition extends GraphDefinitionInput,
+  Formula extends NullabilityExpression,
+  Depth extends readonly unknown[] = readonly [],
+> = Depth['length'] extends 16
+  ? boolean
+  : NullabilityExpression extends Formula
+    ? boolean
+    : Formula extends boolean
+      ? Formula
+      : Formula extends SourceFieldNullability<infer Source, infer FieldNullable>
+        ? BooleanOr<FieldNullable | SourceOuterNullable<Definition, Source, never, Depth>>
+        : Formula extends AnyNullability<infer Values>
+          ? EvaluateAnyNullability<Definition, Values, Depth>
+          : Formula extends AllNullability<infer Values>
+            ? EvaluateAllNullability<Definition, Values, Depth>
+            : boolean
+
+type ProjectionFieldPath<Field> =
+  Field extends ProjectionTypeMetadata<infer Path, infer _Type, infer _Nullability, infer _SelectedByDefault>
+    ? Path
+    : Field extends ProjectionFieldDefinition<infer Path>
+      ? Path
+      : never
+
+type ProjectionFieldValue<Definition extends GraphDefinitionInput, Field, TypeMap extends ScalarOutputTypeMap> =
+  Field extends ProjectionTypeMetadata<infer _Path, infer Type, infer Nullability, infer _SelectedByDefault>
+    ? true extends EvaluateNullability<Definition, Nullability>
+      ? TypeMap[Type] | null
+      : TypeMap[Type]
+    : Field extends ProjectionFieldDefinition<infer _Path, infer Type, infer Nullability, infer _SelectedByDefault>
+      ? true extends EvaluateNullability<Definition, Nullability>
+        ? TypeMap[Type] | null
+        : TypeMap[Type]
+      : never
+
+type ProjectionFieldByPath<Field, Path extends string> = Field extends ProjectionFieldDefinition
+  ? ProjectionFieldPath<Field> extends Path
+    ? Field
+    : never
+  : never
+
+type ProjectionDefaultAtPath<Field, Path extends string> =
+  Field extends ProjectionTypeMetadata<infer FieldPath, infer _Type, infer _Nullability, infer SelectedByDefault>
+    ? FieldPath extends Path
+      ? SelectedByDefault
+      : never
+    : Field extends ProjectionFieldDefinition
+      ? ProjectionFieldPath<Field> extends Path
+        ? Field extends { selectedByDefault: true }
+          ? true
+          : false
+        : never
+      : never
+
+type DefaultProjectionPath<Field, Path extends string = ProjectionFieldPath<Field>> = Path extends unknown
+  ? [ProjectionDefaultAtPath<Field, Path>] extends [never]
+    ? never
+    : ProjectionDefaultAtPath<Field, Path> extends true
+      ? Path
+      : never
+  : never
+
+type DefaultProjectionField<Field> = ProjectionFieldByPath<Field, DefaultProjectionPath<Field>>
+
+type SelectedProjectionField<Definition extends GraphDefinitionInput, Operation> = [Operation] extends [undefined]
+  ? DefaultProjectionField<DefinitionProjectionField<Definition>>
+  : Operation extends { select: readonly (infer Path extends string)[] }
+    ? ProjectionFieldByPath<DefinitionProjectionField<Definition>, Path>
+    : DefaultProjectionField<DefinitionProjectionField<Definition>>
+
+type ProjectionEntry<
+  Definition extends GraphDefinitionInput,
+  Field,
+  TypeMap extends ScalarOutputTypeMap,
+> = Field extends ProjectionFieldDefinition
+  ? {
+      path: ProjectionFieldPath<Field>
+      value: ProjectionFieldValue<Definition, Field, TypeMap>
+    }
+  : never
+
+type ProjectionEntryHead<Entry> = Entry extends { path: infer Path extends string }
+  ? Path extends `${infer Head}.${string}`
+    ? Head
+    : Path
+  : never
+
+type DirectProjectionEntryValue<Entry, Key extends string> = Entry extends {
+  path: infer Path extends string
+  value: infer Value
+}
+  ? Path extends Key
+    ? Value
+    : never
+  : never
+
+type NestedProjectionEntry<Entry, Key extends string> = Entry extends {
+  path: infer Path extends string
+  value: infer Value
+}
+  ? Path extends `${Key}.${infer Rest}`
+    ? { path: Rest; value: Value }
+    : never
+  : never
+
+type ProjectionValueAtKey<Entry, Key extends string> = [NestedProjectionEntry<Entry, Key>] extends [never]
+  ? DirectProjectionEntryValue<Entry, Key>
+  : [DirectProjectionEntryValue<Entry, Key>] extends [never]
+    ? BuildProjectionResult<NestedProjectionEntry<Entry, Key>>
+    : DirectProjectionEntryValue<Entry, Key> | BuildProjectionResult<NestedProjectionEntry<Entry, Key>>
+
+type BuildProjectionResult<Entry> = [Entry] extends [never]
+  ? Record<never, never>
+  : {
+      [Key in ProjectionEntryHead<Entry>]: ProjectionValueAtKey<Entry, Key>
+    }
+
+export type ResultOf<
+  Subject extends GraphDefinitionInput | QueryGraph | RelationalQueryGraph,
+  Operation = undefined,
+  TypeMap extends ScalarOutputTypeMap = DefaultScalarOutputTypeMap,
+> =
+  DefinitionOf<Subject> extends infer Definition extends GraphDefinitionInput
+    ? BuildProjectionResult<ProjectionEntry<Definition, SelectedProjectionField<Definition, Operation>, TypeMap>>
+    : never
 
 export type SqlServerVersion = '2008' | '2012' | '2016' | '2019' | '2022'
 export type OracleVersion = '11g' | '12c' | '19c' | '21c' | '23ai'
@@ -383,19 +787,47 @@ export interface QueryGraphError extends Error {
   readonly issues: readonly QueryGraphDiagnostic[]
 }
 
-export interface FieldSpecDefinition {
-  scalarType: ScalarType
-  nullable?: boolean
-  selectable?: boolean
+export interface FieldSpecDefinition<
+  Type extends ScalarType = ScalarType,
+  Nullable extends boolean = boolean,
+  Selectable extends boolean = boolean,
+> {
+  scalarType: Type
+  nullable?: Nullable
+  selectable?: Selectable
 }
 
 export type FieldSpec = ScalarType | FieldSpecDefinition
 export type FieldSpecMap = Record<string, FieldSpec>
 
+export type FieldSpecScalarType<Specification extends FieldSpec> = Specification extends ScalarType
+  ? Specification
+  : Specification extends FieldSpecDefinition<infer Type, infer _Nullable, infer _Selectable>
+    ? Type
+    : never
+
+export type FieldSpecIsNullable<Specification extends FieldSpec> = Specification extends ScalarType
+  ? false
+  : Specification extends FieldSpecDefinition<infer _Type, infer Nullable, infer _Selectable>
+    ? Nullable
+    : boolean
+
+export type FieldSpecIsSelectable<Specification extends FieldSpec> = Specification extends ScalarType
+  ? true
+  : Specification extends FieldSpecDefinition<infer _Type, infer _Nullable, infer Selectable>
+    ? Selectable
+    : boolean
+
 export interface SourceRef<Key extends string = string, Fields extends FieldSpecMap = FieldSpecMap>
   extends SourceDefinition {
   key: Key
-  field<Name extends Extract<keyof Fields, string>>(name: Name): FieldExpression<Key, Name>
+  field<Name extends Extract<keyof Fields, string>>(
+    name: Name,
+  ): TypedExpression<
+    FieldExpression<Key, Name>,
+    FieldSpecScalarType<Fields[Name]>,
+    SourceFieldNullability<Key, FieldSpecIsNullable<Fields[Name]>>
+  >
 }
 
 export interface ScalarParameterRef<
@@ -426,21 +858,95 @@ export type ParameterRef<
   Required extends boolean = boolean,
 > = ScalarParameterRef<Name, Type, Required> | ListParameterRef<Name, Type, Required>
 
-export interface RelationRef<Name extends string = string> extends RelationDefinition {
-  name: Name
-}
+export type RelationRef<
+  Name extends string = string,
+  From extends string = string,
+  To extends string = string,
+  Required extends boolean = boolean,
+  Cardinality extends RelationCardinality = RelationCardinality,
+> = RelationDefinition<Name, From, To, Required, Cardinality>
 
 export type LiteralInput = null | boolean | string | number
 export type ExpressionInput = Expression | LiteralInput | SummaryFieldDefinition
+
+type NumberLiteralScalarType<Value extends number> = number extends Value
+  ? 'int64' | 'decimal'
+  : `${Value}` extends `${bigint}`
+    ? 'int64'
+    : 'decimal'
+
+type InputScalarType<Input extends ExpressionInput> =
+  Input extends ExpressionTypeMetadata<infer Type, infer _Nullability>
+    ? Type
+    : Input extends ProjectionFieldDefinition<infer _Path, infer Type, infer _Nullability, infer _SelectedByDefault>
+      ? Type
+      : Input extends null
+        ? null
+        : Input extends boolean
+          ? 'boolean'
+          : Input extends string
+            ? 'string'
+            : Input extends number
+              ? NumberLiteralScalarType<Input>
+              : ScalarType
+
+type InputNullability<Input extends ExpressionInput> =
+  Input extends ExpressionTypeMetadata<infer _Type, infer Nullability>
+    ? Nullability
+    : Input extends ProjectionFieldDefinition<infer _Path, infer _Type, infer Nullability, infer _SelectedByDefault>
+      ? Nullability
+      : Input extends null
+        ? true
+        : Input extends Expression
+          ? boolean
+          : false
+
+export type ExpressionScalarType<Input extends ExpressionInput> = InputScalarType<Input>
+export type ExpressionNullability<Input extends ExpressionInput> = InputNullability<Input>
+
+type PromoteScalarType<Type extends ScalarType | null> = 'float64' extends Type
+  ? 'float64'
+  : 'decimal' extends Type
+    ? 'decimal'
+    : 'int64' extends Type
+      ? 'int64'
+      : 'int32' extends Type
+        ? 'int32'
+        : 'dateTime' extends Type
+          ? 'dateTime'
+          : Exclude<Type, null>
+
+type AverageScalarType<Type extends ScalarType | null> = Type extends 'float64'
+  ? 'float64'
+  : Type extends 'int32' | 'int64' | 'decimal'
+    ? 'decimal'
+    : Exclude<Type, null>
+
+type InputNullabilities<Inputs extends readonly ExpressionInput[]> = {
+  [Index in keyof Inputs]: InputNullability<Inputs[Index]>
+}
+
+type AnyInputNullability<Inputs extends readonly ExpressionInput[]> = AnyNullability<InputNullabilities<Inputs>>
+type AllInputNullability<Inputs extends readonly ExpressionInput[]> = AllNullability<InputNullabilities<Inputs>>
 
 export interface FieldTypeOptions {
   nullable?: boolean
   selectable?: boolean
 }
 
-export function fieldType(scalarType: ScalarType, options?: FieldTypeOptions): FieldSpecDefinition
-export function nullable(specification: FieldSpec): FieldSpecDefinition
-export function hidden(specification: FieldSpec): FieldSpecDefinition
+type OptionNullable<Options extends FieldTypeOptions> = Options extends { nullable: true } ? true : false
+type OptionSelectable<Options extends FieldTypeOptions> = Options extends { selectable: false } ? false : true
+
+export function fieldType<const Type extends ScalarType, const Options extends FieldTypeOptions = Record<never, never>>(
+  scalarType: Type,
+  options?: Options,
+): FieldSpecDefinition<Type, OptionNullable<Options>, OptionSelectable<Options>>
+export function nullable<const Specification extends FieldSpec>(
+  specification: Specification,
+): FieldSpecDefinition<FieldSpecScalarType<Specification>, true, FieldSpecIsSelectable<Specification>>
+export function hidden<const Specification extends FieldSpec>(
+  specification: Specification,
+): FieldSpecDefinition<FieldSpecScalarType<Specification>, FieldSpecIsNullable<Specification>, false>
 
 export function source<const Key extends string, const Fields extends FieldSpecMap>(
   key: Key,
@@ -465,33 +971,75 @@ export function optionalListParameter<const Name extends string, const Type exte
 ): ListParameterRef<Name, Type, false>
 export function param<const Name extends string, const Type extends ScalarType>(
   parameter: ScalarParameterRef<Name, Type>,
-): ParameterExpression<Name>
+): TypedExpression<ParameterExpression<Name>, Type, false>
 
-export function literal(value: LiteralInput): LiteralExpression
-export function integer(value: number): LiteralExpression
-export function decimal(value: string | number): LiteralExpression
+export function literal<const Value extends LiteralInput>(
+  value: Value,
+): TypedExpression<LiteralExpression, InputScalarType<Value>, InputNullability<Value>>
+export function integer(value: number): TypedExpression<LiteralExpression, 'int64', false>
+export function decimal(value: string | number): TypedExpression<LiteralExpression, 'decimal', false>
 
-export function eq(left: ExpressionInput, right: ExpressionInput): BinaryExpression
-export function neq(left: ExpressionInput, right: ExpressionInput): BinaryExpression
-export function lt(left: ExpressionInput, right: ExpressionInput): BinaryExpression
-export function lte(left: ExpressionInput, right: ExpressionInput): BinaryExpression
-export function gt(left: ExpressionInput, right: ExpressionInput): BinaryExpression
-export function gte(left: ExpressionInput, right: ExpressionInput): BinaryExpression
-export function like(expression: ExpressionInput, pattern: ExpressionInput): LikeExpression
-export function inList(expression: ExpressionInput, values: readonly ExpressionInput[]): InExpression
-export function and(...expressions: readonly ExpressionInput[]): ExpressionGroup
-export function inParameter<const Name extends string, const Type extends ScalarType>(
-  expression: ExpressionInput,
+type EqualityNullability<Left extends ExpressionInput, Right extends ExpressionInput> = null extends
+  | InputScalarType<Left>
+  | InputScalarType<Right>
+  ? false
+  : AnyInputNullability<readonly [Left, Right]>
+
+export function eq<const Left extends ExpressionInput, const Right extends ExpressionInput>(
+  left: Left,
+  right: Right,
+): TypedExpression<BinaryExpression, 'boolean', EqualityNullability<Left, Right>>
+export function neq<const Left extends ExpressionInput, const Right extends ExpressionInput>(
+  left: Left,
+  right: Right,
+): TypedExpression<BinaryExpression, 'boolean', EqualityNullability<Left, Right>>
+export function lt<const Left extends ExpressionInput, const Right extends ExpressionInput>(
+  left: Left,
+  right: Right,
+): TypedExpression<BinaryExpression, 'boolean', AnyInputNullability<readonly [Left, Right]>>
+export function lte<const Left extends ExpressionInput, const Right extends ExpressionInput>(
+  left: Left,
+  right: Right,
+): TypedExpression<BinaryExpression, 'boolean', AnyInputNullability<readonly [Left, Right]>>
+export function gt<const Left extends ExpressionInput, const Right extends ExpressionInput>(
+  left: Left,
+  right: Right,
+): TypedExpression<BinaryExpression, 'boolean', AnyInputNullability<readonly [Left, Right]>>
+export function gte<const Left extends ExpressionInput, const Right extends ExpressionInput>(
+  left: Left,
+  right: Right,
+): TypedExpression<BinaryExpression, 'boolean', AnyInputNullability<readonly [Left, Right]>>
+export function like<const Value extends ExpressionInput, const Pattern extends ExpressionInput>(
+  expression: Value,
+  pattern: Pattern,
+): TypedExpression<LikeExpression, 'boolean', AnyInputNullability<readonly [Value, Pattern]>>
+export function inList<const Value extends ExpressionInput, const Values extends readonly ExpressionInput[]>(
+  expression: Value,
+  values: Values,
+): TypedExpression<InExpression, 'boolean', AnyInputNullability<readonly [Value, ...Values]>>
+export function and<const Expressions extends readonly ExpressionInput[]>(
+  ...expressions: Expressions
+): TypedExpression<ExpressionGroup, 'boolean', AnyInputNullability<Expressions>>
+export function inParameter<
+  const Value extends ExpressionInput,
+  const Name extends string,
+  const Type extends ScalarType,
+>(
+  expression: Value,
   parameter: ListParameterRef<Name, Type>,
-): InParameterExpression<Name>
-export function or(...expressions: readonly ExpressionInput[]): ExpressionGroup
-export function not(expression: ExpressionInput): UnaryExpression
-export function isNull(expression: ExpressionInput): UnaryExpression
-export function isNotNull(expression: ExpressionInput): UnaryExpression
+): TypedExpression<InParameterExpression<Name>, 'boolean', InputNullability<Value>>
+export function or<const Expressions extends readonly ExpressionInput[]>(
+  ...expressions: Expressions
+): TypedExpression<ExpressionGroup, 'boolean', AnyInputNullability<Expressions>>
+export function not<const Value extends ExpressionInput>(
+  expression: Value,
+): TypedExpression<UnaryExpression, 'boolean', InputNullability<Value>>
+export function isNull(expression: ExpressionInput): TypedExpression<UnaryExpression, 'boolean', false>
+export function isNotNull(expression: ExpressionInput): TypedExpression<UnaryExpression, 'boolean', false>
 export function exists<const Source extends string>(
   source: Source | SourceRef<Source>,
   predicate?: ExpressionInput,
-): ExistsExpression<Source, never>
+): TypedExpression<ExistsExpression<Source, never>, 'boolean', false>
 export interface ExistsConfiguration<From extends string = string> {
   from: From | SourceRef<From>
 }
@@ -499,35 +1047,75 @@ export function exists<const Source extends string, const From extends string>(
   source: Source | SourceRef<Source>,
   predicate: ExpressionInput | undefined,
   configuration: ExistsConfiguration<From>,
-): ExistsExpression<Source, From>
+): TypedExpression<ExistsExpression<Source, From>, 'boolean', false>
 
-export function lower(expression: ExpressionInput): FunctionExpression
-export function upper(expression: ExpressionInput): FunctionExpression
-export function coalesce(
-  first: ExpressionInput,
-  second: ExpressionInput,
-  ...rest: readonly ExpressionInput[]
-): FunctionExpression
-export function concat(first: ExpressionInput, ...rest: readonly ExpressionInput[]): FunctionExpression
+export function lower<const Value extends ExpressionInput>(
+  expression: Value,
+): TypedExpression<FunctionExpression, 'string', InputNullability<Value>>
+export function upper<const Value extends ExpressionInput>(
+  expression: Value,
+): TypedExpression<FunctionExpression, 'string', InputNullability<Value>>
+export function coalesce<
+  const First extends ExpressionInput,
+  const Second extends ExpressionInput,
+  const Rest extends readonly ExpressionInput[],
+>(
+  first: First,
+  second: Second,
+  ...rest: Rest
+): TypedExpression<
+  FunctionExpression,
+  PromoteScalarType<InputScalarType<First | Second | Rest[number]>>,
+  AllInputNullability<readonly [First, Second, ...Rest]>
+>
+export function concat<const First extends ExpressionInput, const Rest extends readonly ExpressionInput[]>(
+  first: First,
+  ...rest: Rest
+): TypedExpression<FunctionExpression, 'string', AllInputNullability<readonly [First, ...Rest]>>
 
-export function count(expression?: ExpressionInput): AggregateExpression
-export function countDistinct(expression: ExpressionInput): AggregateExpression
-export function sum(expression: ExpressionInput): AggregateExpression
-export function average(expression: ExpressionInput): AggregateExpression
-export function minimum(expression: ExpressionInput): AggregateExpression
-export function maximum(expression: ExpressionInput): AggregateExpression
+export function count(expression?: ExpressionInput): TypedExpression<AggregateExpression, 'int64', false>
+export function countDistinct(expression: ExpressionInput): TypedExpression<AggregateExpression, 'int64', false>
+export function sum<const Value extends ExpressionInput>(
+  expression: Value,
+): TypedExpression<AggregateExpression, Exclude<InputScalarType<Value>, null>, true>
+export function average<const Value extends ExpressionInput>(
+  expression: Value,
+): TypedExpression<AggregateExpression, AverageScalarType<InputScalarType<Value>>, true>
+export function minimum<const Value extends ExpressionInput>(
+  expression: Value,
+): TypedExpression<AggregateExpression, Exclude<InputScalarType<Value>, null>, true>
+export function maximum<const Value extends ExpressionInput>(
+  expression: Value,
+): TypedExpression<AggregateExpression, Exclude<InputScalarType<Value>, null>, true>
 
-export interface RelationConfiguration<Name extends string = string> {
+export type SourceReferenceKey<Reference extends string | SourceRef> =
+  Reference extends SourceRef<infer Key, infer _Fields> ? Key : Reference extends string ? Reference : string
+
+export interface RelationConfiguration<
+  Name extends string = string,
+  From extends string | SourceRef = string | SourceRef,
+  To extends string | SourceRef = string | SourceRef,
+  Required extends boolean = boolean,
+  Cardinality extends RelationCardinality = RelationCardinality,
+> {
   name: Name
-  from: string | SourceRef
-  to: string | SourceRef
+  from: From
+  to: To
   on: Expression
-  required?: boolean
-  cardinality?: RelationCardinality
+  required?: Required
+  cardinality?: Cardinality
   selection?: RelationSelection
 }
 
-export function relation<const Name extends string>(configuration: RelationConfiguration<Name>): RelationRef<Name>
+export function relation<
+  const Name extends string,
+  const From extends string | SourceRef,
+  const To extends string | SourceRef,
+  const Required extends boolean = false,
+  const Cardinality extends RelationCardinality = 'one',
+>(
+  configuration: RelationConfiguration<Name, From, To, Required, Cardinality>,
+): RelationRef<Name, SourceReferenceKey<From>, SourceReferenceKey<To>, Required, Cardinality>
 
 export interface ConstraintConfiguration {
   predicate: Expression
@@ -536,10 +1124,14 @@ export interface ConstraintConfiguration {
 
 export function constraint(configuration: ConstraintConfiguration): ConstraintDefinition
 
-export interface ProjectionConfiguration<Path extends string | readonly string[] = string | readonly string[]> {
+export interface ProjectionConfiguration<
+  Path extends string | readonly string[] = string | readonly string[],
+  Value extends ExpressionInput = ExpressionInput,
+  SelectedByDefault extends boolean = boolean,
+> {
   path: Path
-  expression: ExpressionInput
-  default?: boolean
+  expression: Value
+  default?: SelectedByDefault
 }
 
 type ConfigurationPath<Path extends string | readonly string[]> = Path extends string
@@ -548,17 +1140,44 @@ type ConfigurationPath<Path extends string | readonly string[]> = Path extends s
     ? JoinProjectionPath<Path>
     : never
 
-export function project<const Path extends string | readonly string[]>(
-  configuration: ProjectionConfiguration<Path>,
-): ProjectionFieldDefinition<ConfigurationPath<Path>>
+export function project<
+  const Path extends string | readonly string[],
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
+  configuration: ProjectionConfiguration<Path, Value, SelectedByDefault>,
+): TypedProjectionField<
+  ConfigurationPath<Path>,
+  Extract<InputScalarType<Value>, ScalarType>,
+  InputNullability<Value>,
+  SelectedByDefault
+>
 
-export function dimension<const Path extends string | readonly string[]>(
-  configuration: ProjectionConfiguration<Path>,
-): DimensionDefinition<ConfigurationPath<Path>>
+export function dimension<
+  const Path extends string | readonly string[],
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
+  configuration: ProjectionConfiguration<Path, Value, SelectedByDefault>,
+): TypedDimensionDefinition<
+  ConfigurationPath<Path>,
+  Extract<InputScalarType<Value>, ScalarType>,
+  InputNullability<Value>,
+  SelectedByDefault
+>
 
-export function measure<const Path extends string | readonly string[]>(
-  configuration: ProjectionConfiguration<Path>,
-): MeasureDefinition<ConfigurationPath<Path>>
+export function measure<
+  const Path extends string | readonly string[],
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
+  configuration: ProjectionConfiguration<Path, Value, SelectedByDefault>,
+): TypedMeasureDefinition<
+  ConfigurationPath<Path>,
+  Extract<InputScalarType<Value>, ScalarType>,
+  InputNullability<Value>,
+  SelectedByDefault
+>
 
 export interface OrderByOptions {
   nulls?: NullsOrder
@@ -597,13 +1216,59 @@ type ConfigurationElement<Configuration, Key extends PropertyKey> = Key extends 
   : never
 
 type ModuleParameter<Module> =
-  Module extends GraphModule<infer Parameter, infer _ProjectionPath, infer _OrderingName> ? Parameter : never
+  Module extends GraphModule<
+    infer Parameter,
+    infer _ProjectionPath,
+    infer _OrderingName,
+    infer _ProjectionField,
+    infer _Relation
+  >
+    ? Parameter
+    : never
 
 type ModuleProjectionPath<Module> =
-  Module extends GraphModule<infer _Parameter, infer ProjectionPath, infer _OrderingName> ? ProjectionPath : never
+  Module extends GraphModule<
+    infer _Parameter,
+    infer ProjectionPath,
+    infer _OrderingName,
+    infer _ProjectionField,
+    infer _Relation
+  >
+    ? ProjectionPath
+    : never
 
 type ModuleOrderingName<Module> =
-  Module extends GraphModule<infer _Parameter, infer _ProjectionPath, infer OrderingName> ? OrderingName : never
+  Module extends GraphModule<
+    infer _Parameter,
+    infer _ProjectionPath,
+    infer OrderingName,
+    infer _ProjectionField,
+    infer _Relation
+  >
+    ? OrderingName
+    : never
+
+type ModuleProjectionField<Module> =
+  Module extends GraphModule<
+    infer _Parameter,
+    infer _ProjectionPath,
+    infer _OrderingName,
+    infer ProjectionField,
+    infer _Relation
+  >
+    ? ProjectionField
+    : never
+
+type ModuleRelation<Module> =
+  Module extends GraphModule<
+    infer _Parameter,
+    infer _ProjectionPath,
+    infer _OrderingName,
+    infer _ProjectionField,
+    infer Relation
+  >
+    ? Relation
+    : never
 
 type ProjectionPathOf<Field> = Field extends ProjectionFieldDefinition<infer Path> ? Path : never
 
@@ -619,21 +1284,39 @@ type ConfigurationProjectionPath<Configuration> =
   | ProjectionPathOf<ConfigurationElement<Configuration, 'measures'>>
   | ModuleProjectionPath<ConfigurationElement<Configuration, 'modules'>>
 
+type ConfigurationProjectionField<Configuration> =
+  | Extract<ConfigurationElement<Configuration, 'projection'>, ProjectionFieldDefinition>
+  | Extract<ConfigurationElement<Configuration, 'dimensions'>, ProjectionFieldDefinition>
+  | Extract<ConfigurationElement<Configuration, 'measures'>, ProjectionFieldDefinition>
+  | ModuleProjectionField<ConfigurationElement<Configuration, 'modules'>>
+
 type ConfigurationOrderingName<Configuration> =
   | OrderingNameOf<ConfigurationElement<Configuration, 'orderings'>>
   | ModuleOrderingName<ConfigurationElement<Configuration, 'modules'>>
+
+type ConfigurationRelation<Configuration> =
+  | Extract<ConfigurationElement<Configuration, 'relations'>, RelationDefinition>
+  | ModuleRelation<ConfigurationElement<Configuration, 'modules'>>
+
+type ConfigurationRoot<Configuration> = Configuration extends {
+  root: infer Root extends string | SourceRef
+}
+  ? SourceReferenceKey<Root>
+  : string
 
 export interface GraphModule<
   Parameter extends ParameterDefinition = ParameterDefinition,
   ProjectionPath extends string = string,
   OrderingName extends string = string,
+  ProjectionField extends ProjectionFieldDefinition = ProjectionFieldDefinition<ProjectionPath>,
+  Relation extends RelationDefinition = RelationDefinition,
 > {
   readonly name: string
   readonly sources: readonly SourceRef[]
   readonly parameters: readonly Parameter[]
-  readonly relations: readonly RelationDefinition[]
+  readonly relations: readonly Relation[]
   readonly constraints: readonly ConstraintDefinition[]
-  readonly projection: readonly ProjectionFieldDefinition<ProjectionPath>[]
+  readonly projection: readonly ProjectionField[]
   readonly orderings: readonly OrderingDefinition<OrderingName>[]
 }
 
@@ -642,7 +1325,9 @@ export function defineGraphModule<const Configuration extends GraphModuleConfigu
 ): GraphModule<
   ConfigurationParameter<Configuration>,
   ConfigurationProjectionPath<Configuration>,
-  ConfigurationOrderingName<Configuration>
+  ConfigurationOrderingName<Configuration>,
+  ConfigurationProjectionField<Configuration>,
+  ConfigurationRelation<Configuration>
 >
 
 export interface GraphConfiguration {
@@ -662,7 +1347,10 @@ export function defineGraph<const Configuration extends GraphConfiguration>(
 ): GraphDefinition<
   ConfigurationParameter<Configuration>,
   ConfigurationProjectionPath<Configuration>,
-  ConfigurationOrderingName<Configuration>
+  ConfigurationOrderingName<Configuration>,
+  ConfigurationProjectionField<Configuration>,
+  ConfigurationRelation<Configuration>,
+  ConfigurationRoot<Configuration>
 >
 
 export interface SummaryGraphConfiguration {
@@ -683,5 +1371,8 @@ export function defineSummaryGraph<const Configuration extends SummaryGraphConfi
 ): GraphDefinition<
   ConfigurationParameter<Configuration>,
   ConfigurationProjectionPath<Configuration>,
-  ConfigurationOrderingName<Configuration>
+  ConfigurationOrderingName<Configuration>,
+  ConfigurationProjectionField<Configuration>,
+  ConfigurationRelation<Configuration>,
+  ConfigurationRoot<Configuration>
 >

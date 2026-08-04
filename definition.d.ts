@@ -2,19 +2,27 @@ export * from './dsl.js'
 
 import type {
   ConstraintDefinition,
-  DimensionDefinition,
   Expression,
   ExpressionInput,
+  ExpressionNullability,
+  ExpressionScalarType,
   FieldExpression,
+  FieldSpecIsNullable,
   FieldSpecMap,
+  FieldSpecScalarType,
   JoinProjectionPath,
-  MeasureDefinition,
   ParameterRef,
-  ProjectionFieldDefinition,
   RelationCardinality,
   RelationRef,
   RelationSelection,
+  ScalarType,
+  SourceFieldNullability,
+  SourceReferenceKey,
   SourceRef,
+  TypedExpression,
+  TypedDimensionDefinition,
+  TypedMeasureDefinition,
+  TypedProjectionField,
 } from './dsl.js'
 
 export const GRAPH_DEFINITION_VERSION: 9
@@ -23,25 +31,41 @@ export function field<
   const Key extends string,
   const Fields extends FieldSpecMap,
   const Name extends Extract<keyof Fields, string>,
->(source: SourceRef<Key, Fields>, name: Name): FieldExpression<Key, Name>
+>(
+  source: SourceRef<Key, Fields>,
+  name: Name,
+): TypedExpression<
+  FieldExpression<Key, Name>,
+  FieldSpecScalarType<Fields[Name]>,
+  SourceFieldNullability<Key, FieldSpecIsNullable<Fields[Name]>>
+>
 export function field<const Source extends string, const Name extends string>(
   source: Source,
   name: Name,
-): FieldExpression<Source, Name>
+): TypedExpression<FieldExpression<Source, Name>, ScalarType, SourceFieldNullability<Source, boolean>>
 
-export interface RelationOptions {
-  required?: boolean
-  cardinality?: RelationCardinality
+export interface RelationOptions<
+  Required extends boolean = boolean,
+  Cardinality extends RelationCardinality = RelationCardinality,
+> {
+  required?: Required
+  cardinality?: Cardinality
   selection?: RelationSelection
 }
 
-export function relation<const Name extends string>(
+export function relation<
+  const Name extends string,
+  const From extends string | SourceRef,
+  const To extends string | SourceRef,
+  const Required extends boolean = false,
+  const Cardinality extends RelationCardinality = 'one',
+>(
   name: Name,
-  from: string | SourceRef,
-  to: string | SourceRef,
+  from: From,
+  to: To,
   on: Expression,
-  options?: RelationOptions,
-): RelationRef<Name>
+  options?: RelationOptions<Required, Cardinality>,
+): RelationRef<Name, SourceReferenceKey<From>, SourceReferenceKey<To>, Required, Cardinality>
 
 export interface ConstraintOptions {
   when?: string | ParameterRef
@@ -49,39 +73,93 @@ export interface ConstraintOptions {
 
 export function constraint(predicate: Expression, options?: ConstraintOptions): ConstraintDefinition
 
-export interface ProjectionOptions {
-  default?: boolean
+export interface ProjectionOptions<SelectedByDefault extends boolean = boolean> {
+  default?: SelectedByDefault
 }
 
-export function project<const Path extends string>(
+export function project<
+  const Path extends string,
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
   path: Path,
-  expression: ExpressionInput,
-  options?: ProjectionOptions,
-): ProjectionFieldDefinition<Path>
-export function project<const Path extends readonly string[]>(
+  expression: Value,
+  options?: ProjectionOptions<SelectedByDefault>,
+): TypedProjectionField<
+  Path,
+  Extract<ExpressionScalarType<Value>, ScalarType>,
+  ExpressionNullability<Value>,
+  SelectedByDefault
+>
+export function project<
+  const Path extends readonly string[],
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
   path: Path,
-  expression: ExpressionInput,
-  options?: ProjectionOptions,
-): ProjectionFieldDefinition<JoinProjectionPath<Path>>
+  expression: Value,
+  options?: ProjectionOptions<SelectedByDefault>,
+): TypedProjectionField<
+  JoinProjectionPath<Path>,
+  Extract<ExpressionScalarType<Value>, ScalarType>,
+  ExpressionNullability<Value>,
+  SelectedByDefault
+>
 
-export function dimension<const Path extends string>(
+export function dimension<
+  const Path extends string,
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
   path: Path,
-  expression: ExpressionInput,
-  options?: ProjectionOptions,
-): DimensionDefinition<Path>
-export function dimension<const Path extends readonly string[]>(
+  expression: Value,
+  options?: ProjectionOptions<SelectedByDefault>,
+): TypedDimensionDefinition<
+  Path,
+  Extract<ExpressionScalarType<Value>, ScalarType>,
+  ExpressionNullability<Value>,
+  SelectedByDefault
+>
+export function dimension<
+  const Path extends readonly string[],
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
   path: Path,
-  expression: ExpressionInput,
-  options?: ProjectionOptions,
-): DimensionDefinition<JoinProjectionPath<Path>>
+  expression: Value,
+  options?: ProjectionOptions<SelectedByDefault>,
+): TypedDimensionDefinition<
+  JoinProjectionPath<Path>,
+  Extract<ExpressionScalarType<Value>, ScalarType>,
+  ExpressionNullability<Value>,
+  SelectedByDefault
+>
 
-export function measure<const Path extends string>(
+export function measure<
+  const Path extends string,
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
   path: Path,
-  expression: ExpressionInput,
-  options?: ProjectionOptions,
-): MeasureDefinition<Path>
-export function measure<const Path extends readonly string[]>(
+  expression: Value,
+  options?: ProjectionOptions<SelectedByDefault>,
+): TypedMeasureDefinition<
+  Path,
+  Extract<ExpressionScalarType<Value>, ScalarType>,
+  ExpressionNullability<Value>,
+  SelectedByDefault
+>
+export function measure<
+  const Path extends readonly string[],
+  const Value extends ExpressionInput,
+  const SelectedByDefault extends boolean = false,
+>(
   path: Path,
-  expression: ExpressionInput,
-  options?: ProjectionOptions,
-): MeasureDefinition<JoinProjectionPath<Path>>
+  expression: Value,
+  options?: ProjectionOptions<SelectedByDefault>,
+): TypedMeasureDefinition<
+  JoinProjectionPath<Path>,
+  Extract<ExpressionScalarType<Value>, ScalarType>,
+  ExpressionNullability<Value>,
+  SelectedByDefault
+>

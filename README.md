@@ -496,6 +496,63 @@ JavaScript number и десятичная строка, а list-параметр
 типа. Эти проверки существуют только в декларациях TypeScript; сериализация
 definition, N-API вызов, runtime-валидация Rust и SQL compilation не меняются.
 
+### Тип результата проекции
+
+DSL сохраняет scalar type и nullability каждого projection expression в compile-time metadata.
+`ResultOf` строит из этих сведений вложенный тип результата по projection paths:
+
+```ts
+import type { QueryOperation, ResultOf } from '@query-graph/core/dsl'
+
+const operation = {
+  select: ['id', 'profile.displayName'],
+  parameters: { userId: 42 },
+} as const satisfies QueryOperation<typeof definition>
+
+type UserRow = ResultOf<typeof definition, typeof operation>
+// {
+//   id: number | string
+//   profile: { displayName: string | null }
+// }
+```
+
+Если второй аргумент не передан, в результат входят только поля с `default: true`.
+`ResultOf` также принимает тип, возвращенный `registerDefinition`, или mapped graph:
+
+```ts
+type DefaultUserRow = ResultOf<typeof graph>
+// { id: number | string }
+```
+
+Nullability учитывает nullable-поле и всю цепочку optional relations до его source.
+Required relation после optional relation не делает значение обязательным. Семантика
+выражений тоже сохраняется: например, `coalesce(nullableField, 'fallback')` выводится
+как non-null `string`.
+
+Типы значений по умолчанию нейтральны к DB driver: `int64` и `decimal` представлены
+как `number | string`, а `date`, `dateTime` и `binary` - как `string`. Адаптер
+исполнения может передать третьим аргументом собственную полную scalar map:
+
+```ts
+import type { DefaultScalarOutputTypeMap, ResultOf } from '@query-graph/core/dsl'
+
+type DriverScalars = Omit<DefaultScalarOutputTypeMap, 'int64' | 'dateTime'> & {
+  int64: bigint
+  dateTime: Date
+}
+
+type DriverUserRow = ResultOf<typeof definition, typeof operation, DriverScalars>
+```
+
+Для точного учета явного `select` operation должна сохранять literal tuple через
+`as const` или `satisfies`. Это только TypeScript API: wire definition, N-API и
+Rust planner не получают дополнительного runtime state.
+
+`ResultOf` описывает логическую форму одной строки, восстановленную из путей
+проекции. Он не выполняет запрос и не превращает relation `many` в массив.
+Группировка строк, дедупликация и гидратация коллекций остаются ответственностью
+потребителя модуля.
+
 ## Диагностика
 
 Ошибки N-API имеют имя `QueryGraphError` и сохраняют обычный `message` и stack.
