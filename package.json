@@ -41,6 +41,7 @@
     "node-addon"
   ],
   "files": [
+    "composition.js",
     "definition.d.ts",
     "definition.js",
     "dsl.d.ts",

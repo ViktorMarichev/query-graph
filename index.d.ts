@@ -15,14 +15,13 @@ export declare class QueryGraph {
 
 export declare class RelationalQueryGraph {
   get name(): string
-  compileSqlServer(
-    operation: import('./definition.js').QueryOperation,
-    options?: import('./definition.js').SqlServerCompileOptions,
-  ): CompiledSqlStatement
-  compileOracle(
-    operation: import('./definition.js').QueryOperation,
-    options?: import('./definition.js').OracleCompileOptions,
-  ): CompiledSqlStatement
+  /**
+   * Structural information used by the JavaScript composition facade. This is
+   * deliberately separate from the graph-definition wire format.
+   */
+  get compositionMetadata(): any
+  compileSqlServer(operation: import('./definition.js').QueryOperation, options?: import('./definition.js').SqlServerCompileOptions): CompiledSqlStatement
+  compileOracle(operation: import('./definition.js').QueryOperation, options?: import('./definition.js').OracleCompileOptions): CompiledSqlStatement
 }
 
 export interface CompiledSqlColumn {
@@ -48,9 +47,7 @@ export interface CompiledSqlStatement {
   relations: Array<CompiledSqlRelation>
 }
 
-export declare function registerDefinition<const Definition extends import('./definition.js').GraphDefinitionInput>(
-  definition: import('./definition.js').ExactGraphDefinitionInput<Definition>,
-): import('./definition.js').QueryGraph<Definition>
+export declare function registerDefinition<const Definition extends import('./definition.js').GraphDefinitionInput>(definition: import('./definition.js').ExactGraphDefinitionInput<Definition>): import('./definition.js').QueryGraph<Definition>
 
 export interface SqlBinding {
   name: string
@@ -58,3 +55,5 @@ export interface SqlBinding {
   scalarType: import('./definition.js').ScalarType
   index?: number
 }
+
+export { ComposedQueryGraph, CompiledQueryPlan, batchRelation, composeGraph } from './dsl.js'
