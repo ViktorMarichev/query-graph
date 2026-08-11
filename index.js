@@ -557,8 +557,11 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.CompiledQueryPlan = nativeBinding.CompiledQueryPlan
+module.exports.ComposedQueryGraph = nativeBinding.ComposedQueryGraph
 module.exports.QueryGraph = nativeBinding.QueryGraph
 module.exports.RelationalQueryGraph = nativeBinding.RelationalQueryGraph
 module.exports.registerDefinition = nativeBinding.registerDefinition
 
-Object.assign(module.exports, require('./composition.js'))
+module.exports.batchRelation = require('./composition.js').batchRelation
+module.exports.composeGraph = require('./composition.js').composeGraph

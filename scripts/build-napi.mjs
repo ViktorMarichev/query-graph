@@ -26,10 +26,10 @@ if (result.signal) {
 }
 
 if ((result.status ?? 1) === 0) {
-  appendFileSync('index.js', "\nObject.assign(module.exports, require('./composition.js'))\n")
   appendFileSync(
-    'index.d.ts',
-    "\nexport { ComposedQueryGraph, CompiledQueryPlan, batchRelation, composeGraph } from './dsl.js'\n",
+    'index.js',
+    "\nmodule.exports.batchRelation = require('./composition.js').batchRelation\nmodule.exports.composeGraph = require('./composition.js').composeGraph\n",
   )
+  appendFileSync('index.d.ts', "\nexport { batchRelation, composeGraph } from './dsl.js'\n")
 }
 process.exit(result.status ?? 1)

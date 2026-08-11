@@ -739,6 +739,18 @@ const plan = newsGraph.compileOraclePlan({
 })
 ```
 
+`composeGraph` оставляет в JavaScript только декларативный фасад. Проверка
+совместимости ключей и параметров, разделение operation на root и batch-шаги и
+компиляция SQL выполняются в Rust. `compileOraclePlan` или
+`compileSqlServerPlan` сразу компилирует только `plan.root`; child SQL создаётся
+при вызове `compileBatch`. Plan сохраняет выбранные dialect и version, поэтому
+отложенный statement компилируется с теми же настройками, что и root.
+
+Для подготовки child bindings каждый шаг в `plan.batches` также содержит имя
+ключевого параметра `keyParameter` и снимок статических `parameters`. Executor
+объединяет их с `{ [batch.keyParameter]: keys }` и сопоставляет полученные значения
+с возвращёнными `statement.bindings`.
+
 Executor потребителя выполняет `plan.root`, собирает уникальные ненулевые
 значения `parentKey` из `plan.batches`, вызывает
 `plan.compileBatch('preview', attachmentIds)`, выполняет child statement и

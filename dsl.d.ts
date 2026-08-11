@@ -512,93 +512,223 @@ export interface RelationalQueryGraph<Definition extends GraphDefinitionInput = 
   ): import('./index.js').CompiledSqlStatement
 }
 
-export type BatchCardinality = 'one' | 'many'
+export type BatchCardinality = RelationCardinality
+
+export interface BatchRelationWire {
+  name: string
+  from: string
+  to: string
+  parameter: string
+  cardinality: BatchCardinality
+  parameters?: Record<string, unknown>
+  ordering?: string
+}
+
+type ListDefinitionParameter<Definition extends GraphDefinitionInput> =
+  DefinitionParameter<Definition> extends infer Parameter extends ParameterDefinition
+    ? Parameter extends { shape: 'list' }
+      ? Parameter
+      : never
+    : never
+
+type ListParameterReference<Definition extends GraphDefinitionInput> =
+  | ListDefinitionParameter<Definition>
+  | ListDefinitionParameter<Definition>['name']
+
+type ParameterReferenceName<Reference> = Reference extends { name: infer Name extends string }
+  ? Name
+  : Reference extends string
+    ? Reference
+    : never
+
+type ResolveListParameter<Definition extends GraphDefinitionInput, Reference> = Extract<
+  ListDefinitionParameter<Definition>,
+  { name: ParameterReferenceName<Reference> }
+>
+
+type BatchStaticParameterCandidate<
+  Parameter extends ParameterDefinition,
+  KeyName extends string,
+> = Parameter extends ParameterDefinition ? (Parameter['name'] extends KeyName ? never : Parameter) : never
+
+type BatchStaticParameter<
+  Definition extends GraphDefinitionInput,
+  KeyName extends string,
+> = BatchStaticParameterCandidate<DefinitionParameter<Definition>, KeyName>
+
+type BatchStaticParameters<Definition extends GraphDefinitionInput, KeyName extends string> = {
+  [Parameter in RequiredParameter<
+    BatchStaticParameter<Definition, KeyName>
+  > as Parameter['name']]-?: ParameterValue<Parameter>
+} & {
+  [Parameter in OptionalParameter<
+    BatchStaticParameter<Definition, KeyName>
+  > as Parameter['name']]?: ParameterValue<Parameter>
+}
+
+type BatchStaticParameterInput<Definition extends GraphDefinitionInput, KeyName extends string> = [
+  BatchStaticParameter<Definition, KeyName>,
+] extends [never]
+  ? { parameters?: never }
+  : [RequiredParameter<BatchStaticParameter<Definition, KeyName>>] extends [never]
+    ? { parameters?: BatchStaticParameters<Definition, KeyName> }
+    : { parameters: BatchStaticParameters<Definition, KeyName> }
+
+declare const batchRelationType: unique symbol
 
 export interface BatchRelation<
   Name extends string = string,
-  Parent extends RelationalQueryGraph = RelationalQueryGraph,
   Child extends RelationalQueryGraph = RelationalQueryGraph,
   From extends string = string,
   To extends string = string,
+  KeyParameter extends ParameterDefinition & { shape: 'list' } = ListParameterRef,
   Cardinality extends BatchCardinality = BatchCardinality,
-  Key = unknown,
 > {
   readonly name: Name
   readonly from: From
   readonly graph: Child
   readonly to: To
+  readonly parameter: KeyParameter['name']
   readonly cardinality: Cardinality
-  readonly __parent?: Parent
-  readonly __key?: Key
+  readonly parameters: BatchStaticParameters<DefinitionOf<Child>, KeyParameter['name']>
+  readonly ordering?: DefinitionOrderingName<DefinitionOf<Child>>
+  readonly [batchRelationType]?: KeyParameter
 }
 
-export interface BatchRelationConfiguration<
+export type BatchRelationConfiguration<
   Name extends string,
-  Parent extends RelationalQueryGraph,
   Child extends RelationalQueryGraph,
-  From extends DefinitionProjectionPath<DefinitionOf<Parent>>,
+  From extends string,
   To extends DefinitionProjectionPath<DefinitionOf<Child>>,
+  ParameterReference extends ListParameterReference<DefinitionOf<Child>>,
   Cardinality extends BatchCardinality,
-> {
+> = {
   name: Name
   from: From
   graph: Child
   to: To
-  parameter: string | ListParameterRef<string, ScalarType, boolean>
+  parameter: ParameterReference
   cardinality: Cardinality
-  parameters?: Record<string, unknown>
   ordering?: DefinitionOrderingName<DefinitionOf<Child>>
-}
+} & BatchStaticParameterInput<DefinitionOf<Child>, ParameterReferenceName<NoInfer<ParameterReference>>>
 
 export function batchRelation<
   const Name extends string,
-  const Parent extends RelationalQueryGraph,
   const Child extends RelationalQueryGraph,
-  const From extends DefinitionProjectionPath<DefinitionOf<Parent>>,
+  const From extends string,
   const To extends DefinitionProjectionPath<DefinitionOf<Child>>,
+  const ParameterReference extends ListParameterReference<DefinitionOf<Child>>,
   const Cardinality extends BatchCardinality,
 >(
-  configuration: BatchRelationConfiguration<Name, Parent, Child, From, To, Cardinality>,
-): BatchRelation<Name, Parent, Child, From, To, Cardinality>
+  configuration: BatchRelationConfiguration<Name, Child, From, To, ParameterReference, Cardinality>,
+): BatchRelation<Name, Child, From, To, ResolveListParameter<DefinitionOf<Child>, ParameterReference>, Cardinality>
+
+type ProjectionScalarTypeAtPath<Definition extends GraphDefinitionInput, Path extends string> =
+  ProjectionFieldByPath<DefinitionProjectionField<Definition>, Path> extends infer Field
+    ? Field extends ProjectionTypeMetadata<infer _Path, infer Type, infer _Nullability, infer _SelectedByDefault>
+      ? Type
+      : Field extends ProjectionFieldDefinition<infer _Path, infer Type>
+        ? Type
+        : never
+    : never
+
+type EqualScalarType<Left, Right> = [Left] extends [Right] ? ([Right] extends [Left] ? true : false) : false
+
+type CompatibleBatchRelation<Root extends RelationalQueryGraph, Relation extends BatchRelation> =
+  Relation extends BatchRelation<infer Name, infer Child, infer From, infer To, infer KeyParameter, infer _Cardinality>
+    ? From extends DefinitionProjectionPath<DefinitionOf<Root>>
+      ? Extract<DefinitionProjectionPath<DefinitionOf<Root>>, Name | `${Name}.${string}`> extends never
+        ? EqualScalarType<
+            ProjectionScalarTypeAtPath<DefinitionOf<Root>, From>,
+            ProjectionScalarTypeAtPath<DefinitionOf<Child>, To>
+          > extends true
+          ? EqualScalarType<
+              ProjectionScalarTypeAtPath<DefinitionOf<Child>, To>,
+              KeyParameter['scalarType']
+            > extends true
+            ? Relation
+            : never
+          : never
+        : never
+      : never
+    : never
+
+type CompatibleBatchRelations<Root extends RelationalQueryGraph, Relations extends readonly BatchRelation[]> = {
+  readonly [Index in keyof Relations]: Relations[Index] extends BatchRelation
+    ? CompatibleBatchRelation<Root, Relations[Index]>
+    : never
+}
 
 type RelationName<Relations extends readonly BatchRelation[]> = Relations[number]['name']
-type ChildPaths<Relations extends readonly BatchRelation[]> = Relations[number] extends infer Relation extends
-  BatchRelation
+type ChildPathsForRelation<Relation extends BatchRelation> = Relation extends BatchRelation
   ? `${Relation['name']}.${DefinitionProjectionPath<DefinitionOf<Relation['graph']>>}`
   : never
+type ChildPaths<Relations extends readonly BatchRelation[]> = ChildPathsForRelation<Relations[number]>
+
 export type ComposedSelection<Root extends RelationalQueryGraph, Relations extends readonly BatchRelation[]> =
   | DefinitionProjectionPath<DefinitionOf<Root>>
   | ChildPaths<Relations>
 
-export interface BatchPlanMetadata<Name extends string = string> {
-  name: Name
-  parentKey: string
-  childKey: string
-  cardinality: BatchCardinality
+export interface BatchPlanMetadata<Relation extends BatchRelation = BatchRelation> {
+  name: Relation['name']
+  parentKey: Relation['from']
+  childKey: Relation['to']
+  keyParameter: Relation['parameter']
+  parameters: Readonly<Relation['parameters']>
+  cardinality: Relation['cardinality']
   parentKeyInjected: boolean
   childKeyInjected: boolean
 }
 
+type BatchRelationNamed<Relation extends BatchRelation, Name extends string> = Relation extends BatchRelation
+  ? Relation['name'] extends Name
+    ? Relation
+    : never
+  : never
+
+type BatchRelationByName<Relations extends readonly BatchRelation[], Name extends string> = BatchRelationNamed<
+  Relations[number],
+  Name
+>
+
+type BatchKeyValue<Relation extends BatchRelation> =
+  Relation extends BatchRelation<
+    infer _Name,
+    infer _Child,
+    infer _From,
+    infer _To,
+    infer KeyParameter,
+    infer _Cardinality
+  >
+    ? ScalarParameterValue<KeyParameter['scalarType']>
+    : never
+
 export interface CompiledQueryPlan<Relations extends readonly BatchRelation[] = readonly BatchRelation[]> {
   readonly root: import('./index.js').CompiledSqlStatement
-  readonly batches: readonly BatchPlanMetadata<RelationName<Relations>>[]
-  compileBatch(name: RelationName<Relations>, keys: readonly unknown[]): import('./index.js').CompiledSqlStatement
+  readonly batches: readonly BatchPlanMetadata<Relations[number]>[]
+  compileBatch<const Name extends RelationName<Relations>>(
+    name: Name,
+    keys: readonly BatchKeyValue<BatchRelationByName<Relations, Name>>[],
+  ): import('./index.js').CompiledSqlStatement
 }
+
+export type ComposedQueryOperation<
+  Root extends RelationalQueryGraph,
+  Relations extends readonly BatchRelation[],
+> = QueryOperationBase<ComposedSelection<Root, Relations>, DefinitionOrderingName<DefinitionOf<Root>>> &
+  OperationParameterInput<DefinitionOf<Root>>
 
 export interface ComposedQueryGraph<
   Root extends RelationalQueryGraph = RelationalQueryGraph,
   Relations extends readonly BatchRelation[] = readonly BatchRelation[],
 > {
+  readonly name: string
   compileOraclePlan(
-    operation: QueryOperationBase<ComposedSelection<Root, Relations>, DefinitionOrderingName<DefinitionOf<Root>>> & {
-      parameters?: OperationParameters<DefinitionOf<Root>>
-    },
+    operation: ComposedQueryOperation<Root, Relations>,
     options?: OracleCompileOptions,
   ): CompiledQueryPlan<Relations>
   compileSqlServerPlan(
-    operation: QueryOperationBase<ComposedSelection<Root, Relations>, DefinitionOrderingName<DefinitionOf<Root>>> & {
-      parameters?: OperationParameters<DefinitionOf<Root>>
-    },
+    operation: ComposedQueryOperation<Root, Relations>,
     options?: SqlServerCompileOptions,
   ): CompiledQueryPlan<Relations>
 }
@@ -606,7 +736,10 @@ export interface ComposedQueryGraph<
 export function composeGraph<
   const Root extends RelationalQueryGraph,
   const Relations extends readonly BatchRelation[],
->(configuration: { root: Root; relations: Relations }): ComposedQueryGraph<Root, Relations>
+>(configuration: {
+  root: Root
+  relations: Relations & CompatibleBatchRelations<Root, Relations>
+}): ComposedQueryGraph<Root, Relations>
 
 export interface ScalarOutputTypeMap {
   boolean: unknown
@@ -862,33 +995,44 @@ export type ResultOf<
       : never
 
 type SelectedPaths<Operation> = Operation extends { select: readonly (infer Path extends string)[] } ? Path : never
-type UnprefixedPath<Path extends string> = Path extends `${string}.${string}` ? never : Path
-type RootOperation<Operation> = Operation extends { select: readonly string[] }
-  ? { select: readonly UnprefixedPath<SelectedPaths<Operation>>[] }
-  : undefined
-type ChildOperation<Operation, Name extends string> = {
-  select: readonly (SelectedPaths<Operation> extends `${Name}.${infer Path}` ? Path : never)[]
+
+type RootOperation<Operation, Relations extends readonly BatchRelation[]> = Operation extends {
+  select: readonly string[]
 }
-type SelectedRelation<
-  Relations extends readonly BatchRelation[],
-  Operation,
-> = Relations[number] extends infer Relation extends BatchRelation
+  ? { select: readonly Exclude<SelectedPaths<Operation>, ChildPaths<Relations>>[] }
+  : undefined
+
+type SelectedChildPath<Operation, Name extends string> =
+  Extract<SelectedPaths<Operation>, `${Name}.${string}`> extends `${Name}.${infer Path}` ? Path : never
+
+type ChildOperation<Operation, Name extends string> = {
+  select: readonly SelectedChildPath<Operation, Name>[]
+}
+
+type SelectedRelationCandidate<Relation extends BatchRelation, Operation> = Relation extends BatchRelation
   ? Extract<SelectedPaths<Operation>, `${Relation['name']}.${string}`> extends never
     ? never
     : Relation
   : never
+
+type SelectedRelation<Relations extends readonly BatchRelation[], Operation> = SelectedRelationCandidate<
+  Relations[number],
+  Operation
+>
+
 type BatchResult<Relation extends BatchRelation, Operation, TypeMap extends ScalarOutputTypeMap> =
   ResultOf<Relation['graph'], ChildOperation<Operation, Relation['name']>, TypeMap> extends infer Child
     ? Relation['cardinality'] extends 'many'
       ? Child[]
       : Child | null
     : never
+
 type ComposedResult<
   Root extends RelationalQueryGraph,
   Relations extends readonly BatchRelation[],
   Operation,
   TypeMap extends ScalarOutputTypeMap,
-> = ResultOf<Root, RootOperation<Operation>, TypeMap> & {
+> = ResultOf<Root, RootOperation<Operation, Relations>, TypeMap> & {
   [Relation in SelectedRelation<Relations, Operation> as Relation['name']]: BatchResult<Relation, Operation, TypeMap>
 }
 
@@ -903,7 +1047,7 @@ export interface OracleCompileOptions {
   version?: OracleVersion
 }
 
-export type QueryGraphErrorPhase = 'definition' | 'mapping' | 'operation' | 'sql'
+export type QueryGraphErrorPhase = 'definition' | 'mapping' | 'composition' | 'operation' | 'sql'
 
 export interface QueryGraphDiagnostic {
   code: string

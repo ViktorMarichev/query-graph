@@ -3,7 +3,8 @@ use napi::{
   Env, Error, Status,
 };
 use query_graph_core::{
-  DefinitionIssues, MappingIssues, OperationIssues, PlanError, SqlCompileError,
+  ComposedCompileError, CompositionIssues, DefinitionIssues, MappingIssues, OperationIssues,
+  PlanError, SqlCompileError,
 };
 use serde_json::{json, Value};
 
@@ -11,6 +12,8 @@ const DEFINITION_WIRE_ERROR: &str = "QUERY_GRAPH_DEFINITION_WIRE_INVALID";
 const DEFINITION_ERROR: &str = "QUERY_GRAPH_DEFINITION_INVALID";
 const MAPPING_WIRE_ERROR: &str = "QUERY_GRAPH_MAPPING_WIRE_INVALID";
 const MAPPING_ERROR: &str = "QUERY_GRAPH_MAPPING_INVALID";
+const COMPOSITION_WIRE_ERROR: &str = "QUERY_GRAPH_COMPOSITION_WIRE_INVALID";
+const COMPOSITION_ERROR: &str = "QUERY_GRAPH_COMPOSITION_INVALID";
 const OPERATION_WIRE_ERROR: &str = "QUERY_GRAPH_OPERATION_WIRE_INVALID";
 const OPERATION_ERROR: &str = "QUERY_GRAPH_OPERATION_INVALID";
 const COMPILER_OPTIONS_WIRE_ERROR: &str = "QUERY_GRAPH_COMPILER_OPTIONS_WIRE_INVALID";
@@ -56,6 +59,36 @@ pub(crate) fn mapping(env: &Env, issues: &MappingIssues) -> Error {
   )
 }
 
+pub(crate) fn composition_wire(env: &Env, error: serde_json::Error) -> Error {
+  wire_error(
+    env,
+    COMPOSITION_WIRE_ERROR,
+    "composition",
+    "Invalid query graph composition",
+    error,
+  )
+}
+
+pub(crate) fn composition(env: &Env, issues: &CompositionIssues) -> Error {
+  issue_error(
+    env,
+    COMPOSITION_ERROR,
+    "composition",
+    format!("Invalid query graph composition:\n{issues}"),
+    serialize_issues(issues.as_slice()),
+  )
+}
+
+pub(crate) fn batch_keys_wire(env: &Env, error: serde_json::Error) -> Error {
+  wire_error(
+    env,
+    OPERATION_WIRE_ERROR,
+    "operation",
+    "Invalid batch keys",
+    error,
+  )
+}
+
 pub(crate) fn operation_wire(env: &Env, error: serde_json::Error) -> Error {
   wire_error(
     env,
@@ -90,7 +123,25 @@ pub(crate) fn sql_compile(env: &Env, error: &SqlCompileError) -> Error {
   )
 }
 
-fn operation(env: &Env, issues: &OperationIssues) -> Error {
+pub(crate) fn composed_compile(env: &Env, error: &ComposedCompileError) -> Error {
+  match error {
+    ComposedCompileError::Operation(issues) => operation(env, issues),
+    ComposedCompileError::Sql(error) => sql_compile(env, error),
+    ComposedCompileError::UnknownSelectedBatchRelation(name) => issue_error(
+      env,
+      OPERATION_ERROR,
+      "operation",
+      format!("Unable to compile batch relation {name:?}: relation is not selected"),
+      json!([{
+        "code": "unknownSelectedBatchRelation",
+        "location": "batch",
+        "message": format!("batch relation {name:?} is not selected by the query plan"),
+      }]),
+    ),
+  }
+}
+
+pub(crate) fn operation(env: &Env, issues: &OperationIssues) -> Error {
   issue_error(
     env,
     OPERATION_ERROR,

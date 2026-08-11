@@ -182,7 +182,7 @@ pub struct OperationIssue {
 }
 
 impl OperationIssue {
-  fn new(
+  pub(crate) fn new(
     code: OperationIssueCode,
     location: impl Into<String>,
     message: impl Into<String>,
@@ -213,6 +213,10 @@ pub enum OperationIssueCode {
 pub struct OperationIssues(Vec<OperationIssue>);
 
 impl OperationIssues {
+  pub(crate) fn from_vec(issues: Vec<OperationIssue>) -> Self {
+    Self(issues)
+  }
+
   pub fn as_slice(&self) -> &[OperationIssue] {
     &self.0
   }

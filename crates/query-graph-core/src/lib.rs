@@ -1,6 +1,7 @@
 #![deny(clippy::all)]
 
 mod compiled_graph;
+mod composition;
 mod definition;
 mod expression;
 mod mapping;
@@ -17,6 +18,10 @@ mod type_validation;
 mod validation;
 
 pub use compiled_graph::CompiledGraph;
+pub use composition::{
+  BatchPlanMetadata, BatchRelationDefinition, CompiledQueryPlan, ComposedCompileError,
+  ComposedQueryGraph, CompositionIssue, CompositionIssueCode, CompositionIssues,
+};
 pub use definition::{
   ConstraintCondition, ConstraintDefinition, FieldDefinition, GraphDefinition, NullsOrder,
   OrderByDefinition, OrderDirection, OrderingDefinition, ParameterDefinition, ParameterShape,
