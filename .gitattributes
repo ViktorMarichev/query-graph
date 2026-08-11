@@ -6,6 +6,7 @@
 *.tsx   text eol=lf
 *.rs    text eol=lf
 *.js    text eol=lf
+*.mjs   text eol=lf
 *.json  text eol=lf
 *.debug text eol=lf
 
