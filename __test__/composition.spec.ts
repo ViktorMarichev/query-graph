@@ -8,6 +8,7 @@ import {
   eq,
   inParameter,
   ordering,
+  optionalListParameter,
   param,
   project,
   requiredListParameter,
@@ -15,7 +16,7 @@ import {
   source,
 } from '../definition.js'
 import type { QueryGraphError, ResultOf, SqlServerCompileOptions } from '../definition.js'
-import { batchRelation, composeGraph, registerDefinition } from '../index.js'
+import { batchQuery, batchRelation, composeGraph, registerDefinition } from '../index.js'
 
 const news = source('news', {
   id: 'int64',
@@ -46,12 +47,13 @@ const attachment = source('attachment', {
   kind: 'string',
 })
 const attachmentIds = requiredListParameter('attachmentIds', 'int64')
+const attachmentPaths = optionalListParameter('attachmentPaths', 'string')
 const attachmentKind = requiredParameter('attachmentKind', 'string')
 const attachmentDefinition = defineGraph({
   name: 'attachmentsByIds',
   root: attachment,
   sources: [attachment],
-  parameters: [attachmentIds, attachmentKind],
+  parameters: [attachmentIds, attachmentKind, attachmentPaths],
   constraints: [
     constraint(inParameter(attachment.field('idAttachment'), attachmentIds)),
     constraint(eq(attachment.field('kind'), param(attachmentKind))),
@@ -72,12 +74,17 @@ const attachmentGraph = registerDefinition(attachmentDefinition).withRelationalM
   sources: { attachment: { table: 'Attachment' } },
 })
 
+const attachmentBatchQuery = batchQuery({
+  graph: attachmentGraph,
+  key: {
+    path: 'idAttachment',
+    parameter: attachmentIds,
+  },
+})
 const previewRelation = batchRelation({
   name: 'preview',
   from: 'idAttachment',
-  graph: attachmentGraph,
-  to: 'idAttachment',
-  parameter: attachmentIds,
+  query: attachmentBatchQuery,
   cardinality: 'one',
   parameters: { attachmentKind: 'preview' },
   ordering: 'pathAsc',
@@ -85,15 +92,24 @@ const previewRelation = batchRelation({
 const badgeRelation = batchRelation({
   name: 'badge',
   from: 'idAttachment',
-  graph: attachmentGraph,
-  to: 'idAttachment',
-  parameter: 'attachmentIds',
+  query: attachmentBatchQuery,
   cardinality: 'many',
   parameters: { attachmentKind: 'badge' },
 })
 const graph = composeGraph({
   root: newsGraph,
   relations: [previewRelation, badgeRelation],
+})
+
+test('encapsulates and reuses the child batch key contract', (t) => {
+  t.deepEqual(attachmentBatchQuery.key, {
+    path: 'idAttachment',
+    parameter: 'attachmentIds',
+  })
+  t.true(Object.isFrozen(attachmentBatchQuery))
+  t.true(Object.isFrozen(attachmentBatchQuery.key))
+  t.is(previewRelation.query, attachmentBatchQuery)
+  t.is(badgeRelation.query, attachmentBatchQuery)
 })
 
 test('keeps dotted root projections and compiles selected batches lazily', (t) => {
@@ -151,9 +167,7 @@ test('reports composition and deferred key errors through QueryGraphError', (t) 
   const invalidStaticRelation = batchRelation({
     name: 'preview',
     from: 'idAttachment',
-    graph: attachmentGraph,
-    to: 'idAttachment',
-    parameter: attachmentIds,
+    query: attachmentBatchQuery,
     cardinality: 'one',
     parameters: { attachmentKind: 42 as unknown as string },
   })
@@ -167,6 +181,30 @@ test('reports composition and deferred key errors through QueryGraphError', (t) 
   t.is(compositionError.code, 'QUERY_GRAPH_COMPOSITION_INVALID')
   t.is(compositionError.phase, 'composition')
   t.true(compositionError.issues.some((issue) => issue.code === 'invalidStaticParameterType'))
+  const incompatibleQuery = batchQuery({
+    graph: attachmentGraph,
+    key: {
+      path: 'idAttachment',
+      parameter: attachmentPaths as unknown as typeof attachmentIds,
+    },
+  })
+  const incompatibleRelation = batchRelation({
+    name: 'incompatible',
+    from: 'idAttachment',
+    query: incompatibleQuery,
+    cardinality: 'one',
+    parameters: {
+      attachmentIds: [12],
+      attachmentKind: 'preview',
+    },
+  } as never)
+  const keyContractError = t.throws(() =>
+    composeGraph({
+      root: newsGraph,
+      relations: [incompatibleRelation as never],
+    }),
+  ) as QueryGraphError
+  t.true(keyContractError.issues.some((issue) => issue.code === 'incompatibleKeyTypes'))
 
   const plan = graph.compileSqlServerPlan({
     select: ['preview.path'],
@@ -181,19 +219,49 @@ test('reports composition and deferred key errors through QueryGraphError', (t) 
   })
 })
 
-test('rejects unknown batch relation configuration keys', (t) => {
-  const error = t.throws(() =>
+test('rejects invalid batch query and relation configurations', (t) => {
+  const keyError = t.throws(() =>
+    batchQuery({
+      graph: attachmentGraph,
+      key: {
+        path: 'idAttachment',
+        parameter: attachmentIds,
+        paramter: attachmentIds,
+      },
+    } as never),
+  )
+  t.regex(keyError.message, /batchQuery\.key received unknown configuration field "paramter"/)
+
+  const relationError = t.throws(() =>
+    batchRelation({
+      name: 'preview',
+      from: 'idAttachment',
+      query: attachmentBatchQuery,
+      cardinallity: 'one',
+    } as never),
+  )
+  t.regex(relationError.message, /batchRelation received unknown configuration field "cardinallity"/)
+
+  const descriptorError = t.throws(() =>
+    batchRelation({
+      name: 'preview',
+      from: 'idAttachment',
+      query: attachmentGraph,
+      cardinality: 'one',
+    } as never),
+  )
+  t.regex(descriptorError.message, /batchRelation\.query must be created by batchQuery/)
+  const legacyShapeError = t.throws(() =>
     batchRelation({
       name: 'preview',
       from: 'idAttachment',
       graph: attachmentGraph,
       to: 'idAttachment',
       parameter: attachmentIds,
-      cardinallity: 'one',
+      cardinality: 'one',
     } as never),
   )
-
-  t.regex(error.message, /unknown configuration field "cardinallity"/)
+  t.regex(legacyShapeError.message, /batchRelation received unknown configuration fields "graph", "to", "parameter"/)
 })
 
 test('preserves composition contracts in TypeScript', (t) => {
@@ -224,32 +292,44 @@ test('preserves composition contracts in TypeScript', (t) => {
     const invalidFrom = batchRelation({
       name: 'invalidFrom',
       from: 'missing',
-      graph: attachmentGraph,
-      to: 'idAttachment',
-      parameter: attachmentIds,
+      query: attachmentBatchQuery,
       cardinality: 'one',
       parameters: { attachmentKind: 'preview' },
     })
     // @ts-expect-error Parent keys must be root projection paths.
     composeGraph({ root: newsGraph, relations: [invalidFrom] })
 
-    batchRelation({
-      name: 'invalidParameter',
-      from: 'idAttachment',
+    // @ts-expect-error The key parameter must have list shape.
+    batchQuery({
       graph: attachmentGraph,
-      to: 'idAttachment',
-      // @ts-expect-error The key parameter must have list shape.
-      parameter: attachmentKind,
-      cardinality: 'one',
-      parameters: { attachmentIds: [], attachmentKind: 'preview' },
+      key: {
+        path: 'idAttachment',
+        parameter: attachmentKind,
+      },
+    })
+
+    // @ts-expect-error The key path must be a child projection path.
+    batchQuery({
+      graph: attachmentGraph,
+      key: {
+        path: 'missing',
+        parameter: attachmentIds,
+      },
+    })
+
+    // @ts-expect-error The key projection and list parameter must have the same scalar type.
+    batchQuery({
+      graph: attachmentGraph,
+      key: {
+        path: 'idAttachment',
+        parameter: attachmentPaths,
+      },
     })
 
     batchRelation({
       name: 'invalidStaticValue',
       from: 'idAttachment',
-      graph: attachmentGraph,
-      to: 'idAttachment',
-      parameter: attachmentIds,
+      query: attachmentBatchQuery,
       cardinality: 'one',
       // @ts-expect-error Static child parameters preserve their scalar types.
       parameters: { attachmentKind: 42 },

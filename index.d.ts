@@ -90,4 +90,4 @@ export interface SqlBinding {
   index?: number
 }
 
-export { batchRelation, composeGraph } from './dsl.js'
+export { batchQuery, batchRelation, composeGraph } from './dsl.js'

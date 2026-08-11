@@ -740,5 +740,6 @@ exports.defineGraphModule = defineGraphModule
 exports.defineGraph = defineGraph
 exports.defineSummaryGraph = defineSummaryGraph
 exports.firstBy = firstBy
+exports.batchQuery = require('./composition.js').batchQuery
 exports.batchRelation = require('./composition.js').batchRelation
 exports.composeGraph = require('./composition.js').composeGraph

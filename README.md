@@ -722,22 +722,32 @@ relation `many` для него допустим. Для пагинации вл
 Поля из отдельного запроса подключаются без изменения обычного relational-графа:
 
 ```ts
-const preview = batchRelation({
-  name: 'preview',
-  from: 'idImageAttachment',
-  graph: attachmentPreviewGraph,
-  to: 'idAttachment',
-  parameter: idAttachments,
-  cardinality: 'one',
-  parameters: { characteristicCode: 'isLogo', previewRelationType: 'p600x900' },
+const childrenQuery = batchQuery({
+  graph: childrenGraph,
+  key: {
+    path: 'parentId',
+    parameter: parentIds,
+  },
 })
-const newsGraph = composeGraph({ root: newsRelationalGraph, relations: [preview] })
-const plan = newsGraph.compileOraclePlan({
-  select: ['id', 'title', 'preview.id', 'preview.path'],
-  parameters: { idOrganisation },
+
+const children = batchRelation({
+  name: 'children',
+  from: 'id',
+  query: childrenQuery,
+  cardinality: 'many',
+})
+
+const graph = composeGraph({ root: rootGraph, relations: [children] })
+const plan = graph.compileOraclePlan({
+  select: ['id', 'children.id'],
+  parameters: {},
   limit: 20,
 })
 ```
+
+`batchQuery` принадлежит child-модулю и один раз закрепляет его graph,
+projection path ключа и list-параметр. Поэтому разные root-графы могут
+переиспользовать query, не повторяя внутренний контракт child-запроса.
 
 `composeGraph` оставляет в JavaScript только декларативный фасад. Проверка
 совместимости ключей и параметров, разделение operation на root и batch-шаги и
@@ -753,7 +763,7 @@ const plan = newsGraph.compileOraclePlan({
 
 Executor потребителя выполняет `plan.root`, собирает уникальные ненулевые
 значения `parentKey` из `plan.batches`, вызывает
-`plan.compileBatch('preview', attachmentIds)`, выполняет child statement и
+`plan.compileBatch('children', parentIds)`, выполняет child statement и
 связывает строки по `childKey`. `cardinality: 'one'` означает объект или `null`,
 а `many` — массив. Query-graph не подключается к БД, не дедуплицирует ключи, не
 выполняет statements и не гидратирует результат; при пустом наборе ключей
@@ -761,7 +771,7 @@ executor должен пропустить child-запрос.
 
 Ordering, offset и limit корневой operation применяются только к `plan.root`.
 Batch-связь может задать собственный `ordering`, но child pagination не
-добавляется. Batch-поля выбираются только явно (`preview.path`); без prefixed
+добавляется. Batch-поля выбираются только явно (`children.id`); без prefixed
 path соответствующего шага в `plan.batches` нет. Флаги injection в metadata
 показывают executor, какие ключи были добавлены исключительно для связывания и
 не должны попасть в публичный результат.

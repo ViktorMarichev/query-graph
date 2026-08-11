@@ -4,7 +4,18 @@ import * as canonicalObjectDsl from '../dsl.js'
 import * as functionalDsl from '../definition.js'
 import * as objectDsl from '@query-graph/dsl-object'
 
-const sharedPrimitives = ['source', 'eq', 'count', 'asc', 'ordering', 'firstBy', 'defineGraph'] as const
+const sharedPrimitives = [
+  'source',
+  'eq',
+  'count',
+  'asc',
+  'ordering',
+  'firstBy',
+  'defineGraph',
+  'batchQuery',
+  'batchRelation',
+  'composeGraph',
+] as const
 const structuralFactories = ['relation', 'constraint', 'project', 'dimension', 'measure'] as const
 
 test('object DSL package is a thin facade over the canonical object API', (t) => {

@@ -1,7 +1,10 @@
 'use strict'
 
-const BATCH_KEYS = new Set(['name', 'from', 'graph', 'to', 'parameter', 'cardinality', 'parameters', 'ordering'])
+const BATCH_QUERY_KEYS = new Set(['graph', 'key'])
+const BATCH_QUERY_KEY_KEYS = new Set(['path', 'parameter'])
+const BATCH_RELATION_KEYS = new Set(['name', 'from', 'query', 'cardinality', 'parameters', 'ordering'])
 const COMPOSE_KEYS = new Set(['root', 'relations'])
+const batchQueryBrand = Symbol('BatchQuery')
 const batchBrand = Symbol('BatchRelation')
 
 function configurationOf(factory, value, allowedKeys) {
@@ -33,20 +36,42 @@ function relationalGraph(value, label) {
   return value
 }
 
+function batchQueryOf(value, label) {
+  if (value === null || typeof value !== 'object' || value[batchQueryBrand] !== true) {
+    throw new TypeError(`${label} must be created by batchQuery`)
+  }
+  return value
+}
+
+function batchQuery(value) {
+  const configuration = configurationOf('batchQuery', value, BATCH_QUERY_KEYS)
+  const graph = relationalGraph(configuration.graph, 'batchQuery.graph')
+  const keyConfiguration = configurationOf('batchQuery.key', configuration.key, BATCH_QUERY_KEY_KEYS)
+  const path = nonEmptyString(keyConfiguration.path, 'batchQuery.key.path')
+  const parameter = nonEmptyString(
+    typeof keyConfiguration.parameter === 'string' ? keyConfiguration.parameter : keyConfiguration.parameter?.name,
+    'batchQuery.key.parameter',
+  )
+
+  return Object.freeze({
+    graph,
+    key: Object.freeze({
+      path,
+      parameter,
+    }),
+    [batchQueryBrand]: true,
+  })
+}
+
 function batchRelation(value) {
-  const configuration = configurationOf('batchRelation', value, BATCH_KEYS)
+  const configuration = configurationOf('batchRelation', value, BATCH_RELATION_KEYS)
   const name = nonEmptyString(configuration.name, 'batchRelation.name')
   if (name.includes('.')) {
     throw new TypeError('batchRelation.name must be a single projection path segment')
   }
 
   const from = nonEmptyString(configuration.from, 'batchRelation.from')
-  const to = nonEmptyString(configuration.to, 'batchRelation.to')
-  const graph = relationalGraph(configuration.graph, 'batchRelation.graph')
-  const parameter = nonEmptyString(
-    typeof configuration.parameter === 'string' ? configuration.parameter : configuration.parameter?.name,
-    'batchRelation.parameter',
-  )
+  const query = batchQueryOf(configuration.query, 'batchRelation.query')
 
   if (configuration.cardinality !== 'one' && configuration.cardinality !== 'many') {
     throw new TypeError("batchRelation.cardinality must be 'one' or 'many'")
@@ -66,9 +91,7 @@ function batchRelation(value) {
   return Object.freeze({
     name,
     from,
-    graph,
-    to,
-    parameter,
+    query,
     cardinality: configuration.cardinality,
     parameters: Object.freeze({ ...configuration.parameters }),
     ...(configuration.ordering === undefined ? {} : { ordering: configuration.ordering }),
@@ -88,11 +111,11 @@ function composeGraph(value) {
       throw new TypeError(`composeGraph.relations[${index}] must be created by batchRelation`)
     }
 
-    return graph.withBatchRelation(relation.graph, {
+    return graph.withBatchRelation(relation.query.graph, {
       name: relation.name,
       from: relation.from,
-      to: relation.to,
-      parameter: relation.parameter,
+      to: relation.query.key.path,
+      parameter: relation.query.key.parameter,
       cardinality: relation.cardinality,
       parameters: relation.parameters,
       ...(relation.ordering === undefined ? {} : { ordering: relation.ordering }),
@@ -100,4 +123,4 @@ function composeGraph(value) {
   }, root.compose())
 }
 
-module.exports = { batchRelation, composeGraph }
+module.exports = { batchQuery, batchRelation, composeGraph }

@@ -28,8 +28,8 @@ if (result.signal) {
 if ((result.status ?? 1) === 0) {
   appendFileSync(
     'index.js',
-    "\nmodule.exports.batchRelation = require('./composition.js').batchRelation\nmodule.exports.composeGraph = require('./composition.js').composeGraph\n",
+    "\nmodule.exports.batchQuery = require('./composition.js').batchQuery\nmodule.exports.batchRelation = require('./composition.js').batchRelation\nmodule.exports.composeGraph = require('./composition.js').composeGraph\n",
   )
-  appendFileSync('index.d.ts', "\nexport { batchRelation, composeGraph } from './dsl.js'\n")
+  appendFileSync('index.d.ts', "\nexport { batchQuery, batchRelation, composeGraph } from './dsl.js'\n")
 }
 process.exit(result.status ?? 1)

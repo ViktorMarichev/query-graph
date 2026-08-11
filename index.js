@@ -563,5 +563,6 @@ module.exports.QueryGraph = nativeBinding.QueryGraph
 module.exports.RelationalQueryGraph = nativeBinding.RelationalQueryGraph
 module.exports.registerDefinition = nativeBinding.registerDefinition
 
+module.exports.batchQuery = require('./composition.js').batchQuery
 module.exports.batchRelation = require('./composition.js').batchRelation
 module.exports.composeGraph = require('./composition.js').composeGraph
