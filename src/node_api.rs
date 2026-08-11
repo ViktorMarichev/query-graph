@@ -201,6 +201,27 @@ impl RelationalQueryGraph {
     self.graph.graph().definition().name.clone()
   }
 
+  /// Structural information used by the JavaScript composition facade. This is
+  /// deliberately separate from the graph-definition wire format.
+  #[napi(getter)]
+  pub fn composition_metadata(&self) -> serde_json::Value {
+    let definition = self.graph.graph().definition();
+    serde_json::json!({
+      "fields": definition.projection.fields.iter().enumerate().map(|(index, field)| {
+        serde_json::json!({
+          "path": field.path.join("."),
+          "scalarType": self.graph.graph().projection_expression_type(index).scalar_type.as_str(),
+        })
+      }).collect::<Vec<_>>(),
+      "parameters": definition.parameters.iter().map(|parameter| serde_json::json!({
+        "name": parameter.name,
+        "scalarType": parameter.scalar_type.as_str(),
+        "shape": parameter.shape.as_str(),
+        "required": parameter.required,
+      })).collect::<Vec<_>>(),
+    })
+  }
+
   #[napi(
     ts_args_type = "operation: import('./definition.js').QueryOperation, options?: import('./definition.js').SqlServerCompileOptions"
   )]

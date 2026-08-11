@@ -716,3 +716,40 @@ relation `many` для него допустим. Для пагинации вл
 
 Полный пример графа, отображения, операции, сгенерированного SQL и замера
 производительности компиляции находится в `benchmark/bench.ts`.
+
+## Batch-связи и двухфазное выполнение
+
+Поля из отдельного запроса подключаются без изменения обычного relational-графа:
+
+```ts
+const preview = batchRelation({
+  name: 'preview',
+  from: 'idImageAttachment',
+  graph: attachmentPreviewGraph,
+  to: 'idAttachment',
+  parameter: idAttachments,
+  cardinality: 'one',
+  parameters: { characteristicCode: 'isLogo', previewRelationType: 'p600x900' },
+})
+const newsGraph = composeGraph({ root: newsRelationalGraph, relations: [preview] })
+const plan = newsGraph.compileOraclePlan({
+  select: ['id', 'title', 'preview.id', 'preview.path'],
+  parameters: { idOrganisation },
+  limit: 20,
+})
+```
+
+Executor потребителя выполняет `plan.root`, собирает уникальные ненулевые
+значения `parentKey` из `plan.batches`, вызывает
+`plan.compileBatch('preview', attachmentIds)`, выполняет child statement и
+связывает строки по `childKey`. `cardinality: 'one'` означает объект или `null`,
+а `many` — массив. Query-graph не подключается к БД, не дедуплицирует ключи, не
+выполняет statements и не гидратирует результат; при пустом наборе ключей
+executor должен пропустить child-запрос.
+
+Ordering, offset и limit корневой operation применяются только к `plan.root`.
+Batch-связь может задать собственный `ordering`, но child pagination не
+добавляется. Batch-поля выбираются только явно (`preview.path`); без prefixed
+path соответствующего шага в `plan.batches` нет. Флаги injection в metadata
+показывают executor, какие ключи были добавлены исключительно для связывания и
+не должны попасть в публичный результат.

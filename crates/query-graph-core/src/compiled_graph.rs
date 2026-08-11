@@ -173,6 +173,10 @@ impl CompiledGraph {
     &self.definition
   }
 
+  pub fn projection_expression_type(&self, index: usize) -> ExpressionType {
+    self.projections[index].expression_type
+  }
+
   pub fn is_summary(&self) -> bool {
     self.summary
   }

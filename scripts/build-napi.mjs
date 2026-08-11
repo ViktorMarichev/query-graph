@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { appendFileSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
 import process from 'node:process'
@@ -25,4 +25,11 @@ if (result.signal) {
   throw new Error(`NAPI build terminated by signal ${result.signal}`)
 }
 
+if ((result.status ?? 1) === 0) {
+  appendFileSync('index.js', "\nObject.assign(module.exports, require('./composition.js'))\n")
+  appendFileSync(
+    'index.d.ts',
+    "\nexport { ComposedQueryGraph, CompiledQueryPlan, batchRelation, composeGraph } from './dsl.js'\n",
+  )
+}
 process.exit(result.status ?? 1)
