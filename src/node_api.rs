@@ -6,8 +6,8 @@ use query_graph_core::{
   BatchPlanMetadata, BatchRelationDefinition, CompiledGraph,
   CompiledQueryPlan as CoreCompiledQueryPlan, ComposedQueryGraph as CoreComposedQueryGraph,
   GraphDefinition, MappedQueryGraph, OracleCompiler, OracleVersion, ParameterBinding,
-  QueryOperation, RelationalMapping, SqlColumn, SqlCompileError, SqlRelation, SqlServerCompiler,
-  SqlServerVersion, SqlStatement,
+  QueryOperation, RelationalMapping, SqlColumn, SqlCompileError, SqlProjectionObject, SqlRelation,
+  SqlServerCompiler, SqlServerVersion, SqlStatement,
 };
 use serde::{de::DeserializeOwned, Deserialize};
 use serde_json::Value;
@@ -33,6 +33,7 @@ pub struct CompiledSqlStatement {
   pub sql: String,
   pub bindings: Vec<SqlBinding>,
   pub columns: Vec<CompiledSqlColumn>,
+  pub objects: Vec<CompiledSqlObject>,
   pub relations: Vec<CompiledSqlRelation>,
 }
 
@@ -46,6 +47,7 @@ impl From<SqlStatement> for CompiledSqlStatement {
         .map(SqlBinding::from)
         .collect(),
       columns: statement.columns.into_iter().map(Into::into).collect(),
+      objects: statement.objects.into_iter().map(Into::into).collect(),
       relations: statement.relations.into_iter().map(Into::into).collect(),
     }
   }
@@ -91,6 +93,21 @@ impl From<SqlColumn> for CompiledSqlColumn {
       scalar_type: column.scalar_type.as_str().to_owned(),
       nullable: column.nullable,
       relations: column.relations,
+    }
+  }
+}
+
+#[napi(object)]
+pub struct CompiledSqlObject {
+  pub path: String,
+  pub presence_column: String,
+}
+
+impl From<SqlProjectionObject> for CompiledSqlObject {
+  fn from(object: SqlProjectionObject) -> Self {
+    Self {
+      path: object.path,
+      presence_column: object.presence_column,
     }
   }
 }

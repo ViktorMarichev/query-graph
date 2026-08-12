@@ -10,6 +10,7 @@ import {
   ordering,
   param,
   project,
+  projectObject,
   relation,
   requiredParameter,
   source,
@@ -216,4 +217,32 @@ test('returns relational mapping errors to Node.js', (t) => {
   t.true(error.issues.some((issue) => issue.code === 'missingSource'))
   t.regex(error.message, /UnknownSource/)
   t.regex(error.message, /MissingSource/)
+})
+
+test('returns projection object presence metadata to Node.js', (t) => {
+  const users = source('presenceUsers', { id: 'int64' })
+  const profiles = source('presenceProfiles', {
+    id: 'int64',
+    idUser: 'int64',
+    name: nullable('string'),
+  })
+  const presenceDefinition = defineGraph({
+    name: 'presenceMetadata',
+    root: users,
+    sources: [users, profiles],
+    relations: [relation('profile', users, profiles, eq(users.field('id'), profiles.field('idUser')))],
+    objects: [projectObject({ path: 'profile', presence: profiles.field('id') })],
+    projection: [project('profile.name', profiles.field('name'))],
+  })
+  const graph = registerDefinition(presenceDefinition).withRelationalMapping({
+    sources: {
+      presenceUsers: { table: 'Users' },
+      presenceProfiles: { table: 'Profiles' },
+    },
+  })
+
+  const statement = graph.compileSqlServer({ select: ['profile.name'] })
+
+  t.deepEqual(statement.objects, [{ path: 'profile', presenceColumn: 'o0' }])
+  t.true(statement.sql.includes('[t1].[name] AS [c0],\n  [t1].[id] AS [o0]'))
 })

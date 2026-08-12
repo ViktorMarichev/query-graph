@@ -44,7 +44,7 @@ test('builds the versioned wire definition without author-written discriminators
     projection: [project('id', root.field('id'), { default: true })],
   })
 
-  t.is(definition.schemaVersion, 9)
+  t.is(definition.schemaVersion, 10)
   t.false('relations' in definition.projection.fields[0])
   t.deepEqual(definition.constraints[0].predicate, {
     kind: 'eq',

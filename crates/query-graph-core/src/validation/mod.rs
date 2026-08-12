@@ -84,6 +84,9 @@ pub enum DefinitionIssueCode {
   InvalidProjectionPathSegment,
   DuplicateProjectionPath,
   ConflictingProjectionPath,
+  DuplicateProjectionObjectPath,
+  ProjectionObjectWithoutFields,
+  ProjectionObjectInSummary,
   HiddenProjectionField,
   ProjectionExpressionScope,
   RootHasIncomingRelation,
@@ -141,4 +144,12 @@ pub(crate) fn infer_projection_relation_paths(
   relation_paths: &[Vec<usize>],
 ) -> Result<Vec<Vec<usize>>, DefinitionIssues> {
   projection::infer_relation_paths(definition, source_index, relation_paths)
+}
+
+pub(crate) fn infer_projection_object_relation_paths(
+  definition: &GraphDefinition,
+  source_index: &std::collections::HashMap<String, usize>,
+  relation_paths: &[Vec<usize>],
+) -> Result<Vec<Vec<usize>>, DefinitionIssues> {
+  projection::infer_object_relation_paths(definition, source_index, relation_paths)
 }

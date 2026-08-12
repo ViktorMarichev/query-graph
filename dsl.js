@@ -1,6 +1,6 @@
 'use strict'
 
-const GRAPH_DEFINITION_VERSION = 9
+const GRAPH_DEFINITION_VERSION = 10
 const SCALAR_TYPES = new Set([
   'boolean',
   'int32',
@@ -19,6 +19,7 @@ const SUMMARY_FIELD_BRAND = Symbol('SummaryField')
 const RELATION_CONFIGURATION_KEYS = new Set(['name', 'from', 'to', 'on', 'required', 'cardinality', 'selection'])
 const CONSTRAINT_CONFIGURATION_KEYS = new Set(['predicate', 'when'])
 const PROJECTION_CONFIGURATION_KEYS = new Set(['path', 'expression', 'default'])
+const PROJECTION_OBJECT_CONFIGURATION_KEYS = new Set(['path', 'presence'])
 const EXISTS_CONFIGURATION_KEYS = new Set(['from'])
 const ORDERING_CONFIGURATION_KEYS = new Set(['name', 'by', 'default'])
 
@@ -357,6 +358,14 @@ function project(value) {
   return definition
 }
 
+function projectObject(value) {
+  const configuration = configurationOf('projectObject', value, PROJECTION_OBJECT_CONFIGURATION_KEYS)
+  return {
+    path: typeof configuration.path === 'string' ? configuration.path.split('.') : [...configuration.path],
+    presence: asExpression(configuration.presence),
+  }
+}
+
 function dimension(value) {
   return summaryField('dimension', configurationOf('dimension', value, PROJECTION_CONFIGURATION_KEYS))
 }
@@ -429,6 +438,7 @@ function defineGraphModule(configuration) {
     relations: content.relations,
     constraints: content.constraints,
     projection: content.projection,
+    objects: content.objects,
     orderings: content.orderings,
   }
   Object.defineProperty(module, GRAPH_MODULE_BRAND, { value: true })
@@ -456,7 +466,7 @@ function defineSummaryGraph(configuration) {
 
 function buildGraphDefinition(configuration, mode) {
   const content = composeDefinitionContent(configuration)
-  validateProjectionMode(content.projection, mode)
+  validateProjectionMode(content.projection, content.objects, mode)
 
   return deepFreeze({
     schemaVersion: GRAPH_DEFINITION_VERSION,
@@ -468,13 +478,17 @@ function buildGraphDefinition(configuration, mode) {
     constraints: content.constraints,
     projection: {
       fields: content.projection,
+      objects: content.objects,
     },
     orderings: content.orderings,
   })
 }
 
-function validateProjectionMode(projection, mode) {
+function validateProjectionMode(projection, objects, mode) {
   if (mode === 'summary') {
+    if (objects.length > 0) {
+      throw new TypeError('Summary graph cannot define projection objects')
+    }
     if (projection.length === 0) {
       throw new TypeError('Summary graph must define at least one dimension or measure')
     }
@@ -502,6 +516,7 @@ function composeDefinitionContent(configuration) {
     relations: [],
     constraints: [],
     projection: [],
+    objects: [],
     orderings: [],
   }
   const indexes = {
@@ -510,6 +525,7 @@ function composeDefinitionContent(configuration) {
     relations: new Map(),
     constraints: new Set(),
     projection: new Map(),
+    objects: new Map(),
     orderings: new Map(),
   }
 
@@ -546,6 +562,9 @@ function addDefinitionPart(content, indexes, part, owner) {
   addIdentityDefinitions(content.constraints, indexes.constraints, part.constraints)
   addNamedDefinitions(content.projection, indexes.projection, part.projection, 'projection', owner, (projection) =>
     projection.path.join('.'),
+  )
+  addNamedDefinitions(content.objects, indexes.objects, part.objects, 'projection object', owner, (object) =>
+    object.path.join('.'),
   )
 
   addNamedDefinitions(
@@ -732,6 +751,7 @@ exports.relation = relation
 exports.constraint = constraint
 exports.ordering = ordering
 exports.project = project
+exports.projectObject = projectObject
 exports.dimension = dimension
 exports.measure = measure
 exports.asc = asc

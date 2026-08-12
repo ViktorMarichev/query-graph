@@ -2,7 +2,7 @@
 
 const objectDsl = require('./dsl.js')
 
-const GRAPH_DEFINITION_VERSION = 9
+const GRAPH_DEFINITION_VERSION = 10
 
 function field(sourceReference, name) {
   if (typeof sourceReference === 'string') {
@@ -102,6 +102,7 @@ exports.relation = relation
 exports.constraint = constraint
 exports.ordering = objectDsl.ordering
 exports.project = project
+exports.projectObject = objectDsl.projectObject
 exports.batchQuery = objectDsl.batchQuery
 exports.batchRelation = objectDsl.batchRelation
 exports.composeGraph = objectDsl.composeGraph

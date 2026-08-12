@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CompiledGraph, DefinitionIssues, Expression};
 
-pub const GRAPH_DEFINITION_VERSION: u32 = 9;
+pub const GRAPH_DEFINITION_VERSION: u32 = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -323,6 +323,8 @@ pub enum ConstraintCondition {
 pub struct ProjectionDefinition {
   #[serde(default)]
   pub fields: Vec<ProjectionFieldDefinition>,
+  #[serde(default)]
+  pub objects: Vec<ProjectionObjectDefinition>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -359,6 +361,19 @@ impl ProjectionFieldDefinition {
   pub fn selected_by_default(mut self) -> Self {
     self.selected_by_default = true;
     self
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProjectionObjectDefinition {
+  pub path: Vec<String>,
+  pub presence: Expression,
+}
+
+impl ProjectionObjectDefinition {
+  pub fn new(path: Vec<String>, presence: Expression) -> Self {
+    Self { path, presence }
   }
 }
 

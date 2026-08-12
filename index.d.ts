@@ -64,6 +64,11 @@ export interface CompiledSqlColumn {
   relations: Array<string>
 }
 
+export interface CompiledSqlObject {
+  path: string
+  presenceColumn: string
+}
+
 export interface CompiledSqlRelation {
   name: string
   from: string
@@ -76,6 +81,7 @@ export interface CompiledSqlStatement {
   sql: string
   bindings: Array<SqlBinding>
   columns: Array<CompiledSqlColumn>
+  objects: Array<CompiledSqlObject>
   relations: Array<CompiledSqlRelation>
 }
 

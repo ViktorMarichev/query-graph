@@ -11,6 +11,11 @@ struct CompiledProjection {
   relation_path: Box<[usize]>,
 }
 
+#[derive(Debug)]
+struct CompiledProjectionObject {
+  relation_path: Box<[usize]>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ConstraintPhase {
   BeforeAggregation,
@@ -29,6 +34,7 @@ pub struct CompiledGraph {
   default_ordering_index: Option<usize>,
   projection_index: HashMap<ProjectionPath, usize>,
   projections: Vec<CompiledProjection>,
+  projection_objects: Vec<CompiledProjectionObject>,
   summary: bool,
   dimension_projection_indices: Box<[usize]>,
   constraint_phases: Box<[ConstraintPhase]>,
@@ -139,6 +145,17 @@ impl CompiledGraph {
         relation_path: relation_path.into_boxed_slice(),
       })
       .collect();
+    let projection_object_relation_paths = validation::infer_projection_object_relation_paths(
+      &definition,
+      &source_index,
+      &relation_paths,
+    )?;
+    let projection_objects = projection_object_relation_paths
+      .into_iter()
+      .map(|relation_path| CompiledProjectionObject {
+        relation_path: relation_path.into_boxed_slice(),
+      })
+      .collect();
     let effective_relation_required = definition
       .relations
       .iter()
@@ -160,6 +177,7 @@ impl CompiledGraph {
       default_ordering_index,
       projection_index,
       projections,
+      projection_objects,
       summary,
       dimension_projection_indices,
       constraint_phases,
@@ -273,6 +291,39 @@ impl CompiledGraph {
 
   pub(crate) fn projection_relation_path_indices(&self, projection_index: usize) -> &[usize] {
     &self.projections[projection_index].relation_path
+  }
+
+  pub(crate) fn selected_projection_object_indices(
+    &self,
+    projection_indices: &[usize],
+  ) -> Vec<usize> {
+    let mut object_indices: Vec<_> = self
+      .definition
+      .projection
+      .objects
+      .iter()
+      .enumerate()
+      .filter_map(|(object_index, object)| {
+        projection_indices
+          .iter()
+          .map(|index| &self.definition.projection.fields[*index].path)
+          .any(|path| path.len() > object.path.len() && path.starts_with(&object.path))
+          .then_some(object_index)
+      })
+      .collect();
+
+    object_indices.sort_by(|left, right| {
+      self.definition.projection.objects[*right]
+        .path
+        .len()
+        .cmp(&self.definition.projection.objects[*left].path.len())
+        .then_with(|| left.cmp(right))
+    });
+    object_indices
+  }
+
+  pub(crate) fn projection_object_relation_path_indices(&self, object_index: usize) -> &[usize] {
+    &self.projection_objects[object_index].relation_path
   }
 
   pub fn outgoing_relations(

@@ -38,6 +38,7 @@ fn issue_codes(definition: GraphDefinition) -> Vec<DefinitionIssueCode> {
 fn infers_projection_scalar_types_and_nullability() {
   let mut definition = definition();
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(vec!["id".into()], Expression::field("root", "id")),
       ProjectionFieldDefinition::new(
@@ -107,6 +108,7 @@ fn propagates_optional_relation_nullability_into_projection_types() {
     ),
   )];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["child".into(), "name".into()],
       Expression::field("child", "name"),
@@ -125,6 +127,7 @@ fn propagates_optional_relation_nullability_into_projection_types() {
 fn rejects_incompatible_comparison_types() {
   let mut definition = definition();
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["invalid".into()],
       Expression::eq(
@@ -169,6 +172,7 @@ fn requires_boolean_relation_and_constraint_predicates() {
 fn validates_semantic_function_arities_and_arguments() {
   let mut definition = definition();
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(
         vec!["wrongArity".into()],
@@ -200,6 +204,7 @@ fn validates_semantic_function_arities_and_arguments() {
 fn rejects_untyped_projections_and_non_orderable_values() {
   let mut definition = definition();
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["nothing".into()],
       Expression::literal(LiteralValue::Null),

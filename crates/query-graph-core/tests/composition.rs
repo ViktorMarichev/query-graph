@@ -30,6 +30,7 @@ fn root_graph() -> MappedQueryGraph {
     Expression::parameter("idOrganisation"),
   ))];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(vec!["id".into()], Expression::field("news", "id"))
         .selected_by_default(),
@@ -78,6 +79,7 @@ fn attachment_graph() -> MappedQueryGraph {
     )),
   ];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(
         vec!["idAttachment".into()],

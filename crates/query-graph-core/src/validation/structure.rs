@@ -304,7 +304,7 @@ impl<'a> DefinitionValidator<'a> {
 
     for (field_index, field) in self.definition.projection.fields.iter().enumerate() {
       let location = format!("projection.fields[{field_index}]");
-      self.validate_projection_path(field_index);
+      Self::validate_projection_path(&field.path, &format!("{location}.path"), &mut self.issues);
 
       let conflicting_path = paths
         .iter()
@@ -336,16 +336,67 @@ impl<'a> DefinitionValidator<'a> {
         &context,
         &mut self.issues,
       );
-      projection::validate_visibility(self.definition, field, &location, &mut self.issues);
+      projection::validate_visibility(
+        self.definition,
+        &field.expression,
+        &format!("{location}.expression"),
+        &mut self.issues,
+      );
+    }
+
+    if self.definition.is_summary() && !self.definition.projection.objects.is_empty() {
+      self.issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::ProjectionObjectInSummary,
+        "projection.objects",
+        "summary graph cannot define projection objects",
+      ));
+    }
+
+    let mut object_paths = HashSet::new();
+    for (object_index, object) in self.definition.projection.objects.iter().enumerate() {
+      let location = format!("projection.objects[{object_index}]");
+      Self::validate_projection_path(&object.path, &format!("{location}.path"), &mut self.issues);
+
+      if !object_paths.insert(object.path.clone()) {
+        self.issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::DuplicateProjectionObjectPath,
+          format!("{location}.path"),
+          format!(
+            "projection object path {:?} is defined more than once",
+            object.path
+          ),
+        ));
+      }
+
+      let has_descendant =
+        self.definition.projection.fields.iter().any(|field| {
+          field.path.len() > object.path.len() && field.path.starts_with(&object.path)
+        });
+      if !has_descendant {
+        self.issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::ProjectionObjectWithoutFields,
+          format!("{location}.path"),
+          format!(
+            "projection object path {:?} has no descendant projection fields",
+            object.path
+          ),
+        ));
+      }
+
+      let context =
+        ExpressionContext::unrestricted(&self.sources, &self.parameters, &self.source_scopes);
+      expression::validate(
+        &object.presence,
+        &format!("{location}.presence"),
+        &context,
+        &mut self.issues,
+      );
     }
   }
 
-  fn validate_projection_path(&mut self, field_index: usize) {
-    let field = &self.definition.projection.fields[field_index];
-    let location = format!("projection.fields[{field_index}].path");
-
-    if field.path.is_empty() {
-      self.issues.push(DefinitionIssue::new(
+  fn validate_projection_path(path: &[String], location: &str, issues: &mut Vec<DefinitionIssue>) {
+    if path.is_empty() {
+      issues.push(DefinitionIssue::new(
         DefinitionIssueCode::EmptyProjectionPath,
         location,
         "projection path must contain at least one segment",
@@ -353,16 +404,16 @@ impl<'a> DefinitionValidator<'a> {
       return;
     }
 
-    for (segment_index, segment) in field.path.iter().enumerate() {
-      let segment_location = format!("projection.fields[{field_index}].path[{segment_index}]");
+    for (segment_index, segment) in path.iter().enumerate() {
+      let segment_location = format!("{location}[{segment_index}]");
       if segment.trim().is_empty() {
-        self.issues.push(DefinitionIssue::new(
+        issues.push(DefinitionIssue::new(
           DefinitionIssueCode::EmptyProjectionPathSegment,
           segment_location,
           "projection path segment must not be empty",
         ));
       } else if segment.contains('.') {
-        self.issues.push(DefinitionIssue::new(
+        issues.push(DefinitionIssue::new(
           DefinitionIssueCode::InvalidProjectionPathSegment,
           segment_location,
           "projection path segment must not contain '.'",

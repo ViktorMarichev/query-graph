@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use query_graph_core::{
   ConstraintDefinition, Expression, FieldDefinition, GraphDefinition, LiteralValue,
   MappedQueryGraph, MappingIssueCode, OrderByDefinition, OrderingDefinition, ParameterDefinition,
-  PlanError, ProjectionDefinition, ProjectionFieldDefinition, QueryOperation, RelationCardinality,
-  RelationDefinition, RelationalMapping, ScalarType, SemanticFunction, SourceDefinition,
-  SourceMapping, SqlCompileError, SqlServerCompiler, SqlServerVersion, TableName,
+  PlanError, ProjectionDefinition, ProjectionFieldDefinition, ProjectionObjectDefinition,
+  QueryOperation, RelationCardinality, RelationDefinition, RelationalMapping, ScalarType,
+  SemanticFunction, SourceDefinition, SourceMapping, SqlCompileError, SqlServerCompiler,
+  SqlServerVersion, TableName,
 };
 use serde_json::json;
 
@@ -70,6 +71,7 @@ fn definition() -> GraphDefinition {
     }),
   ];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(
         vec!["value".into(), "id".into()],
@@ -205,6 +207,7 @@ fn enforces_sql_server_version_capabilities() {
 fn renders_concat_for_sql_server_2008_without_the_concat_function() {
   let mut definition = definition();
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["value".into(), "label".into()],
       Expression::Function {
@@ -512,4 +515,56 @@ fn rejects_pagination_through_a_many_relation() {
     SqlCompileError::Plan(PlanError::PaginationThroughManyRelation { relation })
       if relation == "value"
   ));
+}
+
+#[test]
+fn emits_presence_metadata_only_for_selected_projection_objects() {
+  let mut definition = definition();
+  definition.projection.objects = vec![
+    ProjectionObjectDefinition::new(vec!["value".into()], Expression::field("value", "id")),
+    ProjectionObjectDefinition::new(
+      vec!["value".into(), "detail".into()],
+      Expression::field("detail", "id"),
+    ),
+  ];
+  definition
+    .projection
+    .fields
+    .push(ProjectionFieldDefinition::new(
+      vec!["owner".into()],
+      Expression::field("link", "idOwner"),
+    ));
+  let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+
+  let statement = graph
+    .compile_sql_server(&QueryOperation {
+      select: Some(vec!["value.detail.name".into()]),
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      ..QueryOperation::default()
+    })
+    .unwrap();
+
+  assert_eq!(statement.columns.len(), 1);
+  assert_eq!(statement.columns[0].path, "value.detail.name");
+  assert_eq!(statement.objects.len(), 2);
+  assert_eq!(statement.objects[0].path, "value.detail");
+  assert_eq!(statement.objects[0].presence_column, "o0");
+  assert_eq!(statement.objects[1].path, "value");
+  assert_eq!(statement.objects[1].presence_column, "o1");
+  assert!(statement.sql.contains(concat!(
+    "[t2].[name] AS [c0],\n",
+    "  [t2].[id] AS [o0],\n",
+    "  [t1].[id] AS [o1]"
+  )));
+
+  let value_only = graph
+    .compile_sql_server(&QueryOperation {
+      select: Some(vec!["owner".into()]),
+      parameters: HashMap::from([("idOwner".into(), json!(42))]),
+      ..QueryOperation::default()
+    })
+    .unwrap();
+
+  assert!(value_only.objects.is_empty());
+  assert!(!value_only.sql.contains("[Requisite] AS [t2]"));
 }

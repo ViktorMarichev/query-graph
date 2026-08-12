@@ -111,6 +111,18 @@ pub(crate) fn analyze(
     projection_types.push(resolved);
   }
 
+  for (index, object) in definition.projection.objects.iter().enumerate() {
+    let location = format!("projection.objects[{index}].presence");
+    let expression_type = infer_expression(&object.presence, &location, &environment, &mut issues);
+    if let Some(expression_type) = expression_type {
+      let _ = report_type_result(
+        type_system::resolve_expression_type(expression_type),
+        &location,
+        &mut issues,
+      );
+    }
+  }
+
   for (ordering_index, ordering) in definition.orderings.iter().enumerate() {
     for (order_index, order) in ordering.order_by.iter().enumerate() {
       let location = format!("orderings[{ordering_index}].orderBy[{order_index}].expression");

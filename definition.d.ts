@@ -25,7 +25,7 @@ import type {
   TypedProjectionField,
 } from './dsl.js'
 
-export const GRAPH_DEFINITION_VERSION: 9
+export const GRAPH_DEFINITION_VERSION: 10
 
 export function field<
   const Key extends string,

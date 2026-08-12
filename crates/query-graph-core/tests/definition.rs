@@ -1,7 +1,8 @@
 use query_graph_core::{
   ConstraintDefinition, DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition,
   LiteralValue, OrderByDefinition, OrderingDefinition, ParameterDefinition, ProjectionDefinition,
-  ProjectionFieldDefinition, RelationDefinition, ScalarType, SourceDefinition,
+  ProjectionFieldDefinition, ProjectionObjectDefinition, RelationDefinition, ScalarType,
+  SourceDefinition,
 };
 
 fn attribute_value_definition() -> GraphDefinition {
@@ -77,6 +78,7 @@ fn attribute_value_definition() -> GraphDefinition {
   ];
 
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(
         vec!["value".into(), "id".into()],
@@ -134,7 +136,7 @@ fn definition_ir_round_trips_through_json() {
   let restored: GraphDefinition = serde_json::from_str(&json).unwrap();
 
   assert_eq!(restored, definition);
-  assert!(json.contains("\"schemaVersion\": 9"));
+  assert!(json.contains("\"schemaVersion\": 10"));
   assert!(json.contains("\"kind\": \"field\""));
   assert!(restored.compile().is_ok());
 }
@@ -210,6 +212,7 @@ fn rejects_invalid_decimal_literals_during_definition_compilation() {
     vec![FieldDefinition::new("id", ScalarType::Int64)],
   )];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["amount".into()],
       Expression::literal(LiteralValue::Decimal("1e3".into())),
@@ -222,4 +225,38 @@ fn rejects_invalid_decimal_literals_during_definition_compilation() {
     .as_slice()
     .iter()
     .any(|issue| issue.code == DefinitionIssueCode::InvalidLiteral));
+}
+
+#[test]
+fn rejects_projection_objects_without_descendant_fields() {
+  let mut definition = attribute_value_definition();
+  definition
+    .projection
+    .objects
+    .push(ProjectionObjectDefinition::new(
+      vec!["missing".into()],
+      Expression::field("value", "id"),
+    ));
+
+  let issues = definition.compile().unwrap_err().into_vec();
+
+  assert!(issues.iter().any(|issue| {
+    issue.code == DefinitionIssueCode::ProjectionObjectWithoutFields
+      && issue.location == "projection.objects[0].path"
+  }));
+}
+
+#[test]
+fn rejects_duplicate_projection_object_paths() {
+  let mut definition = attribute_value_definition();
+  definition.projection.objects = vec![
+    ProjectionObjectDefinition::new(vec!["value".into()], Expression::field("value", "id")),
+    ProjectionObjectDefinition::new(vec!["value".into()], Expression::field("value", "id")),
+  ];
+
+  let issues = definition.compile().unwrap_err().into_vec();
+
+  assert!(issues
+    .iter()
+    .any(|issue| issue.code == DefinitionIssueCode::DuplicateProjectionObjectPath));
 }

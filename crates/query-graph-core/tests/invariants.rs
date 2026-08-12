@@ -1,7 +1,7 @@
 use query_graph_core::{
   ConstraintDefinition, DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition,
   ProjectionDefinition, ProjectionFieldDefinition, RelationDefinition, ScalarType,
-  SemanticFunction, SourceDefinition,
+  SemanticFunction, SourceDefinition, GRAPH_DEFINITION_VERSION,
 };
 
 fn source(key: &str) -> SourceDefinition {
@@ -21,9 +21,10 @@ fn issue_codes(definition: GraphDefinition) -> Vec<DefinitionIssueCode> {
 #[test]
 fn rejects_the_previous_wire_definition_version() {
   let mut definition = GraphDefinition::new("oldWireVersion", "root");
-  definition.schema_version = 7;
+  definition.schema_version = GRAPH_DEFINITION_VERSION - 1;
   definition.sources = vec![source("root")];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["id".into()],
       Expression::field("root", "id"),
@@ -38,6 +39,7 @@ fn rejects_projection_path_segments_containing_separator() {
   let mut definition = GraphDefinition::new("pathCollision", "root");
   definition.sources = vec![source("root")];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["nested.field".into()],
       Expression::field("root", "id"),
@@ -52,6 +54,7 @@ fn rejects_overlapping_projection_paths() {
   let mut definition = GraphDefinition::new("pathConflict", "root");
   definition.sources = vec![source("root")];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(vec!["owner".into()], Expression::field("root", "id")),
       ProjectionFieldDefinition::new(
@@ -72,6 +75,7 @@ fn rejects_selectable_projection_of_hidden_field() {
     vec![FieldDefinition::new("secret", ScalarType::String).hidden()],
   )];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["secret".into()],
       Expression::Function {
@@ -118,6 +122,7 @@ fn rejects_exists_outside_graph_constraints() {
   definition.sources = vec![source("root"), source("child")];
   definition.relations = vec![relation("child", "root", "child")];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["hasChild".into()],
       Expression::exists("child"),

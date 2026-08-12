@@ -56,6 +56,7 @@ fn definition() -> GraphDefinition {
     }),
   ];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(vec!["serviceId".into()], Expression::field("service", "id"))
         .dimension()
@@ -225,6 +226,7 @@ fn rejects_aggregate_expressions_in_a_record_graph() {
     vec![FieldDefinition::new("id", ScalarType::Int64)],
   )];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["count".into()],
       Expression::count(),

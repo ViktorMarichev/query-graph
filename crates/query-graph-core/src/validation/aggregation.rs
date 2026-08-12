@@ -5,6 +5,15 @@ use super::{DefinitionIssue, DefinitionIssueCode};
 pub(super) fn validate(definition: &GraphDefinition, issues: &mut Vec<DefinitionIssue>) {
   validate_relation_expressions(definition, issues);
 
+  for (index, object) in definition.projection.objects.iter().enumerate() {
+    reject_aggregate(
+      &object.presence,
+      &format!("projection.objects[{index}].presence"),
+      "projection object presence cannot contain aggregates",
+      issues,
+    );
+  }
+
   if !definition.is_summary() {
     validate_record_graph(definition, issues);
     return;

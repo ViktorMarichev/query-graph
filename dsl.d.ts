@@ -224,11 +224,15 @@ declare const projectionPathType: unique symbol
 declare const projectionScalarType: unique symbol
 declare const projectionNullabilityType: unique symbol
 declare const projectionDefaultType: unique symbol
+declare const projectionObjectPathType: unique symbol
+declare const projectionObjectNullabilityType: unique symbol
 declare const summaryFieldType: unique symbol
 declare const typedProjectionPathType: unique symbol
 declare const typedProjectionScalarType: unique symbol
 declare const typedProjectionNullabilityType: unique symbol
 declare const typedProjectionDefaultType: unique symbol
+declare const typedProjectionObjectPathType: unique symbol
+declare const typedProjectionObjectNullabilityType: unique symbol
 
 export interface ProjectionTypeMetadata<
   Path extends string = string,
@@ -241,6 +245,19 @@ export interface ProjectionTypeMetadata<
   readonly [typedProjectionNullabilityType]: Nullability
   readonly [typedProjectionDefaultType]: SelectedByDefault
 }
+
+export interface ProjectionObjectTypeMetadata<
+  Path extends string = string,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+> {
+  readonly [typedProjectionObjectPathType]: Path
+  readonly [typedProjectionObjectNullabilityType]: Nullability
+}
+
+export type TypedProjectionObject<
+  Path extends string = string,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+> = ProjectionObjectDefinition<Path, Nullability> & ProjectionObjectTypeMetadata<Path, Nullability>
 
 export type TypedProjectionField<
   Path extends string = string,
@@ -282,6 +299,16 @@ export interface ProjectionFieldDefinition<
   selectedByDefault?: boolean
 }
 
+export interface ProjectionObjectDefinition<
+  Path extends string = string,
+  Nullability extends NullabilityExpression = NullabilityExpression,
+> {
+  path: string[]
+  readonly [projectionObjectPathType]?: Path
+  readonly [projectionObjectNullabilityType]?: Nullability
+  presence: Expression
+}
+
 export interface DimensionDefinition<
   Path extends string = string,
   Type extends ScalarType = ScalarType,
@@ -314,15 +341,19 @@ export type SummaryFieldDefinition<
 export interface ProjectionDefinition<
   Path extends string = string,
   Field extends ProjectionFieldDefinition = ProjectionFieldDefinition<Path>,
+  Object extends ProjectionObjectDefinition = ProjectionObjectDefinition,
 > {
   fields: Field[]
+  objects: Object[]
 }
 
 export interface ProjectionDefinitionInput<
   Path extends string = string,
   Field extends ProjectionFieldDefinition = ProjectionFieldDefinition<Path>,
+  Object extends ProjectionObjectDefinition = ProjectionObjectDefinition,
 > {
   fields?: Field[]
+  objects?: Object[]
 }
 
 export interface OrderByDefinition {
@@ -345,7 +376,7 @@ export interface FirstBySelection {
 export type RelationSelection = FirstBySelection
 
 export interface GraphDefinitionInput {
-  schemaVersion: 9
+  schemaVersion: 10
   name: string
   root: string
   sources: SourceDefinition[]
@@ -363,12 +394,13 @@ export interface GraphDefinition<
   ProjectionField extends ProjectionFieldDefinition = ProjectionFieldDefinition<ProjectionPath>,
   Relation extends RelationDefinition = RelationDefinition,
   Root extends string = string,
+  ProjectionObject extends ProjectionObjectDefinition = ProjectionObjectDefinition,
 > extends GraphDefinitionInput {
   root: Root
   parameters: Parameter[]
   relations: Relation[]
   constraints: ConstraintDefinition[]
-  projection: ProjectionDefinition<ProjectionPath, ProjectionField>
+  projection: ProjectionDefinition<ProjectionPath, ProjectionField, ProjectionObject>
   orderings: OrderingDefinition<OrderingName>[]
 }
 
@@ -441,6 +473,9 @@ export type DefinitionOrderingName<Definition extends GraphDefinitionInput> =
 
 export type DefinitionProjectionField<Definition extends GraphDefinitionInput> = NonNullable<
   NonNullable<Definition['projection']>['fields']
+>[number]
+export type DefinitionProjectionObject<Definition extends GraphDefinitionInput> = NonNullable<
+  NonNullable<Definition['projection']>['objects']
 >[number]
 
 export type DefinitionRelation<Definition extends GraphDefinitionInput> = NonNullable<Definition['relations']>[number]
@@ -931,6 +966,23 @@ type ProjectionFieldPath<Field> =
       ? Path
       : never
 
+type ProjectionObjectPath<Object> =
+  Object extends ProjectionObjectTypeMetadata<infer Path, infer _Nullability>
+    ? Path
+    : Object extends ProjectionObjectDefinition<infer Path>
+      ? Path
+      : never
+
+type ProjectionObjectNullability<Object> =
+  Object extends ProjectionObjectTypeMetadata<infer _Path, infer Nullability>
+    ? Nullability
+    : Object extends ProjectionObjectDefinition<infer _Path, infer Nullability>
+      ? Nullability
+      : boolean
+
+type ProjectionObjectIsNullable<Definition extends GraphDefinitionInput, Object> =
+  true extends EvaluateNullability<Definition, ProjectionObjectNullability<Object>> ? true : false
+
 type ProjectionFieldValue<Definition extends GraphDefinitionInput, Field, TypeMap extends ScalarOutputTypeMap> =
   Field extends ProjectionTypeMetadata<infer _Path, infer Type, infer Nullability, infer _SelectedByDefault>
     ? true extends EvaluateNullability<Definition, Nullability>
@@ -977,6 +1029,19 @@ type SelectedProjectionField<Definition extends GraphDefinitionInput, Operation>
     ? ProjectionFieldByPath<DefinitionProjectionField<Definition>, Path>
     : DefaultProjectionField<DefinitionProjectionField<Definition>>
 
+type ProjectionObjectForField<Object, Field> = Object extends ProjectionObjectDefinition
+  ? Field extends ProjectionFieldDefinition
+    ? ProjectionFieldPath<Field> extends `${ProjectionObjectPath<Object>}.${string}`
+      ? Object
+      : never
+    : never
+  : never
+
+type SelectedProjectionObject<Definition extends GraphDefinitionInput, Field> = ProjectionObjectForField<
+  DefinitionProjectionObject<Definition>,
+  Field
+>
+
 type ProjectionEntry<
   Definition extends GraphDefinitionInput,
   Field,
@@ -985,6 +1050,13 @@ type ProjectionEntry<
   ? {
       path: ProjectionFieldPath<Field>
       value: ProjectionFieldValue<Definition, Field, TypeMap>
+    }
+  : never
+
+type ProjectionObjectEntry<Definition extends GraphDefinitionInput, Object> = Object extends ProjectionObjectDefinition
+  ? {
+      path: ProjectionObjectPath<Object>
+      nullable: ProjectionObjectIsNullable<Definition, Object>
     }
   : never
 
@@ -1012,16 +1084,47 @@ type NestedProjectionEntry<Entry, Key extends string> = Entry extends {
     : never
   : never
 
-type ProjectionValueAtKey<Entry, Key extends string> = [NestedProjectionEntry<Entry, Key>] extends [never]
+type DirectProjectionObjectNullable<ObjectEntry, Key extends string> = ObjectEntry extends {
+  path: infer Path extends string
+  nullable: infer Nullable extends boolean
+}
+  ? Path extends Key
+    ? Nullable
+    : never
+  : never
+
+type NestedProjectionObjectEntry<ObjectEntry, Key extends string> = ObjectEntry extends {
+  path: infer Path extends string
+  nullable: infer Nullable extends boolean
+}
+  ? Path extends `${Key}.${infer Rest}`
+    ? { path: Rest; nullable: Nullable }
+    : never
+  : never
+
+type ApplyProjectionObjectNullability<Value, ObjectEntry, Key extends string> =
+  true extends DirectProjectionObjectNullable<ObjectEntry, Key> ? Value | null : Value
+
+type ProjectionValueAtKeyWithoutObject<Entry, ObjectEntry, Key extends string> = [
+  NestedProjectionEntry<Entry, Key>,
+] extends [never]
   ? DirectProjectionEntryValue<Entry, Key>
   : [DirectProjectionEntryValue<Entry, Key>] extends [never]
-    ? BuildProjectionResult<NestedProjectionEntry<Entry, Key>>
-    : DirectProjectionEntryValue<Entry, Key> | BuildProjectionResult<NestedProjectionEntry<Entry, Key>>
+    ? BuildProjectionResult<NestedProjectionEntry<Entry, Key>, NestedProjectionObjectEntry<ObjectEntry, Key>>
+    :
+        | DirectProjectionEntryValue<Entry, Key>
+        | BuildProjectionResult<NestedProjectionEntry<Entry, Key>, NestedProjectionObjectEntry<ObjectEntry, Key>>
 
-type BuildProjectionResult<Entry> = [Entry] extends [never]
+type ProjectionValueAtKey<Entry, ObjectEntry, Key extends string> = ApplyProjectionObjectNullability<
+  ProjectionValueAtKeyWithoutObject<Entry, ObjectEntry, Key>,
+  ObjectEntry,
+  Key
+>
+
+type BuildProjectionResult<Entry, ObjectEntry = never> = [Entry] extends [never]
   ? Record<never, never>
   : {
-      [Key in ProjectionEntryHead<Entry>]: ProjectionValueAtKey<Entry, Key>
+      [Key in ProjectionEntryHead<Entry>]: ProjectionValueAtKey<Entry, ObjectEntry, Key>
     }
 
 export type ResultOf<
@@ -1034,7 +1137,12 @@ export type ResultOf<
     : DefinitionOf<
           Extract<Subject, GraphDefinitionInput | QueryGraph | RelationalQueryGraph>
         > extends infer Definition extends GraphDefinitionInput
-      ? BuildProjectionResult<ProjectionEntry<Definition, SelectedProjectionField<Definition, Operation>, TypeMap>>
+      ? SelectedProjectionField<Definition, Operation> extends infer Field
+        ? BuildProjectionResult<
+            ProjectionEntry<Definition, Field, TypeMap>,
+            ProjectionObjectEntry<Definition, SelectedProjectionObject<Definition, Field>>
+          >
+        : never
       : never
 
 type SelectedPaths<Operation> = Operation extends { select: readonly (infer Path extends string)[] } ? Path : never
@@ -1452,6 +1560,14 @@ export interface ProjectionConfiguration<
   default?: SelectedByDefault
 }
 
+export interface ProjectionObjectConfiguration<
+  Path extends string | readonly string[] = string | readonly string[],
+  Value extends ExpressionInput = ExpressionInput,
+> {
+  path: Path
+  presence: Value
+}
+
 type ConfigurationPath<Path extends string | readonly string[]> = Path extends string
   ? Path
   : Path extends readonly string[]
@@ -1470,6 +1586,10 @@ export function project<
   InputNullability<Value>,
   SelectedByDefault
 >
+
+export function projectObject<const Path extends string | readonly string[], const Value extends ExpressionInput>(
+  configuration: ProjectionObjectConfiguration<Path, Value>,
+): TypedProjectionObject<ConfigurationPath<Path>, InputNullability<Value>>
 
 export function dimension<
   const Path extends string | readonly string[],
@@ -1524,6 +1644,7 @@ export interface GraphModuleConfiguration {
   relations?: readonly RelationDefinition[]
   constraints?: readonly ConstraintDefinition[]
   projection?: readonly ProjectionFieldDefinition[]
+  objects?: readonly ProjectionObjectDefinition[]
   orderings?: readonly OrderingDefinition[]
 }
 
@@ -1588,6 +1709,18 @@ type ModuleRelation<Module> =
     ? Relation
     : never
 
+type ModuleProjectionObject<Module> =
+  Module extends GraphModule<
+    infer _Parameter,
+    infer _ProjectionPath,
+    infer _OrderingName,
+    infer _ProjectionField,
+    infer _Relation,
+    infer ProjectionObject
+  >
+    ? ProjectionObject
+    : never
+
 type ProjectionPathOf<Field> = Field extends ProjectionFieldDefinition<infer Path> ? Path : never
 
 type OrderingNameOf<Ordering> = Ordering extends OrderingDefinition<infer Name> ? Name : never
@@ -1607,6 +1740,10 @@ type ConfigurationProjectionField<Configuration> =
   | Extract<ConfigurationElement<Configuration, 'dimensions'>, ProjectionFieldDefinition>
   | Extract<ConfigurationElement<Configuration, 'measures'>, ProjectionFieldDefinition>
   | ModuleProjectionField<ConfigurationElement<Configuration, 'modules'>>
+
+type ConfigurationProjectionObject<Configuration> =
+  | Extract<ConfigurationElement<Configuration, 'objects'>, ProjectionObjectDefinition>
+  | ModuleProjectionObject<ConfigurationElement<Configuration, 'modules'>>
 
 type ConfigurationOrderingName<Configuration> =
   | OrderingNameOf<ConfigurationElement<Configuration, 'orderings'>>
@@ -1628,6 +1765,7 @@ export interface GraphModule<
   OrderingName extends string = string,
   ProjectionField extends ProjectionFieldDefinition = ProjectionFieldDefinition<ProjectionPath>,
   Relation extends RelationDefinition = RelationDefinition,
+  ProjectionObject extends ProjectionObjectDefinition = ProjectionObjectDefinition,
 > {
   readonly name: string
   readonly sources: readonly SourceRef[]
@@ -1635,6 +1773,7 @@ export interface GraphModule<
   readonly relations: readonly Relation[]
   readonly constraints: readonly ConstraintDefinition[]
   readonly projection: readonly ProjectionField[]
+  readonly objects: readonly ProjectionObject[]
   readonly orderings: readonly OrderingDefinition<OrderingName>[]
 }
 
@@ -1645,7 +1784,8 @@ export function defineGraphModule<const Configuration extends GraphModuleConfigu
   ConfigurationProjectionPath<Configuration>,
   ConfigurationOrderingName<Configuration>,
   ConfigurationProjectionField<Configuration>,
-  ConfigurationRelation<Configuration>
+  ConfigurationRelation<Configuration>,
+  ConfigurationProjectionObject<Configuration>
 >
 
 export interface GraphConfiguration {
@@ -1657,6 +1797,7 @@ export interface GraphConfiguration {
   relations?: readonly RelationDefinition[]
   constraints?: readonly ConstraintDefinition[]
   projection?: readonly ProjectionFieldDefinition[]
+  objects?: readonly ProjectionObjectDefinition[]
   orderings?: readonly OrderingDefinition[]
 }
 
@@ -1668,7 +1809,8 @@ export function defineGraph<const Configuration extends GraphConfiguration>(
   ConfigurationOrderingName<Configuration>,
   ConfigurationProjectionField<Configuration>,
   ConfigurationRelation<Configuration>,
-  ConfigurationRoot<Configuration>
+  ConfigurationRoot<Configuration>,
+  ConfigurationProjectionObject<Configuration>
 >
 
 export interface SummaryGraphConfiguration {
@@ -1692,5 +1834,6 @@ export function defineSummaryGraph<const Configuration extends SummaryGraphConfi
   ConfigurationOrderingName<Configuration>,
   ConfigurationProjectionField<Configuration>,
   ConfigurationRelation<Configuration>,
-  ConfigurationRoot<Configuration>
+  ConfigurationRoot<Configuration>,
+  never
 >

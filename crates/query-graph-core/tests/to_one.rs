@@ -47,6 +47,7 @@ fn definition(required: bool) -> GraphDefinition {
     relation
   }];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![
       ProjectionFieldDefinition::new(vec!["id".into()], Expression::field("staff", "id"))
         .selected_by_default(),

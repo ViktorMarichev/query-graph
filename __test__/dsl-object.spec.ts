@@ -17,6 +17,7 @@ import {
   constraint,
   count,
   defineGraph,
+  defineGraphModule,
   dimension,
   eq,
   firstBy,
@@ -24,6 +25,7 @@ import {
   measure,
   ordering,
   project,
+  projectObject,
   relation,
   requiredListParameter,
   source,
@@ -248,4 +250,57 @@ test('object DSL validates ordering configuration before it reaches Rust', (t) =
     t.throws(() => invoke({ name: 'idAsc', by: [byId], default: 'yes' })).message,
     'ordering default must be a boolean',
   )
+})
+
+test('object DSL defines and composes projection object presence', (t) => {
+  const users = source('projectionObjectUsers', { id: 'int64' })
+  const profiles = source('projectionObjectProfiles', {
+    id: 'int64',
+    idUser: 'int64',
+    name: 'string',
+  })
+  const profileObject = projectObject({
+    path: 'profile',
+    presence: profiles.field('id'),
+  })
+  const profileModule = defineGraphModule({
+    name: 'projectionObjectProfile',
+    sources: [profiles],
+    objects: [profileObject],
+    projection: [project({ path: 'profile.name', expression: profiles.field('name') })],
+  })
+
+  const definition = defineGraph({
+    name: 'projectionObjects',
+    root: users,
+    modules: [profileModule],
+    sources: [users],
+    relations: [
+      relation({
+        name: 'profile',
+        from: users,
+        to: profiles,
+        on: eq(users.field('id'), profiles.field('idUser')),
+      }),
+    ],
+  })
+
+  t.deepEqual(definition.projection.objects, [
+    {
+      path: ['profile'],
+      presence: {
+        kind: 'field',
+        source: 'projectionObjectProfiles',
+        field: 'id',
+      },
+    },
+  ])
+
+  const invalid = {
+    path: 'profile',
+    presence: profiles.field('id'),
+    presense: profiles.field('id'),
+  }
+  const error = t.throws(() => projectObject(invalid))
+  t.is(error.message, 'projectObject received unknown configuration field "presense"')
 })

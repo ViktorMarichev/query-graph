@@ -10,6 +10,7 @@ use crate::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QueryPlan {
   projection_indices: Box<[usize]>,
+  projection_object_indices: Box<[usize]>,
   relation_indices: Box<[usize]>,
   pre_aggregation_constraint_indices: Box<[usize]>,
   post_aggregation_constraint_indices: Box<[usize]>,
@@ -21,6 +22,10 @@ pub(crate) struct QueryPlan {
 impl QueryPlan {
   pub(crate) fn projection_indices(&self) -> &[usize] {
     &self.projection_indices
+  }
+
+  pub(crate) fn projection_object_indices(&self) -> &[usize] {
+    &self.projection_object_indices
   }
 
   pub(crate) fn relation_indices(&self) -> &[usize] {
@@ -56,6 +61,8 @@ pub(crate) fn build(
   operation: &QueryOperation,
 ) -> Result<QueryPlan, PlanError> {
   let operation_plan = operation.validate(graph)?;
+  let projection_object_indices =
+    graph.selected_projection_object_indices(&operation_plan.projection_indices);
   let order_by = operation_plan
     .ordering_index
     .map(|index| graph.ordering_at(index).order_by.as_slice())
@@ -81,6 +88,14 @@ pub(crate) fn build(
     required_relations.extend(
       graph
         .projection_relation_path_indices(*projection_index)
+        .iter()
+        .copied(),
+    );
+  }
+  for object_index in &projection_object_indices {
+    required_relations.extend(
+      graph
+        .projection_object_relation_path_indices(*object_index)
         .iter()
         .copied(),
     );
@@ -113,6 +128,13 @@ pub(crate) fn build(
     add_expression_parameters(
       graph,
       &graph.definition().projection.fields[*projection_index].expression,
+      &mut required_parameters,
+    )?;
+  }
+  for object_index in &projection_object_indices {
+    add_expression_parameters(
+      graph,
+      &graph.definition().projection.objects[*object_index].presence,
       &mut required_parameters,
     )?;
   }
@@ -167,6 +189,7 @@ pub(crate) fn build(
 
   Ok(QueryPlan {
     projection_indices: operation_plan.projection_indices.into_boxed_slice(),
+    projection_object_indices: projection_object_indices.into_boxed_slice(),
     relation_indices: relation_indices.into_boxed_slice(),
     pre_aggregation_constraint_indices: pre_aggregation_constraint_indices.into_boxed_slice(),
     post_aggregation_constraint_indices: post_aggregation_constraint_indices.into_boxed_slice(),

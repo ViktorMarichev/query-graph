@@ -16,6 +16,7 @@ pub struct SqlStatement {
   pub sql: String,
   pub bindings: Vec<ParameterBinding>,
   pub columns: Vec<SqlColumn>,
+  pub objects: Vec<SqlProjectionObject>,
   pub relations: Vec<SqlRelation>,
 }
 
@@ -34,6 +35,12 @@ pub struct SqlColumn {
   pub scalar_type: ScalarType,
   pub nullable: bool,
   pub relations: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SqlProjectionObject {
+  pub path: String,
+  pub presence_column: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -94,6 +101,7 @@ pub(crate) fn compile(
 ) -> Result<SqlStatement, SqlCompileError> {
   let plan = planner::build(graph, operation)?;
   let projection_indices = plan.projection_indices();
+  let projection_object_indices = plan.projection_object_indices();
   let mut renderer = Renderer::new(graph, mapping, operation, dialect);
 
   let columns: Vec<_> = projection_indices
@@ -118,7 +126,18 @@ pub(crate) fn compile(
     })
     .collect();
 
-  let select_items: Result<Vec<String>, SqlCompileError> = projection_indices
+  let objects: Vec<_> = projection_object_indices
+    .iter()
+    .enumerate()
+    .map(|(index, object_index)| SqlProjectionObject {
+      path: graph.definition().projection.objects[*object_index]
+        .path
+        .join("."),
+      presence_column: format!("o{index}"),
+    })
+    .collect();
+
+  let mut select_items: Vec<String> = projection_indices
     .iter()
     .zip(&columns)
     .map(|(projection_index, column)| {
@@ -129,12 +148,21 @@ pub(crate) fn compile(
         dialect.quote_identifier(&column.name)
       ))
     })
-    .collect();
+    .collect::<Result<_, SqlCompileError>>()?;
+
+  for (object_index, object) in projection_object_indices.iter().zip(&objects) {
+    let presence = &graph.definition().projection.objects[*object_index].presence;
+    select_items.push(format!(
+      "  {} AS {}",
+      renderer.render_expression(presence)?,
+      dialect.quote_identifier(&object.presence_column)
+    ));
+  }
 
   let root = graph.root();
   let mut sql = format!(
     "SELECT\n{}\nFROM {}",
-    select_items?.join(",\n"),
+    select_items.join(",\n"),
     renderer.render_source(&root.key)?
   );
 
@@ -225,6 +253,7 @@ pub(crate) fn compile(
     sql,
     bindings: renderer.into_bindings(),
     columns,
+    objects,
     relations,
   })
 }

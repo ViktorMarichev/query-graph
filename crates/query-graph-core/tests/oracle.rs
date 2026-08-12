@@ -50,6 +50,7 @@ fn definition() -> GraphDefinition {
     }),
   ];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec!["value".into(), "label".into()],
       Expression::Function {
@@ -185,6 +186,7 @@ fn keeps_long_logical_names_out_of_oracle_identifiers() {
     vec![FieldDefinition::new("id", ScalarType::Int64)],
   )];
   definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
     fields: vec![ProjectionFieldDefinition::new(
       vec![PATH.into()],
       Expression::field(SOURCE, "id"),

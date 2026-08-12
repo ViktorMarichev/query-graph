@@ -13,6 +13,7 @@ import {
   measure,
   nullable,
   project,
+  projectObject,
   relation,
   source,
   sum,
@@ -229,4 +230,53 @@ test('infers summary dimensions and measures', (t) => {
 
   const summaryTypesAreInferred: Equal<Actual, Expected> = true
   t.true(summaryTypesAreInferred)
+})
+
+test('infers nullable projection objects from their presence expression', (t) => {
+  const account = source('objectAccount', { id: 'int64' })
+  const profile = source('objectProfile', {
+    id: 'int64',
+    idAccount: 'int64',
+    displayName: nullable('string'),
+  })
+
+  const profileModule = defineGraphModule({
+    name: 'accountProfile',
+    sources: [profile],
+    objects: [projectObject({ path: 'profile', presence: profile.field('id') })],
+    projection: [
+      project({
+        path: 'profile.displayName',
+        expression: profile.field('displayName'),
+        default: true,
+      }),
+    ],
+  })
+
+  const objectDefinition = defineGraph({
+    name: 'accountsWithProfiles',
+    root: account,
+    modules: [profileModule],
+    sources: [account],
+    relations: [
+      relation({
+        name: 'profile',
+        from: account,
+        to: profile,
+        on: eq(account.field('id'), profile.field('idAccount')),
+      }),
+    ],
+    projection: [project({ path: 'id', expression: account.field('id'), default: true })],
+  })
+
+  type Actual = ResultOf<typeof objectDefinition>
+  type Expected = {
+    id: number | string
+    profile: {
+      displayName: string | null
+    } | null
+  }
+
+  const objectNullabilityIsInferred: Equal<Actual, Expected> = true
+  t.true(objectNullabilityIsInferred)
 })

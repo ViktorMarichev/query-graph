@@ -1,11 +1,189 @@
 # query-graph
 
-Нативное планирование графов запросов и компиляция SQL для Node.js.
+Типизированное описание графов запросов, нативное планирование и компиляция SQL
+для Node.js.
 
-Пакет отвечает за валидацию графа, планирование и генерацию SQL. Подключение к
-базе данных и исполнение запросов остаются ответственностью потребителя.
-Один и тот же граф и реляционное отображение могут компилироваться в SQL Server
-или Oracle SQL.
+`query-graph` позволяет один раз описать доступные данные и связи без SQL, а для
+каждой операции выбрать поля, параметры, сортировку и пагинацию. Rust проверяет
+definition, строит минимальный план связей и компилирует его в SQL Server или
+Oracle SQL.
+
+Пакет намеренно **не подключается к базе данных и не выполняет SQL**. Он
+возвращает SQL, bindings и metadata результата; способ исполнения остаётся у
+приложения.
+
+Основные возможности:
+
+- строгий TypeScript DSL для sources, parameters, relations и projections;
+- runtime-валидация definition и operation в Rust;
+- выбор только необходимых JOIN по запрошенным projection paths;
+- один definition для SQL Server и Oracle;
+- scalar/list parameters без подстановки значений в SQL;
+- `exists`, детерминированные to-one relations, summary-графы и batch relations;
+- тип результата через `ResultOf`.
+
+Требуется Node.js 20 или новее.
+
+## Быстрый старт
+
+### Установка
+
+```bash
+npm install @query-graph/core
+```
+
+Основной объектный DSL уже входит в пакет и доступен через
+`@query-graph/core/dsl`.
+
+### 1. Опишите доступные данные
+
+Definition использует логические имена. Здесь нет имён таблиц, SQL-алиасов или
+синтаксиса конкретной СУБД.
+
+```ts
+import { registerDefinition } from '@query-graph/core'
+import { constraint, defineGraph, eq, param, project, requiredParameter, source } from '@query-graph/core/dsl'
+import type { QueryOperation, ResultOf } from '@query-graph/core/dsl'
+
+const users = source('users', {
+  id: 'int64',
+  organisationId: 'int64',
+  email: 'string',
+})
+
+const organisationId = requiredParameter('organisationId', 'int64')
+
+const usersDefinition = defineGraph({
+  name: 'users',
+  root: users,
+  sources: [users],
+  parameters: [organisationId],
+  constraints: [
+    constraint({
+      predicate: eq(users.field('organisationId'), param(organisationId)),
+    }),
+  ],
+  projection: [
+    project({ path: 'id', expression: users.field('id'), default: true }),
+    project({ path: 'email', expression: users.field('email'), default: true }),
+  ],
+})
+```
+
+### 2. Добавьте реляционное отображение
+
+Mapping связывает логический source с физической таблицей. Его можно заменить,
+не меняя definition.
+
+```ts
+const usersGraph = registerDefinition(usersDefinition).withRelationalMapping({
+  sources: {
+    users: {
+      table: { schema: 'dbo', name: 'users' },
+      columns: {
+        organisationId: 'organisation_id',
+      },
+    },
+  },
+})
+```
+
+`registerDefinition` валидирует и индексирует definition в Rust. Обычно граф
+регистрируется один раз при запуске приложения и затем переиспользуется.
+
+### 3. Скомпилируйте операцию
+
+Operation содержит только изменяемую часть запроса. TypeScript проверяет имена
+полей и параметров относительно конкретного definition.
+
+```ts
+const operation = {
+  select: ['id', 'email'],
+  parameters: {
+    organisationId: 42,
+  },
+} as const satisfies QueryOperation<typeof usersDefinition>
+
+const statement = usersGraph.compileSqlServer(operation)
+
+console.log(statement.sql)
+console.table(statement.bindings)
+console.table(statement.columns)
+
+type UserRow = ResultOf<typeof usersDefinition, typeof operation>
+// { id: number | string; email: string }
+```
+
+Для SQL Server получится параметризованный запрос:
+
+```sql
+SELECT
+  [t0].[id] AS [c0],
+  [t0].[email] AS [c1]
+FROM [dbo].[users] AS [t0]
+WHERE
+  ([t0].[organisation_id] = @p0)
+```
+
+В `statement.bindings` placeholder `p0` будет связан с параметром
+`organisationId` типа `int64`.
+
+Тот же graph можно передать другому compiler:
+
+```ts
+const oracleStatement = usersGraph.compileOracle(operation, { version: '19c' })
+```
+
+### 4. Выполните SQL своим драйвером
+
+Результат компиляции не содержит соединение с базой данных:
+
+| Поле statement | Назначение                                                                     |
+| -------------- | ------------------------------------------------------------------------------ |
+| `sql`          | SQL с именованными placeholders `p0`, `p1` и так далее                         |
+| `bindings`     | связь placeholder с параметром operation, его типом и индексом элемента списка |
+| `columns`      | связь физической колонки `cN` с projection path и scalar type                  |
+| `objects`      | presence-маркеры для nullable вложенных объектов                               |
+| `relations`    | связи, фактически выбранные planner для этой операции                          |
+
+Executor приложения берёт значения из `operation.parameters` согласно
+`statement.bindings`, передаёт их DB driver и восстанавливает логические поля по
+`statement.columns`. Разбирать SQL для этого не требуется.
+
+## Как выбрать возможность
+
+| Задача                                                   | API или раздел                                              |
+| -------------------------------------------------------- | ----------------------------------------------------------- |
+| Выбрать связанные поля `0..1` или `1`                    | [`relation` и `firstBy`](#to-one-selection)                 |
+| Отфильтровать root по наличию связанных строк            | [`exists`](#existential-constraints)                        |
+| Переиспользовать часть definition                        | [GraphModule](#композиция-через-graphmodule)                |
+| Передать массив в `IN (...)`                             | [Параметры-списки](#параметры-списки)                       |
+| Выбирать сортировку во время выполнения                  | [Именованные сортировки](#именованные-сортировки)           |
+| Получить агрегированный результат                        | [Summary-графы](#summary-графы)                             |
+| Отличить отсутствующий объект от объекта с `NULL`-полями | [Presence объектной проекции](#presence-объектной-проекции) |
+| Загрузить коллекцию после пагинации root                 | [Batch-связи](#batch-связи-и-двухфазное-выполнение)         |
+| Обработать структурированную ошибку                      | [Диагностика](#диагностика)                                 |
+
+## Модель использования
+
+| Понятие                | Когда создаётся                     | За что отвечает                                         |
+| ---------------------- | ----------------------------------- | ------------------------------------------------------- |
+| `GraphDefinition`      | при объявлении графа                | логические sources, relations, constraints и projection |
+| `QueryGraph`           | один раз после `registerDefinition` | проверенный и проиндексированный нативный граф          |
+| `RelationalMapping`    | при конфигурации приложения         | физические таблицы и переименования колонок             |
+| `QueryOperation`       | для конкретного запроса             | выбранные поля, параметры, ordering и pagination        |
+| `CompiledSqlStatement` | при компиляции operation            | SQL и metadata, необходимые executor приложения         |
+| `GraphModule`          | при композиции definition           | переиспользуемый фрагмент без собственного root         |
+
+Обычный жизненный цикл выглядит так:
+
+```text
+defineGraph -> registerDefinition -> withRelationalMapping
+                                      |
+QueryOperation -----------------------+-> compileSqlServer / compileOracle
+                                              |
+                                              +-> executor приложения -> DB driver
+```
 
 ## Архитектура пакета
 
@@ -118,6 +296,8 @@ const definition = defineGraph({
 
 const graph = registerDefinition(definition)
 ```
+
+### Композиция через GraphModule
 
 `GraphModule` группирует переиспользуемую часть определения: источники,
 параметры, связи, ограничения, проекцию и сортировку. У модуля нет собственного
@@ -579,6 +759,64 @@ try {
 Wire errors, semantic validation и SQL compilation имеют разные верхнеуровневые
 `code`. Коды отдельных `issues` стабильны и не требуют разбора текста `message`.
 
+## Presence объектной проекции
+
+Nullable-поля не позволяют определить, отсутствует ли вложенный объект: существующий
+объект может корректно содержать только `NULL`. Для такой границы definition явно
+задаёт выражение присутствия через `projectObject`:
+
+```ts
+const definition = defineGraph({
+  name: 'users',
+  root: users,
+  sources: [users, profiles],
+  relations: [
+    relation({
+      name: 'profile',
+      from: users,
+      to: profiles,
+      on: eq(users.field('id'), profiles.field('userId')),
+    }),
+  ],
+  objects: [
+    projectObject({
+      path: 'profile',
+      presence: profiles.field('id'),
+    }),
+  ],
+  projection: [
+    project({
+      path: 'profile.displayName',
+      expression: profiles.field('displayName'),
+    }),
+  ],
+})
+```
+
+`presence` должно возвращать не-`NULL`, когда объект существует, и `NULL`, когда
+его нет. Обычно для этого используется обязательный идентификатор source за
+optional relation. Маркер не является доступным для выбора полем проекции.
+
+Если operation выбирает хотя бы одно поле под `profile`, planner включает
+presence-выражение в план. SQL compiler добавляет скрытую колонку, например `o0`,
+и возвращает отдельные metadata:
+
+```ts
+statement.objects
+// [{ path: 'profile', presenceColumn: 'o0' }]
+```
+
+`statement.columns` по-прежнему содержит только публичные поля `c0`, `c1` и так
+далее. Исполнитель сначала восстанавливает результат по `statement.columns`, а
+затем устанавливает объект по `path` в `null`, если соответствующая исходная
+колонка `presenceColumn` равна `NULL`. Для вложенных объектов metadata упорядочены
+от самого глубокого path к внешнему.
+
+Таким образом, исполнитель не угадывает отсутствие объекта по правилу «все поля
+равны `NULL`». `ResultOf` также учитывает declaration и выводит
+`profile: { ... } | null`. Пакет только компилирует SQL и metadata; выполнение
+запроса и materialization остаются у потребителя.
+
 ## SQL Server
 
 Реляционное отображение связывает логические источники с физическими таблицами.
@@ -775,3 +1013,9 @@ Batch-связь может задать собственный `ordering`, но
 path соответствующего шага в `plan.batches` нет. Флаги injection в metadata
 показывают executor, какие ключи были добавлены исключительно для связывания и
 не должны попасть в публичный результат.
+
+---
+
+### Rule 34
+
+> Every sufficiently generic abstraction eventually gets an implementation.
