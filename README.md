@@ -88,6 +88,19 @@ const usersGraph = registerDefinition(usersDefinition).withRelationalMapping({
 })
 ```
 
+Mapping переиспользуемых частей можно держать рядом с ними и объединять при
+регистрации итогового графа:
+
+```ts
+const usersGraph = registerDefinition(usersDefinition).withRelationalMappings([usersMapping, profileMapping])
+```
+
+Фрагменты могут дополнять `columns` одного source, если указывают одинаковую
+таблицу. Повтор одинакового отображения безопасен. Разные таблицы для одного
+source или разные физические колонки для одного логического поля возвращают
+структурированную ошибку фазы `mapping`. После объединения mapping всё равно
+должен полностью покрывать sources итогового definition.
+
 `registerDefinition` валидирует и индексирует definition в Rust. Обычно граф
 регистрируется один раз при запуске приложения и затем переиспользуется.
 
@@ -178,7 +191,7 @@ Executor приложения берёт значения из `operation.parame
 Обычный жизненный цикл выглядит так:
 
 ```text
-defineGraph -> registerDefinition -> withRelationalMapping
+defineGraph -> registerDefinition -> withRelationalMapping(s)
                                       |
 QueryOperation -----------------------+-> compileSqlServer / compileOracle
                                               |
@@ -865,6 +878,9 @@ const relationalGraph = graph.withRelationalMapping({
   },
 })
 ```
+
+`withRelationalMappings([...])` является формой композиции того же mapping и
+возвращает такой же типизированный `RelationalQueryGraph`.
 
 Операция передается в Rust одним вызовом. Компилятор выбирает необходимые пути
 связей, формирует синтаксис SQL Server и возвращает описания параметров.

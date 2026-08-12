@@ -236,6 +236,26 @@ impl QueryGraph {
 
     Ok(RelationalQueryGraph { graph })
   }
+
+  #[napi(ts_args_type = "mappings: readonly import('./definition.js').RelationalMapping[]")]
+  pub fn with_relational_mappings(
+    &self,
+    env: Env,
+    mappings: Vec<serde_json::Value>,
+  ) -> Result<RelationalQueryGraph> {
+    let mappings = mappings
+      .into_iter()
+      .map(|mapping| {
+        serde_json::from_value(mapping).map_err(|error| node_error::mapping_wire(&env, error))
+      })
+      .collect::<Result<Vec<RelationalMapping>>>()?;
+    let mapping =
+      RelationalMapping::merge(mappings).map_err(|issues| node_error::mapping(&env, &issues))?;
+    let graph = MappedQueryGraph::new(Arc::clone(&self.graph), mapping)
+      .map_err(|issues| node_error::mapping(&env, &issues))?;
+
+    Ok(RelationalQueryGraph { graph })
+  }
 }
 
 #[napi]

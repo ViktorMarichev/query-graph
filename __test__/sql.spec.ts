@@ -219,6 +219,76 @@ test('returns relational mapping errors to Node.js', (t) => {
   t.regex(error.message, /MissingSource/)
 })
 
+test('composes compatible relational mapping fragments', (t) => {
+  const table = { schema: 'dbo', name: 'ControllerAttributeValueLink' }
+  const graph = registerDefinition(definition).withRelationalMappings([
+    {
+      sources: {
+        link: {
+          table,
+          columns: { idOwner: 'owner_id' },
+        },
+      },
+    },
+    {
+      sources: {
+        link: {
+          table,
+          columns: { order: 'sort_order' },
+        },
+        value: { table: 'ControllerObjectValue' },
+      },
+    },
+  ])
+  const equivalentGraph = registerDefinition(definition).withRelationalMapping({
+    sources: {
+      link: {
+        table,
+        columns: {
+          idOwner: 'owner_id',
+          order: 'sort_order',
+        },
+      },
+      value: { table: 'ControllerObjectValue' },
+    },
+  })
+  const operation = { parameters: { idOwner: 42 } } as const
+
+  t.deepEqual(graph.compileSqlServer(operation), equivalentGraph.compileSqlServer(operation))
+})
+
+test('returns relational mapping fragment conflicts to Node.js', (t) => {
+  const graph = registerDefinition(definition)
+  const error = t.throws(() =>
+    graph.withRelationalMappings([
+      {
+        sources: {
+          link: {
+            table: 'ControllerAttributeValueLink',
+            columns: { idOwner: 'owner_id' },
+          },
+          value: { table: 'ControllerObjectValue' },
+        },
+      },
+      {
+        sources: {
+          link: {
+            table: 'LegacyAttributeValueLink',
+            columns: { idOwner: 'legacy_owner_id' },
+          },
+        },
+      },
+    ]),
+  ) as QueryGraphError
+
+  t.is(error.code, 'QUERY_GRAPH_MAPPING_INVALID')
+  t.is(error.phase, 'mapping')
+  t.deepEqual(
+    new Set(error.issues.map((issue) => issue.code)),
+    new Set(['conflictingSourceTable', 'conflictingColumn']),
+  )
+})
+
 test('returns projection object presence metadata to Node.js', (t) => {
   const users = source('presenceUsers', { id: 'int64' })
   const profiles = source('presenceProfiles', {

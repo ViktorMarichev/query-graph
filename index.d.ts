@@ -30,6 +30,7 @@ export declare class QueryGraph {
   hasRelation(relation: string): boolean
   selectableFields(): Array<string>
   withRelationalMapping(mapping: import('./definition.js').RelationalMapping): RelationalQueryGraph
+  withRelationalMappings(mappings: readonly import('./definition.js').RelationalMapping[]): RelationalQueryGraph
 }
 
 export declare class RelationalQueryGraph {

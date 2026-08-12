@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 use std::error::Error;
 use std::fmt;
 
@@ -13,6 +13,58 @@ pub struct RelationalMapping {
 }
 
 impl RelationalMapping {
+  pub fn merge(mappings: impl IntoIterator<Item = Self>) -> Result<Self, MappingIssues> {
+    let mut sources: HashMap<String, SourceMapping> = HashMap::new();
+    let mut issues = Vec::new();
+
+    for (mapping_index, mapping) in mappings.into_iter().enumerate() {
+      for (source, source_mapping) in mapping.sources {
+        let Some(existing) = sources.get_mut(&source) else {
+          sources.insert(source, source_mapping);
+          continue;
+        };
+
+        if !existing.table.denotes_same_table(&source_mapping.table) {
+          issues.push(MappingIssue::new(
+            MappingIssueCode::ConflictingSourceTable,
+            format!("mappings[{mapping_index}].sources.{source}.table"),
+            format!(
+              "source {source:?} maps to conflicting physical tables {:?} and {:?}",
+              existing.table, source_mapping.table
+            ),
+          ));
+        }
+
+        for (field, column) in source_mapping.columns {
+          match existing.columns.entry(field) {
+            Entry::Vacant(entry) => {
+              entry.insert(column);
+            }
+            Entry::Occupied(entry) if entry.get() == &column => {}
+            Entry::Occupied(entry) => {
+              let field = entry.key();
+              issues.push(MappingIssue::new(
+                MappingIssueCode::ConflictingColumn,
+                format!("mappings[{mapping_index}].sources.{source}.columns.{field}"),
+                format!(
+                  "field {source:?}.{field:?} maps to conflicting physical columns {:?} and {:?}",
+                  entry.get(),
+                  column
+                ),
+              ));
+            }
+          }
+        }
+      }
+    }
+
+    if issues.is_empty() {
+      Ok(Self { sources })
+    } else {
+      Err(MappingIssues(issues))
+    }
+  }
+
   pub fn compile(self, graph: &CompiledGraph) -> Result<CompiledRelationalMapping, MappingIssues> {
     let mut issues = Vec::new();
 
@@ -98,6 +150,31 @@ pub enum TableName {
   },
 }
 
+impl TableName {
+  fn denotes_same_table(&self, other: &Self) -> bool {
+    match (self, other) {
+      (Self::Name(left), Self::Name(right)) => left == right,
+      (
+        Self::Name(left),
+        Self::Qualified {
+          catalog: None,
+          schema: None,
+          name: right,
+        },
+      )
+      | (
+        Self::Qualified {
+          catalog: None,
+          schema: None,
+          name: left,
+        },
+        Self::Name(right),
+      ) => left == right,
+      (left, right) => left == right,
+    }
+  }
+}
+
 impl From<String> for TableName {
   fn from(name: String) -> Self {
     Self::Name(name)
@@ -152,6 +229,8 @@ impl MappingIssue {
 #[serde(rename_all = "camelCase")]
 pub enum MappingIssueCode {
   MissingSource,
+  ConflictingSourceTable,
+  ConflictingColumn,
   UnknownSource,
   EmptyTableName,
   EmptyTableQualifier,

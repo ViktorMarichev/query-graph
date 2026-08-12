@@ -532,6 +532,7 @@ export interface QueryGraph<Definition extends GraphDefinitionInput = GraphDefin
   hasRelation(relation: string): boolean
   selectableFields(): Array<DefinitionProjectionPath<Definition>>
   withRelationalMapping(mapping: RelationalMapping): RelationalQueryGraph<Definition>
+  withRelationalMappings(mappings: readonly RelationalMapping[]): RelationalQueryGraph<Definition>
 }
 
 export interface RelationalQueryGraph<Definition extends GraphDefinitionInput = GraphDefinitionInput> {

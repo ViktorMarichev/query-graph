@@ -84,12 +84,18 @@ test('propagates definition parameters and projection paths to query operations'
   })
 
   const graph = registerDefinition(definition)
-  const relationalGraph = graph.withRelationalMapping({
-    sources: {
-      staff: { table: 'Staff' },
-      personStaff: { table: 'PersonStaff' },
+  const relationalGraph = graph.withRelationalMappings([
+    {
+      sources: {
+        staff: { table: 'Staff' },
+      },
     },
-  })
+    {
+      sources: {
+        personStaff: { table: 'PersonStaff' },
+      },
+    },
+  ])
 
   relationalGraph.compileSqlServer({
     select: ['id', 'credentials.idPerson'],
