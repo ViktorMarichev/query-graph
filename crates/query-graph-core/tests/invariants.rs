@@ -117,7 +117,7 @@ fn rejects_relations_pointing_to_the_root() {
 }
 
 #[test]
-fn rejects_exists_outside_graph_constraints() {
+fn rejects_exists_in_projections() {
   let mut definition = GraphDefinition::new("existsProjection", "root");
   definition.sources = vec![source("root"), source("child")];
   definition.relations = vec![relation("child", "root", "child")];
@@ -156,6 +156,29 @@ fn validates_exists_target_and_predicate_scope() {
   assert!(codes.contains(&DefinitionIssueCode::InvalidExistsSource));
   assert!(codes.contains(&DefinitionIssueCode::UnknownExistsSource));
   assert!(codes.contains(&DefinitionIssueCode::ExistsExpressionScope));
+}
+
+#[test]
+fn requires_explicit_correlation_for_exists_in_relation_predicates() {
+  let mut definition = GraphDefinition::new("relationExistsCorrelation", "root");
+  definition.sources = vec![source("root"), source("child"), source("flag")];
+  definition.relations = vec![
+    RelationDefinition::new(
+      "child",
+      "root",
+      "child",
+      Expression::and([
+        Expression::eq(
+          Expression::field("root", "id"),
+          Expression::field("child", "id"),
+        ),
+        Expression::exists("flag"),
+      ]),
+    ),
+    relation("flag", "child", "flag"),
+  ];
+
+  assert!(issue_codes(definition).contains(&DefinitionIssueCode::InvalidExistsSource));
 }
 
 #[test]

@@ -133,6 +133,83 @@ fn compiles_first_by_to_oracle_12c_apply() {
 }
 
 #[test]
+fn compiles_correlated_exists_inside_first_by_relation_predicate() {
+  let mut definition = definition(false);
+  definition.sources.push(SourceDefinition::new(
+    "credentialFlag",
+    vec![
+      FieldDefinition::new("idPersonStaff", ScalarType::Int64),
+      FieldDefinition::new("enabled", ScalarType::Boolean),
+    ],
+  ));
+  definition.relations.push(
+    RelationDefinition::new(
+      "credentialFlags",
+      "personStaff",
+      "credentialFlag",
+      Expression::eq(
+        Expression::field("personStaff", "id"),
+        Expression::field("credentialFlag", "idPersonStaff"),
+      ),
+    )
+    .many(),
+  );
+  let base_predicate = definition.relations[0].on.clone();
+  definition.relations[0].on = Expression::and([
+    base_predicate,
+    Expression::exists_from_where(
+      "credentialFlag",
+      "personStaff",
+      Expression::eq(
+        Expression::field("credentialFlag", "enabled"),
+        Expression::literal(LiteralValue::Boolean(true)),
+      ),
+    ),
+  ]);
+
+  let graph = MappedQueryGraph::new(
+    definition.compile().unwrap(),
+    RelationalMapping {
+      sources: HashMap::from([
+        ("staff".into(), SourceMapping::new("Staff")),
+        ("personStaff".into(), SourceMapping::new("PersonStaff")),
+        (
+          "credentialFlag".into(),
+          SourceMapping::new("CredentialFlag"),
+        ),
+      ]),
+    },
+  )
+  .unwrap();
+
+  let sql_server = graph
+    .compile_sql_server(&QueryOperation::default())
+    .unwrap();
+  assert!(sql_server.sql.contains("OUTER APPLY ("));
+  assert!(sql_server.sql.contains("AND EXISTS ("));
+  assert!(sql_server.sql.contains("FROM [CredentialFlag] AS [t2]"));
+  assert!(sql_server
+    .sql
+    .contains("WHERE ([t1].[id] = [t2].[idPersonStaff])"));
+  assert_eq!(
+    sql_server
+      .relations
+      .iter()
+      .map(|relation| relation.name.as_str())
+      .collect::<Vec<_>>(),
+    vec!["credentials"]
+  );
+
+  let oracle = graph.compile_oracle(&QueryOperation::default()).unwrap();
+  assert!(oracle.sql.contains("OUTER APPLY ("));
+  assert!(oracle.sql.contains("AND EXISTS ("));
+  assert!(oracle.sql.contains("FROM \"CredentialFlag\" \"t2\""));
+  assert!(oracle
+    .sql
+    .contains("WHERE (\"t1\".\"id\" = \"t2\".\"idPersonStaff\")"));
+}
+
+#[test]
 fn reports_first_by_as_unsupported_on_oracle_11g() {
   let compiler = OracleCompiler::new(OracleVersion::V11g);
   let error = graph(false)

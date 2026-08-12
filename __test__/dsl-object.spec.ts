@@ -13,6 +13,7 @@ import {
 import type { GraphDefinition } from '../definition.js'
 import { registerDefinition } from '../index.js'
 import {
+  and,
   asc,
   constraint,
   count,
@@ -20,6 +21,7 @@ import {
   defineGraphModule,
   dimension,
   eq,
+  exists,
   firstBy,
   inParameter,
   measure,
@@ -122,6 +124,71 @@ test('object DSL produces the canonical functional definition', (t) => {
   type ProjectionPath = ProjectionPathOf<typeof objectDefinition>
   const projectionPathsArePreserved: Equal<ProjectionPath, 'id' | 'credentials.idPerson'> = true
   t.true(projectionPathsArePreserved)
+})
+
+test('object DSL compiles an anchored exists inside a firstBy relation', (t) => {
+  const users = source('users', { id: 'int64' })
+  const profiles = source('profiles', {
+    id: 'int64',
+    idUser: 'int64',
+  })
+  const profileFlags = source('profileFlags', {
+    idProfile: 'int64',
+    enabled: 'boolean',
+  })
+
+  const definition = defineGraph({
+    name: 'usersWithPreferredProfile',
+    root: users,
+    sources: [users, profiles, profileFlags],
+    relations: [
+      relation({
+        name: 'profile',
+        from: users,
+        to: profiles,
+        on: and(
+          eq(users.field('id'), profiles.field('idUser')),
+          exists(profileFlags, eq(profileFlags.field('enabled'), true), {
+            from: profiles,
+          }),
+        ),
+        selection: firstBy(asc(profiles.field('id'))),
+      }),
+      relation({
+        name: 'profileFlags',
+        from: profiles,
+        to: profileFlags,
+        on: eq(profiles.field('id'), profileFlags.field('idProfile')),
+        cardinality: 'many',
+      }),
+    ],
+    projection: [
+      project({ path: 'id', expression: users.field('id'), default: true }),
+      project({
+        path: 'profile.id',
+        expression: profiles.field('id'),
+        default: true,
+      }),
+    ],
+  })
+
+  const statement = registerDefinition(definition)
+    .withRelationalMapping({
+      sources: {
+        users: { table: 'Users' },
+        profiles: { table: 'Profiles' },
+        profileFlags: { table: 'ProfileFlags' },
+      },
+    })
+    .compileSqlServer({})
+
+  t.true(statement.sql.includes('OUTER APPLY ('))
+  t.true(statement.sql.includes('AND EXISTS ('))
+  t.true(statement.sql.includes('FROM [ProfileFlags] AS [t2]'))
+  t.deepEqual(
+    statement.relations.map(({ name }) => name),
+    ['profile'],
+  )
 })
 
 test('object DSL preserves summary field semantics', (t) => {

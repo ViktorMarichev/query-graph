@@ -41,8 +41,8 @@ impl<'a> DefinitionValidator<'a> {
     self.index_sources();
     self.validate_root();
     self.index_parameters();
-    self.validate_relations();
     self.source_scopes = topology::infer_source_scopes(self.definition, &self.sources);
+    self.validate_relations();
     self.validate_constraints();
     self.validate_projection();
     self.validate_orderings();
@@ -193,12 +193,11 @@ impl<'a> DefinitionValidator<'a> {
       }
 
       let allowed_sources = HashSet::from([relation.from.clone(), relation.to.clone()]);
-      let context = ExpressionContext::scoped(
+      let context = ExpressionContext::relation_predicate(
         &self.sources,
         &self.parameters,
         &self.source_scopes,
         &allowed_sources,
-        DefinitionIssueCode::RelationExpressionScope,
       );
       expression::validate(
         &relation.on,

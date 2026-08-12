@@ -382,9 +382,9 @@ const graph = registerDefinition(definition)
 
 ### Existential constraints
 
-`exists(source, predicate?)` задаёт семантический квантор внутри constraint.
-Указывать SQL-подзапрос или correlation columns не требуется: Rust использует
-уникальный relation path от root до указанного source.
+`exists(source, predicate?)` задаёт семантический квантор. В graph constraint
+Rust по умолчанию использует уникальный relation path от root до указанного source,
+поэтому описывать SQL-подзапрос или correlation columns не требуется.
 
 ```ts
 constraint({
@@ -393,8 +393,9 @@ constraint({
 ```
 
 Predicate может обращаться к root и sources на выведенном пути. Ссылки на
-соседнюю ветку отклоняются при регистрации definition. `exists` вне constraints
-также отклоняется; отрицание выражается обычным `not(exists(...))`.
+соседнюю ветку отклоняются при регистрации definition. Помимо constraints,
+явно коррелированный `exists` разрешён в `relation.on`; в projections, ordering
+и selection он отклоняется. Отрицание выражается обычным `not(exists(...))`.
 
 Planner воспринимает existential branch как semijoin. Sources этой ветки не
 добавляются во внешние JOIN и `statement.relations`, поэтому relation с
@@ -414,6 +415,25 @@ constraint({
 `from` должен быть строгим предком целевого source на relation path. Planner
 оставляет путь до `from` во внешнем запросе, а оставшийся путь компилирует как
 коррелированный semijoin.
+
+В `relation.on` точка корреляции обязательна. Это позволяет сначала ограничить
+множество кандидатов связи, а затем применить `firstBy`:
+
+```ts
+relation({
+  name: 'profile',
+  from: users,
+  to: profiles,
+  on: and(
+    eq(users.field('id'), profiles.field('userId')),
+    exists(profileFlags, eq(profileFlags.field('enabled'), true), { from: profiles }),
+  ),
+  selection: firstBy(asc(profiles.field('id'))),
+})
+```
+
+Такой `exists` становится semijoin внутри relation predicate. Его branch не
+материализуется во внешние JOIN и не меняет cardinality результата.
 
 ### Параметры-списки
 

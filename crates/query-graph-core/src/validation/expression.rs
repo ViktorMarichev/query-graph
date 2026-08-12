@@ -9,12 +9,19 @@ struct ExpressionScope<'a> {
   issue_code: DefinitionIssueCode,
 }
 
+#[derive(Clone, Copy)]
+enum ExistsPolicy {
+  Deny,
+  AllowImplicitCorrelation,
+  RequireExplicitCorrelation,
+}
+
 pub(super) struct ExpressionContext<'a> {
   sources: &'a HashMap<String, HashSet<String>>,
   parameters: &'a HashMap<String, ParameterShape>,
   source_scopes: &'a HashMap<String, HashSet<String>>,
   scope: Option<ExpressionScope<'a>>,
-  allow_exists: bool,
+  exists_policy: ExistsPolicy,
 }
 
 impl<'a> ExpressionContext<'a> {
@@ -28,7 +35,7 @@ impl<'a> ExpressionContext<'a> {
       parameters,
       source_scopes,
       scope: None,
-      allow_exists: false,
+      exists_policy: ExistsPolicy::Deny,
     }
   }
 
@@ -42,7 +49,7 @@ impl<'a> ExpressionContext<'a> {
       parameters,
       source_scopes,
       scope: None,
-      allow_exists: true,
+      exists_policy: ExistsPolicy::AllowImplicitCorrelation,
     }
   }
 
@@ -61,7 +68,25 @@ impl<'a> ExpressionContext<'a> {
         allowed_sources,
         issue_code: scope_issue_code,
       }),
-      allow_exists: false,
+      exists_policy: ExistsPolicy::Deny,
+    }
+  }
+
+  pub(super) fn relation_predicate(
+    sources: &'a HashMap<String, HashSet<String>>,
+    parameters: &'a HashMap<String, ParameterShape>,
+    source_scopes: &'a HashMap<String, HashSet<String>>,
+    allowed_sources: &'a HashSet<String>,
+  ) -> Self {
+    Self {
+      sources,
+      parameters,
+      source_scopes,
+      scope: Some(ExpressionScope {
+        allowed_sources,
+        issue_code: DefinitionIssueCode::RelationExpressionScope,
+      }),
+      exists_policy: ExistsPolicy::RequireExplicitCorrelation,
     }
   }
 
@@ -74,7 +99,7 @@ impl<'a> ExpressionContext<'a> {
         allowed_sources,
         issue_code: DefinitionIssueCode::ExistsExpressionScope,
       }),
-      allow_exists: self.allow_exists,
+      exists_policy: self.exists_policy,
     }
   }
 }
@@ -193,12 +218,22 @@ fn validate_exists(
   context: &ExpressionContext<'_>,
   issues: &mut Vec<DefinitionIssue>,
 ) {
-  if !context.allow_exists {
-    issues.push(DefinitionIssue::new(
-      DefinitionIssueCode::InvalidExistsContext,
-      location,
-      "exists expressions are allowed only in graph constraints",
-    ));
+  match context.exists_policy {
+    ExistsPolicy::Deny => {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::InvalidExistsContext,
+        location,
+        "exists expressions are not allowed in this expression context",
+      ));
+    }
+    ExistsPolicy::RequireExplicitCorrelation if from.is_none() => {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::InvalidExistsSource,
+        format!("{location}.from"),
+        "exists in a relation predicate must declare an explicit correlation source",
+      ));
+    }
+    ExistsPolicy::AllowImplicitCorrelation | ExistsPolicy::RequireExplicitCorrelation => {}
   }
 
   if !context.sources.contains_key(source) {
