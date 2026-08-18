@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "query-graph-core"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -229,7 +229,7 @@ dependencies = [
 
 [[package]]
 name = "query_graph"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "napi",
  "napi-build",
