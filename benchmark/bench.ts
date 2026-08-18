@@ -14,7 +14,7 @@ import {
   relation,
   requiredParameter,
   source,
-} from '../definition.js'
+} from '../dsl.js'
 import { registerDefinition } from '../index.js'
 
 const link = source('link', {
@@ -58,34 +58,43 @@ const storage = source('storage', {
 const idOwner = requiredParameter('idOwner', 'int64')
 const idOrganisation = requiredParameter('idOrganisation', 'int64')
 
-const valueRelation = relation('value', link, value, eq(link.field('idControllerObjectValue'), value.field('id')), {
+const valueRelation = relation({
+  name: 'value',
+  from: link,
+  to: value,
+  on: eq(link.field('idControllerObjectValue'), value.field('id')),
   required: true,
 })
 
-const requisiteRelation = relation(
-  'requisite',
-  value,
-  requisite,
-  eq(value.field('idControllerObjectRequisite'), requisite.field('id')),
-  { required: true },
-)
+const requisiteRelation = relation({
+  name: 'requisite',
+  from: value,
+  to: requisite,
+  on: eq(value.field('idControllerObjectRequisite'), requisite.field('id')),
+  required: true,
+})
 
-const requisiteTypeRelation = relation(
-  'requisiteType',
-  requisite,
-  requisiteType,
-  eq(requisite.field('idType'), requisiteType.field('id')),
-  { required: true },
-)
+const requisiteTypeRelation = relation({
+  name: 'requisiteType',
+  from: requisite,
+  to: requisiteType,
+  on: eq(requisite.field('idType'), requisiteType.field('id')),
+  required: true,
+})
 
-const attachmentRelation = relation(
-  'attachment',
-  value,
-  attachment,
-  eq(value.field('idAttachment'), attachment.field('idAttachment')),
-)
+const attachmentRelation = relation({
+  name: 'attachment',
+  from: value,
+  to: attachment,
+  on: eq(value.field('idAttachment'), attachment.field('idAttachment')),
+})
 
-const storageRelation = relation('storage', attachment, storage, eq(attachment.field('idStorage'), storage.field('id')))
+const storageRelation = relation({
+  name: 'storage',
+  from: attachment,
+  to: storage,
+  on: eq(attachment.field('idStorage'), storage.field('id')),
+})
 
 const attributeValueGraphDefinition = defineGraph({
   name: 'controllerAttributeValues',
@@ -94,27 +103,37 @@ const attributeValueGraphDefinition = defineGraph({
   parameters: [idOwner, idOrganisation],
   relations: [valueRelation, requisiteRelation, requisiteTypeRelation, attachmentRelation, storageRelation],
   constraints: [
-    constraint(eq(link.field('idOwner'), param(idOwner))),
-    constraint(eq(link.field('idOrganisation'), param(idOrganisation))),
-    constraint(isNull(link.field('dateDelete'))),
+    constraint({ predicate: eq(link.field('idOwner'), param(idOwner)) }),
+    constraint({ predicate: eq(link.field('idOrganisation'), param(idOrganisation)) }),
+    constraint({ predicate: isNull(link.field('dateDelete')) }),
   ],
   projection: [
-    project('value.id', value.field('id'), {
+    project({
+      path: 'value.id',
+      expression: value.field('id'),
       default: true,
     }),
-    project('value.value', value.field('value'), {
+    project({
+      path: 'value.value',
+      expression: value.field('value'),
       default: true,
     }),
-    project('value.requisite.code', requisite.field('code'), {
+    project({
+      path: 'value.requisite.code',
+      expression: requisite.field('code'),
       default: true,
     }),
-    project('value.requisite.name', requisite.field('name'), {
+    project({
+      path: 'value.requisite.name',
+      expression: requisite.field('name'),
       default: true,
     }),
-    project('value.requisite.type', requisiteType.field('code'), {
+    project({
+      path: 'value.requisite.type',
+      expression: requisiteType.field('code'),
       default: true,
     }),
-    project('value.file.storageId', coalesce(storage.field('id'), 0)),
+    project({ path: 'value.file.storageId', expression: coalesce(storage.field('id'), 0) }),
   ],
   orderings: [
     ordering({

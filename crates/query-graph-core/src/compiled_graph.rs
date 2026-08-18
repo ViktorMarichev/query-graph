@@ -1,20 +1,8 @@
-use std::collections::HashMap;
-
 use crate::{
-  type_validation, validation, DefinitionIssues, ExpressionType, FieldDefinition, GraphDefinition,
-  OrderingDefinition, ProjectionFieldDefinition, ProjectionPath, RelationDefinition,
+  analysis::{DefinitionAnalysis, DefinitionIndex, GraphTopology, ProjectionAnalysis},
+  DefinitionIssues, ExpressionType, FieldDefinition, GraphDefinition, OrderingDefinition,
+  ProjectionFieldDefinition, ProjectionPath, RelationDefinition,
 };
-
-#[derive(Debug)]
-struct CompiledProjection {
-  expression_type: ExpressionType,
-  relation_path: Box<[usize]>,
-}
-
-#[derive(Debug)]
-struct CompiledProjectionObject {
-  relation_path: Box<[usize]>,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ConstraintPhase {
@@ -25,93 +13,17 @@ pub(crate) enum ConstraintPhase {
 #[derive(Debug)]
 pub struct CompiledGraph {
   definition: GraphDefinition,
-  root_index: usize,
-  source_index: HashMap<String, usize>,
-  field_index: Vec<HashMap<String, usize>>,
-  parameter_index: HashMap<String, usize>,
-  relation_index: HashMap<String, usize>,
-  ordering_index: HashMap<String, usize>,
-  default_ordering_index: Option<usize>,
-  projection_index: HashMap<ProjectionPath, usize>,
-  projections: Vec<CompiledProjection>,
-  projection_objects: Vec<CompiledProjectionObject>,
+  index: DefinitionIndex,
+  topology: GraphTopology,
+  projection: ProjectionAnalysis,
   summary: bool,
-  dimension_projection_indices: Box<[usize]>,
   constraint_phases: Box<[ConstraintPhase]>,
-  outgoing_relations: Vec<Vec<usize>>,
-  relation_paths: Vec<Vec<usize>>,
-  effective_relation_required: Vec<bool>,
 }
 
 impl CompiledGraph {
   pub(crate) fn try_from_definition(definition: GraphDefinition) -> Result<Self, DefinitionIssues> {
-    validation::validate(&definition)?;
-    let projection_types = type_validation::analyze(&definition)?;
-
-    let source_index: HashMap<_, _> = definition
-      .sources
-      .iter()
-      .enumerate()
-      .map(|(index, source)| (source.key.clone(), index))
-      .collect();
-    let root_index = source_index[&definition.root];
-
-    let field_index = definition
-      .sources
-      .iter()
-      .map(|source| {
-        source
-          .fields
-          .iter()
-          .enumerate()
-          .map(|(index, field)| (field.name.clone(), index))
-          .collect()
-      })
-      .collect();
-
-    let parameter_index = definition
-      .parameters
-      .iter()
-      .enumerate()
-      .map(|(index, parameter)| (parameter.name.clone(), index))
-      .collect();
-
-    let relation_index: HashMap<_, _> = definition
-      .relations
-      .iter()
-      .enumerate()
-      .map(|(index, relation)| (relation.name.clone(), index))
-      .collect();
-
-    let ordering_index: HashMap<_, _> = definition
-      .orderings
-      .iter()
-      .enumerate()
-      .map(|(index, ordering)| (ordering.name.clone(), index))
-      .collect();
-    let default_ordering_index = definition
-      .orderings
-      .iter()
-      .position(|ordering| ordering.selected_by_default);
-
-    let projection_index = definition
-      .projection
-      .fields
-      .iter()
-      .enumerate()
-      .map(|(index, field)| (ProjectionPath::from_segments(&field.path), index))
-      .collect();
-
+    let analysis = DefinitionAnalysis::build(&definition)?;
     let summary = definition.is_summary();
-    let dimension_projection_indices = definition
-      .projection
-      .fields
-      .iter()
-      .enumerate()
-      .filter_map(|(index, field)| {
-        (field.role == crate::ProjectionFieldRole::Dimension).then_some(index)
-      })
-      .collect();
     let constraint_phases = definition
       .constraints
       .iter()
@@ -124,66 +36,13 @@ impl CompiledGraph {
       })
       .collect();
 
-    let mut outgoing_relations = vec![Vec::new(); definition.sources.len()];
-    let mut incoming_relations = vec![None; definition.sources.len()];
-    for (relation_index, relation) in definition.relations.iter().enumerate() {
-      let from_index = source_index[&relation.from];
-      let to_index = source_index[&relation.to];
-      outgoing_relations[from_index].push(relation_index);
-      incoming_relations[to_index] = Some(relation_index);
-    }
-
-    let relation_paths =
-      build_relation_paths(&definition, &source_index, root_index, &incoming_relations);
-    let projection_relation_paths =
-      validation::infer_projection_relation_paths(&definition, &source_index, &relation_paths)?;
-    let projections = projection_types
-      .into_iter()
-      .zip(projection_relation_paths)
-      .map(|(expression_type, relation_path)| CompiledProjection {
-        expression_type,
-        relation_path: relation_path.into_boxed_slice(),
-      })
-      .collect();
-    let projection_object_relation_paths = validation::infer_projection_object_relation_paths(
-      &definition,
-      &source_index,
-      &relation_paths,
-    )?;
-    let projection_objects = projection_object_relation_paths
-      .into_iter()
-      .map(|relation_path| CompiledProjectionObject {
-        relation_path: relation_path.into_boxed_slice(),
-      })
-      .collect();
-    let effective_relation_required = definition
-      .relations
-      .iter()
-      .map(|relation| {
-        relation_paths[source_index[&relation.to]]
-          .iter()
-          .all(|index| definition.relations[*index].required)
-      })
-      .collect();
-
     Ok(Self {
       definition,
-      root_index,
-      source_index,
-      field_index,
-      parameter_index,
-      relation_index,
-      ordering_index,
-      default_ordering_index,
-      projection_index,
-      projections,
-      projection_objects,
+      index: analysis.index,
+      topology: analysis.topology,
+      projection: analysis.projection,
       summary,
-      dimension_projection_indices,
       constraint_phases,
-      outgoing_relations,
-      relation_paths,
-      effective_relation_required,
     })
   }
 
@@ -196,7 +55,7 @@ impl CompiledGraph {
   }
 
   pub(crate) fn dimension_projection_indices(&self) -> &[usize] {
-    &self.dimension_projection_indices
+    self.projection.dimension_indices()
   }
 
   pub(crate) fn constraint_phase(&self, constraint_index: usize) -> ConstraintPhase {
@@ -208,57 +67,57 @@ impl CompiledGraph {
   }
 
   pub fn root(&self) -> &crate::SourceDefinition {
-    &self.definition.sources[self.root_index]
+    &self.definition.sources[self.index.root().expect("validated graph must have a root")]
   }
 
   pub fn source(&self, key: &str) -> Option<&crate::SourceDefinition> {
     self
-      .source_index
-      .get(key)
-      .map(|index| &self.definition.sources[*index])
+      .index
+      .source(key)
+      .map(|index| &self.definition.sources[index])
   }
 
   pub(crate) fn source_index(&self, key: &str) -> Option<usize> {
-    self.source_index.get(key).copied()
+    self.index.source(key)
   }
 
   pub fn field(&self, source: &str, field: &str) -> Option<&FieldDefinition> {
-    let source_index = *self.source_index.get(source)?;
-    let field_index = *self.field_index[source_index].get(field)?;
+    let source_index = self.index.source(source)?;
+    let field_index = self.index.field(source_index, field)?;
     Some(&self.definition.sources[source_index].fields[field_index])
   }
 
   pub fn parameter(&self, name: &str) -> Option<&crate::ParameterDefinition> {
     self
-      .parameter_index
-      .get(name)
-      .map(|index| &self.definition.parameters[*index])
+      .index
+      .parameter(name)
+      .map(|index| &self.definition.parameters[index])
   }
 
   pub fn relation(&self, name: &str) -> Option<&RelationDefinition> {
     self
-      .relation_index
-      .get(name)
-      .map(|index| &self.definition.relations[*index])
+      .index
+      .relation(name)
+      .map(|index| &self.definition.relations[index])
   }
 
   pub(crate) fn relation_index(&self, name: &str) -> Option<usize> {
-    self.relation_index.get(name).copied()
+    self.index.relation(name)
   }
 
   pub fn ordering(&self, name: &str) -> Option<&OrderingDefinition> {
     self
-      .ordering_index
-      .get(name)
-      .map(|index| &self.definition.orderings[*index])
+      .index
+      .ordering(name)
+      .map(|index| &self.definition.orderings[index])
   }
 
   pub(crate) fn ordering_index(&self, name: &str) -> Option<usize> {
-    self.ordering_index.get(name).copied()
+    self.index.ordering(name)
   }
 
   pub(crate) fn default_ordering_index(&self) -> Option<usize> {
-    self.default_ordering_index
+    self.index.default_ordering()
   }
 
   pub(crate) fn ordering_at(&self, ordering_index: usize) -> &OrderingDefinition {
@@ -268,29 +127,29 @@ impl CompiledGraph {
   pub fn projection(&self, path: &str) -> Option<&ProjectionFieldDefinition> {
     let path = ProjectionPath::parse(path);
     self
-      .projection_index
-      .get(&path)
-      .map(|index| &self.definition.projection.fields[*index])
+      .index
+      .projection(&path)
+      .map(|index| &self.definition.projection.fields[index])
   }
 
   pub fn projection_type(&self, path: &str) -> Option<ExpressionType> {
     let path = ProjectionPath::parse(path);
     self
-      .projection_index
-      .get(&path)
-      .map(|index| self.projections[*index].expression_type)
+      .index
+      .projection(&path)
+      .map(|index| self.projection.expression_type(index))
   }
 
   pub(crate) fn projection_index(&self, path: &ProjectionPath) -> Option<usize> {
-    self.projection_index.get(path).copied()
+    self.index.projection(path)
   }
 
   pub(crate) fn projection_type_at(&self, projection_index: usize) -> ExpressionType {
-    self.projections[projection_index].expression_type
+    self.projection.expression_type(projection_index)
   }
 
   pub(crate) fn projection_relation_path_indices(&self, projection_index: usize) -> &[usize] {
-    &self.projections[projection_index].relation_path
+    self.projection.relation_path(projection_index)
   }
 
   pub(crate) fn selected_projection_object_indices(
@@ -323,75 +182,48 @@ impl CompiledGraph {
   }
 
   pub(crate) fn projection_object_relation_path_indices(&self, object_index: usize) -> &[usize] {
-    &self.projection_objects[object_index].relation_path
+    self.projection.object_relation_path(object_index)
   }
 
   pub fn outgoing_relations(
     &self,
     source: &str,
   ) -> Option<impl Iterator<Item = &RelationDefinition>> {
-    let source_index = *self.source_index.get(source)?;
+    let source_index = self.index.source(source)?;
     Some(
-      self.outgoing_relations[source_index]
+      self
+        .topology
+        .outgoing_relations(source_index)
         .iter()
         .map(|index| &self.definition.relations[*index]),
     )
   }
 
   pub(crate) fn relation_is_effectively_required(&self, relation_index: usize) -> bool {
-    self.effective_relation_required[relation_index]
+    self
+      .topology
+      .relation_is_effectively_required(relation_index)
   }
 
   pub(crate) fn relation_path_indices(&self, source: &str) -> Option<&[usize]> {
-    let source_index = *self.source_index.get(source)?;
-    Some(&self.relation_paths[source_index])
+    self
+      .index
+      .source(source)
+      .and_then(|source| self.topology.relation_path(source))
   }
 
   pub(crate) fn relation_path_indices_between(&self, from: &str, to: &str) -> Option<&[usize]> {
-    let from_path = self.relation_path_indices(from)?;
-    let to_path = self.relation_path_indices(to)?;
-    if !to_path.starts_with(from_path) {
-      return None;
-    }
-
-    Some(&to_path[from_path.len()..])
+    let from = self.index.source(from)?;
+    let to = self.index.source(to)?;
+    self.topology.relation_path_between(from, to)
   }
 
   pub fn relation_path(&self, source: &str) -> Option<impl Iterator<Item = &RelationDefinition>> {
-    let source_index = *self.source_index.get(source)?;
     Some(
-      self.relation_paths[source_index]
+      self
+        .relation_path_indices(source)?
         .iter()
         .map(|index| &self.definition.relations[*index]),
     )
   }
-}
-
-fn build_relation_paths(
-  definition: &GraphDefinition,
-  source_index: &HashMap<String, usize>,
-  root_index: usize,
-  incoming_relations: &[Option<usize>],
-) -> Vec<Vec<usize>> {
-  let mut paths = vec![Vec::new(); definition.sources.len()];
-
-  for (source_index_value, path) in paths.iter_mut().enumerate() {
-    if source_index_value == root_index {
-      continue;
-    }
-
-    let mut current = source_index_value;
-    let mut reversed_path = Vec::new();
-    while current != root_index {
-      let relation_index = incoming_relations[current]
-        .expect("validated graph source must have one incoming relation");
-      reversed_path.push(relation_index);
-      let relation = &definition.relations[relation_index];
-      current = source_index[&relation.from];
-    }
-    reversed_path.reverse();
-    *path = reversed_path;
-  }
-
-  paths
 }

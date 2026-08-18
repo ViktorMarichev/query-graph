@@ -1,7 +1,7 @@
 {
   "name": "@query-graph/dsl-object",
   "version": "1.1.4",
-  "description": "Object-based authoring DSL for query-graph definitions",
+  "description": "Deprecated facade for @query-graph/core/dsl",
   "type": "commonjs",
   "main": "index.js",
   "types": "index.d.ts",

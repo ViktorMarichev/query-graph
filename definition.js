@@ -1,8 +1,7 @@
 'use strict'
 
 const objectDsl = require('./dsl.js')
-
-const GRAPH_DEFINITION_VERSION = 10
+const { GRAPH_DEFINITION_VERSION } = require('./lib/authoring/definition.js')
 
 function field(sourceReference, name) {
   if (typeof sourceReference === 'string') {

@@ -1,5 +1,6 @@
 #![deny(clippy::all)]
 
+mod analysis;
 mod compiled_graph;
 mod composition;
 mod definition;

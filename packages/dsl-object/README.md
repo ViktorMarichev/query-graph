@@ -1,5 +1,9 @@
 # `@query-graph/dsl-object`
 
+> Deprecated: импортируйте канонический API из
+> `@query-graph/core/dsl`. Facade сохранен для совместимости 1.2.x и будет
+> удален из публикации 2.0.
+
 Объектный authoring DSL для [`@query-graph/core`](https://www.npmjs.com/package/@query-graph/core).
 Он формирует семантическое определение графа без SQL; валидация, планирование и
 компиляция остаются в Rust.

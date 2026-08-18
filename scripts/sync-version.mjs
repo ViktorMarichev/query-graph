@@ -13,7 +13,7 @@ const paths = {
   rootPackage: join(rootDirectory, 'package.json'),
   dslPackage: join(rootDirectory, 'packages', 'dsl-object', 'package.json'),
   yarnLock: join(rootDirectory, 'yarn.lock'),
-  generatedBinding: join(rootDirectory, 'index.js'),
+  generatedBinding: join(rootDirectory, 'native.js'),
   rootCargo: join(rootDirectory, 'Cargo.toml'),
   coreCargo: join(rootDirectory, 'crates', 'query-graph-core', 'Cargo.toml'),
   cargoLock: join(rootDirectory, 'Cargo.lock'),

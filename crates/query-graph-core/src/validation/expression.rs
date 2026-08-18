@@ -1,12 +1,21 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
-use crate::{scalar::is_decimal_text, Expression, LiteralValue, ParameterShape};
+use crate::{
+  analysis::{DefinitionIndex, GraphTopology},
+  scalar::is_decimal_text,
+  Expression, GraphDefinition, LiteralValue, ParameterShape,
+};
 
 use super::{DefinitionIssue, DefinitionIssueCode};
 
 struct ExpressionScope<'a> {
-  allowed_sources: &'a HashSet<String>,
+  allowed_sources: AllowedSources<'a>,
   issue_code: DefinitionIssueCode,
+}
+
+enum AllowedSources<'a> {
+  Explicit(&'a HashSet<String>),
+  PathTo(usize),
 }
 
 #[derive(Clone, Copy)]
@@ -17,55 +26,55 @@ enum ExistsPolicy {
 }
 
 pub(super) struct ExpressionContext<'a> {
-  sources: &'a HashMap<String, HashSet<String>>,
-  parameters: &'a HashMap<String, ParameterShape>,
-  source_scopes: &'a HashMap<String, HashSet<String>>,
+  definition: &'a GraphDefinition,
+  index: &'a DefinitionIndex,
+  topology: &'a GraphTopology,
   scope: Option<ExpressionScope<'a>>,
   exists_policy: ExistsPolicy,
 }
 
 impl<'a> ExpressionContext<'a> {
   pub(super) fn unrestricted(
-    sources: &'a HashMap<String, HashSet<String>>,
-    parameters: &'a HashMap<String, ParameterShape>,
-    source_scopes: &'a HashMap<String, HashSet<String>>,
+    definition: &'a GraphDefinition,
+    index: &'a DefinitionIndex,
+    topology: &'a GraphTopology,
   ) -> Self {
     Self {
-      sources,
-      parameters,
-      source_scopes,
+      definition,
+      index,
+      topology,
       scope: None,
       exists_policy: ExistsPolicy::Deny,
     }
   }
 
   pub(super) fn constraint(
-    sources: &'a HashMap<String, HashSet<String>>,
-    parameters: &'a HashMap<String, ParameterShape>,
-    source_scopes: &'a HashMap<String, HashSet<String>>,
+    definition: &'a GraphDefinition,
+    index: &'a DefinitionIndex,
+    topology: &'a GraphTopology,
   ) -> Self {
     Self {
-      sources,
-      parameters,
-      source_scopes,
+      definition,
+      index,
+      topology,
       scope: None,
       exists_policy: ExistsPolicy::AllowImplicitCorrelation,
     }
   }
 
   pub(super) fn scoped(
-    sources: &'a HashMap<String, HashSet<String>>,
-    parameters: &'a HashMap<String, ParameterShape>,
-    source_scopes: &'a HashMap<String, HashSet<String>>,
+    definition: &'a GraphDefinition,
+    index: &'a DefinitionIndex,
+    topology: &'a GraphTopology,
     allowed_sources: &'a HashSet<String>,
     scope_issue_code: DefinitionIssueCode,
   ) -> Self {
     Self {
-      sources,
-      parameters,
-      source_scopes,
+      definition,
+      index,
+      topology,
       scope: Some(ExpressionScope {
-        allowed_sources,
+        allowed_sources: AllowedSources::Explicit(allowed_sources),
         issue_code: scope_issue_code,
       }),
       exists_policy: ExistsPolicy::Deny,
@@ -73,33 +82,49 @@ impl<'a> ExpressionContext<'a> {
   }
 
   pub(super) fn relation_predicate(
-    sources: &'a HashMap<String, HashSet<String>>,
-    parameters: &'a HashMap<String, ParameterShape>,
-    source_scopes: &'a HashMap<String, HashSet<String>>,
+    definition: &'a GraphDefinition,
+    index: &'a DefinitionIndex,
+    topology: &'a GraphTopology,
     allowed_sources: &'a HashSet<String>,
   ) -> Self {
     Self {
-      sources,
-      parameters,
-      source_scopes,
+      definition,
+      index,
+      topology,
       scope: Some(ExpressionScope {
-        allowed_sources,
+        allowed_sources: AllowedSources::Explicit(allowed_sources),
         issue_code: DefinitionIssueCode::RelationExpressionScope,
       }),
       exists_policy: ExistsPolicy::RequireExplicitCorrelation,
     }
   }
 
-  fn within_exists(&self, allowed_sources: &'a HashSet<String>) -> Self {
+  fn within_exists(&self, source: usize) -> Self {
     Self {
-      sources: self.sources,
-      parameters: self.parameters,
-      source_scopes: self.source_scopes,
+      definition: self.definition,
+      index: self.index,
+      topology: self.topology,
       scope: Some(ExpressionScope {
-        allowed_sources,
+        allowed_sources: AllowedSources::PathTo(source),
         issue_code: DefinitionIssueCode::ExistsExpressionScope,
       }),
       exists_policy: self.exists_policy,
+    }
+  }
+
+  fn source_is_allowed(&self, source: &str) -> bool {
+    let Some(scope) = &self.scope else {
+      return true;
+    };
+
+    match scope.allowed_sources {
+      AllowedSources::Explicit(sources) => sources.contains(source),
+      AllowedSources::PathTo(target) => self.index.source(source).is_some_and(|candidate| {
+        self
+          .topology
+          .relation_path_between(candidate, target)
+          .is_some()
+      }),
     }
   }
 }
@@ -236,7 +261,7 @@ fn validate_exists(
     ExistsPolicy::AllowImplicitCorrelation | ExistsPolicy::RequireExplicitCorrelation => {}
   }
 
-  if !context.sources.contains_key(source) {
+  let Some(source_index) = context.index.source(source) else {
     issues.push(DefinitionIssue::new(
       DefinitionIssueCode::UnknownExistsSource,
       format!("{location}.source"),
@@ -246,9 +271,9 @@ fn validate_exists(
       validate(predicate, &format!("{location}.predicate"), context, issues);
     }
     return;
-  }
+  };
 
-  let Some(allowed_sources) = context.source_scopes.get(source) else {
+  let Some(source_path) = context.topology.relation_path(source_index) else {
     issues.push(DefinitionIssue::new(
       DefinitionIssueCode::InvalidExistsSource,
       format!("{location}.source"),
@@ -260,30 +285,37 @@ fn validate_exists(
     return;
   };
   if let Some(from) = from {
-    if !context.sources.contains_key(from) {
+    if let Some(from_index) = context.index.source(from) {
+      if from == source
+        || context
+          .topology
+          .relation_path_between(from_index, source_index)
+          .is_none()
+      {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidExistsSource,
+          format!("{location}.from"),
+          format!("exists source {source:?} is not a descendant of correlation source {from:?}"),
+        ));
+      } else if let Some(scope) = &context.scope {
+        if !context.source_is_allowed(from) {
+          issues.push(DefinitionIssue::new(
+            scope.issue_code,
+            format!("{location}.from"),
+            format!("exists correlation source {from:?} is outside the current expression scope"),
+          ));
+        }
+      }
+    } else {
       issues.push(DefinitionIssue::new(
         DefinitionIssueCode::UnknownExistsSource,
         format!("{location}.from"),
         format!("exists correlation source {from:?} is not defined"),
       ));
-    } else if from == source || !allowed_sources.contains(from) {
-      issues.push(DefinitionIssue::new(
-        DefinitionIssueCode::InvalidExistsSource,
-        format!("{location}.from"),
-        format!("exists source {source:?} is not a descendant of correlation source {from:?}"),
-      ));
-    } else if let Some(scope) = &context.scope {
-      if !scope.allowed_sources.contains(from) {
-        issues.push(DefinitionIssue::new(
-          scope.issue_code,
-          format!("{location}.from"),
-          format!("exists correlation source {from:?} is outside the current expression scope"),
-        ));
-      }
     }
   }
 
-  if allowed_sources.len() == 1 {
+  if source_path.is_empty() {
     issues.push(DefinitionIssue::new(
       DefinitionIssueCode::InvalidExistsSource,
       format!("{location}.source"),
@@ -292,7 +324,7 @@ fn validate_exists(
   }
 
   if let Some(predicate) = predicate {
-    let predicate_context = context.within_exists(allowed_sources);
+    let predicate_context = context.within_exists(source_index);
     validate(
       predicate,
       &format!("{location}.predicate"),
@@ -309,7 +341,7 @@ fn validate_parameter(
   context: &ExpressionContext<'_>,
   issues: &mut Vec<DefinitionIssue>,
 ) {
-  let Some(actual_shape) = context.parameters.get(name) else {
+  let Some(parameter_index) = context.index.parameter(name) else {
     issues.push(DefinitionIssue::new(
       DefinitionIssueCode::UnknownParameter,
       location,
@@ -317,8 +349,9 @@ fn validate_parameter(
     ));
     return;
   };
+  let actual_shape = context.definition.parameters[parameter_index].shape;
 
-  if *actual_shape != expected_shape {
+  if actual_shape != expected_shape {
     issues.push(DefinitionIssue::new(
       DefinitionIssueCode::InvalidParameterShape,
       location,
@@ -338,7 +371,7 @@ fn validate_field(
   context: &ExpressionContext<'_>,
   issues: &mut Vec<DefinitionIssue>,
 ) {
-  let Some(fields) = context.sources.get(source) else {
+  let Some(source_index) = context.index.source(source) else {
     issues.push(DefinitionIssue::new(
       DefinitionIssueCode::UnknownFieldSource,
       location,
@@ -347,7 +380,7 @@ fn validate_field(
     return;
   };
 
-  if !fields.contains(field) {
+  if context.index.field(source_index, field).is_none() {
     issues.push(DefinitionIssue::new(
       DefinitionIssueCode::UnknownField,
       location,
@@ -356,7 +389,7 @@ fn validate_field(
   }
 
   if let Some(scope) = &context.scope {
-    if !scope.allowed_sources.contains(source) {
+    if !context.source_is_allowed(source) {
       issues.push(DefinitionIssue::new(
         scope.issue_code,
         location,

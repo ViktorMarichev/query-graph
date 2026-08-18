@@ -1,3 +1,7 @@
+/**
+ * @deprecated Import the object authoring API from `@query-graph/core/dsl`.
+ * This compatibility entrypoint will be removed in 2.0.
+ */
 export * from './dsl.js'
 
 import type {
@@ -25,8 +29,10 @@ import type {
   TypedProjectionField,
 } from './dsl.js'
 
+/** @deprecated Import authoring primitives from `@query-graph/core/dsl`. */
 export const GRAPH_DEFINITION_VERSION: 10
 
+/** @deprecated Use `source.field(name)` from `@query-graph/core/dsl`. */
 export function field<
   const Key extends string,
   const Fields extends FieldSpecMap,
@@ -53,6 +59,7 @@ export interface RelationOptions<
   selection?: RelationSelection
 }
 
+/** @deprecated Use `relation({ name, from, to, on, ...options })`. */
 export function relation<
   const Name extends string,
   const From extends string | SourceRef,
@@ -71,12 +78,14 @@ export interface ConstraintOptions {
   when?: string | ParameterRef
 }
 
+/** @deprecated Use `constraint({ predicate, when })`. */
 export function constraint(predicate: Expression, options?: ConstraintOptions): ConstraintDefinition
 
 export interface ProjectionOptions<SelectedByDefault extends boolean = boolean> {
   default?: SelectedByDefault
 }
 
+/** @deprecated Use `project({ path, expression, default })`. */
 export function project<
   const Path extends string,
   const Value extends ExpressionInput,
@@ -106,6 +115,7 @@ export function project<
   SelectedByDefault
 >
 
+/** @deprecated Use `dimension({ path, expression, default })`. */
 export function dimension<
   const Path extends string,
   const Value extends ExpressionInput,
@@ -135,6 +145,7 @@ export function dimension<
   SelectedByDefault
 >
 
+/** @deprecated Use `measure({ path, expression, default })`. */
 export function measure<
   const Path extends string,
   const Value extends ExpressionInput,

@@ -3,7 +3,10 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-use crate::GraphDefinition;
+use crate::{
+  analysis::{DefinitionIndex, GraphTopology},
+  GraphDefinition,
+};
 
 mod aggregation;
 mod expression;
@@ -20,7 +23,7 @@ pub struct DefinitionIssue {
 }
 
 impl DefinitionIssue {
-  pub(super) fn new(
+  pub(crate) fn new(
     code: DefinitionIssueCode,
     location: impl Into<String>,
     message: impl Into<String>,
@@ -134,22 +137,10 @@ impl fmt::Display for DefinitionIssues {
 
 impl Error for DefinitionIssues {}
 
-pub(crate) fn validate(definition: &GraphDefinition) -> Result<(), DefinitionIssues> {
-  structure::validate(definition)
-}
-
-pub(crate) fn infer_projection_relation_paths(
+pub(crate) fn validate(
   definition: &GraphDefinition,
-  source_index: &std::collections::HashMap<String, usize>,
-  relation_paths: &[Vec<usize>],
-) -> Result<Vec<Vec<usize>>, DefinitionIssues> {
-  projection::infer_relation_paths(definition, source_index, relation_paths)
-}
-
-pub(crate) fn infer_projection_object_relation_paths(
-  definition: &GraphDefinition,
-  source_index: &std::collections::HashMap<String, usize>,
-  relation_paths: &[Vec<usize>],
-) -> Result<Vec<Vec<usize>>, DefinitionIssues> {
-  projection::infer_object_relation_paths(definition, source_index, relation_paths)
+  index: &DefinitionIndex,
+  topology: &GraphTopology,
+) -> Result<(), DefinitionIssues> {
+  structure::validate(definition, index, topology)
 }

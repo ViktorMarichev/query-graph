@@ -19,9 +19,11 @@ import {
   count,
   defineGraph,
   defineGraphModule,
+  defineSummaryGraph,
   dimension,
   eq,
   exists,
+  fieldType,
   firstBy,
   inParameter,
   measure,
@@ -317,6 +319,79 @@ test('object DSL validates ordering configuration before it reaches Rust', (t) =
     t.throws(() => invoke({ name: 'idAsc', by: [byId], default: 'yes' })).message,
     'ordering default must be a boolean',
   )
+})
+
+test('object DSL rejects unknown graph configuration fields', (t) => {
+  const staff = source('staff', { id: 'int64' })
+  const id = project({ path: 'id', expression: staff.field('id') })
+  const amount = dimension({ path: 'amount', expression: staff.field('id') })
+
+  const graphError = t.throws(() =>
+    defineGraph({
+      name: 'staff',
+      root: staff,
+      sources: [staff],
+      projection: [id],
+      projecton: [id],
+    } as never),
+  )
+  const moduleError = t.throws(() =>
+    defineGraphModule({
+      name: 'staffModule',
+      sources: [staff],
+      constaints: [],
+    } as never),
+  )
+  const summaryError = t.throws(() =>
+    defineSummaryGraph({
+      name: 'staffSummary',
+      root: staff,
+      sources: [staff],
+      dimensions: [amount],
+      meassures: [],
+    } as never),
+  )
+
+  t.regex(graphError.message, /defineGraph received unknown configuration field "projecton"/)
+  t.regex(moduleError.message, /defineGraphModule received unknown configuration field "constaints"/)
+  t.regex(summaryError.message, /defineSummaryGraph received unknown configuration field "meassures"/)
+})
+
+test('object DSL rejects option values that would otherwise change defaults', (t) => {
+  const staff = source('staff', { id: 'int64' })
+  const predicate = eq(staff.field('id'), staff.field('id'))
+
+  const invalidCardinality = t.throws(() =>
+    relation({
+      name: 'self',
+      from: staff,
+      to: staff,
+      on: predicate,
+      cardinality: 'single',
+    } as never),
+  )
+  const invalidRequired = t.throws(() =>
+    relation({
+      name: 'self',
+      from: staff,
+      to: staff,
+      on: predicate,
+      required: 'yes',
+    } as never),
+  )
+  const invalidDefault = t.throws(() => project({ path: 'id', expression: staff.field('id'), default: 'yes' } as never))
+  const invalidFieldOption = t.throws(() => fieldType('string', { nullable: 'yes' } as never))
+  const invalidFieldSpecification = t.throws(() =>
+    source('invalid', { value: { scalarType: 'string', nullabel: true } } as never),
+  )
+  const invalidNulls = t.throws(() => asc(staff.field('id'), { nulls: 'middle' } as never))
+
+  t.regex(invalidCardinality.message, /relation cardinality/)
+  t.is(invalidRequired.message, 'relation required must be a boolean')
+  t.is(invalidDefault.message, 'project default must be a boolean')
+  t.is(invalidFieldOption.message, 'fieldType nullable must be a boolean')
+  t.regex(invalidFieldSpecification.message, /unknown configuration field "nullabel"/)
+  t.regex(invalidNulls.message, /asc nulls/)
 })
 
 test('object DSL defines and composes projection object presence', (t) => {

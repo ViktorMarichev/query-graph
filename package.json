@@ -41,13 +41,17 @@
     "node-addon"
   ],
   "files": [
-    "composition.js",
     "definition.d.ts",
     "definition.js",
+    "docs",
     "dsl.d.ts",
     "dsl.js",
     "index.d.ts",
-    "index.js"
+    "index.js",
+    "lib",
+    "native.d.ts",
+    "native.js",
+    "types"
   ],
   "napi": {
     "binaryName": "query-graph",
@@ -72,17 +76,18 @@
     "build:debug": "node scripts/build-napi.mjs",
     "check:versions": "node scripts/sync-version.mjs --check",
     "format": "run-p format:prettier format:rs format:toml",
-    "format:generated": "prettier index.js index.d.ts --write",
+    "format:generated": "prettier native.js native.d.ts --write",
     "format:prettier": "prettier . -w",
-    "format:toml": "taplo format",
+    "format:toml": "taplo format Cargo.toml .taplo.toml rustfmt.toml crates/query-graph-core/Cargo.toml",
     "format:rs": "cargo fmt",
     "lint": "oxlint .",
     "prepublishOnly": "npm run check:versions && napi prepublish -t npm",
     "preversion": "npm run release:check",
-    "release:check": "npm run build && npm run format:generated && npm run lint && npm run typecheck && npm test && prettier . --check && cargo fmt --all -- --check && cargo test --workspace --all-targets && cargo clippy --workspace --all-targets --all-features -- -D warnings && npm run check:versions",
+    "release:check": "npm run build && npm run format:generated && npm run lint && npm run typecheck && npm test && npm run test:package && prettier . --check && cargo fmt --all -- --check && cargo test --workspace --all-targets && cargo clippy --workspace --all-targets --all-features -- -D warnings && npm run check:versions",
+    "test:package": "node scripts/package-smoke.mjs",
     "typecheck": "tsc -p __test__/tsconfig.json --noEmit",
     "test": "ava",
-    "version": "node scripts/sync-version.mjs && npm run build && npm run format:generated && node scripts/sync-version.mjs --check && git add package.json packages/dsl-object/package.json yarn.lock Cargo.toml crates/query-graph-core/Cargo.toml Cargo.lock index.js index.d.ts",
+    "version": "node scripts/sync-version.mjs && npm run build && npm run format:generated && node scripts/sync-version.mjs --check && git add package.json packages/dsl-object/package.json yarn.lock Cargo.toml crates/query-graph-core/Cargo.toml Cargo.lock native.js native.d.ts",
     "prepare": "husky"
   },
   "devDependencies": {

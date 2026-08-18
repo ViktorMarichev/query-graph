@@ -1,7 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::{
-  ConstraintCondition, GraphDefinition, ParameterShape, RelationCardinality, RelationSelection,
+  analysis::{DefinitionIndex, GraphTopology},
+  ConstraintCondition, GraphDefinition, RelationCardinality, RelationSelection,
   GRAPH_DEFINITION_VERSION,
 };
 
@@ -11,43 +12,51 @@ use super::{
   projection, topology, DefinitionIssue, DefinitionIssueCode, DefinitionIssues,
 };
 
-type SourceFields = HashMap<String, HashSet<String>>;
-
-pub(super) fn validate(definition: &GraphDefinition) -> Result<(), DefinitionIssues> {
-  DefinitionValidator::new(definition).validate()
+pub(super) fn validate(
+  definition: &GraphDefinition,
+  index: &DefinitionIndex,
+  graph_topology: &GraphTopology,
+) -> Result<(), DefinitionIssues> {
+  DefinitionValidator::new(definition, index, graph_topology).validate()
 }
 
 struct DefinitionValidator<'a> {
   definition: &'a GraphDefinition,
+  index: &'a DefinitionIndex,
+  graph_topology: &'a GraphTopology,
   issues: Vec<DefinitionIssue>,
-  sources: SourceFields,
-  parameters: HashMap<String, ParameterShape>,
-  source_scopes: HashMap<String, HashSet<String>>,
 }
 
 impl<'a> DefinitionValidator<'a> {
-  fn new(definition: &'a GraphDefinition) -> Self {
+  fn new(
+    definition: &'a GraphDefinition,
+    index: &'a DefinitionIndex,
+    graph_topology: &'a GraphTopology,
+  ) -> Self {
     Self {
       definition,
+      index,
+      graph_topology,
       issues: Vec::new(),
-      sources: HashMap::new(),
-      parameters: HashMap::new(),
-      source_scopes: HashMap::new(),
     }
   }
 
   fn validate(mut self) -> Result<(), DefinitionIssues> {
     self.validate_header();
-    self.index_sources();
+    self.validate_sources();
     self.validate_root();
-    self.index_parameters();
-    self.source_scopes = topology::infer_source_scopes(self.definition, &self.sources);
+    self.validate_parameters();
     self.validate_relations();
     self.validate_constraints();
     self.validate_projection();
     self.validate_orderings();
     aggregation::validate(self.definition, &mut self.issues);
-    topology::validate(self.definition, &self.sources, &mut self.issues);
+    topology::validate(
+      self.definition,
+      self.index,
+      self.graph_topology,
+      &mut self.issues,
+    );
 
     if self.issues.is_empty() {
       Ok(())
@@ -77,7 +86,8 @@ impl<'a> DefinitionValidator<'a> {
     }
   }
 
-  fn index_sources(&mut self) {
+  fn validate_sources(&mut self) {
+    let mut source_names = HashSet::new();
     for (source_index, source) in self.definition.sources.iter().enumerate() {
       let source_location = format!("sources[{source_index}]");
       if source.key.trim().is_empty() {
@@ -89,7 +99,7 @@ impl<'a> DefinitionValidator<'a> {
         continue;
       }
 
-      if self.sources.contains_key(&source.key) {
+      if !source_names.insert(source.key.clone()) {
         self.issues.push(DefinitionIssue::new(
           DefinitionIssueCode::DuplicateSource,
           format!("{source_location}.key"),
@@ -98,12 +108,11 @@ impl<'a> DefinitionValidator<'a> {
         continue;
       }
 
-      let fields = self.validate_source_fields(source_index);
-      self.sources.insert(source.key.clone(), fields);
+      self.validate_source_fields(source_index);
     }
   }
 
-  fn validate_source_fields(&mut self, source_index: usize) -> HashSet<String> {
+  fn validate_source_fields(&mut self, source_index: usize) {
     let source = &self.definition.sources[source_index];
     let mut fields = HashSet::new();
 
@@ -129,12 +138,10 @@ impl<'a> DefinitionValidator<'a> {
         ));
       }
     }
-
-    fields
   }
 
   fn validate_root(&mut self) {
-    if !self.sources.contains_key(&self.definition.root) {
+    if self.index.root().is_none() {
       self.issues.push(DefinitionIssue::new(
         DefinitionIssueCode::UnknownRoot,
         "root",
@@ -143,7 +150,8 @@ impl<'a> DefinitionValidator<'a> {
     }
   }
 
-  fn index_parameters(&mut self) {
+  fn validate_parameters(&mut self) {
+    let mut parameter_names = HashSet::new();
     for (parameter_index, parameter) in self.definition.parameters.iter().enumerate() {
       let location = format!("parameters[{parameter_index}].name");
       if parameter.name.trim().is_empty() {
@@ -155,11 +163,7 @@ impl<'a> DefinitionValidator<'a> {
         continue;
       }
 
-      if self
-        .parameters
-        .insert(parameter.name.clone(), parameter.shape)
-        .is_some()
-      {
+      if !parameter_names.insert(parameter.name.clone()) {
         self.issues.push(DefinitionIssue::new(
           DefinitionIssueCode::DuplicateParameter,
           location,
@@ -176,7 +180,7 @@ impl<'a> DefinitionValidator<'a> {
       let location = format!("relations[{relation_index}]");
       self.validate_relation_name(relation_index, &mut names);
 
-      if !self.sources.contains_key(&relation.from) {
+      if self.index.source(&relation.from).is_none() {
         self.issues.push(DefinitionIssue::new(
           DefinitionIssueCode::UnknownRelationSource,
           format!("{location}.from"),
@@ -184,7 +188,7 @@ impl<'a> DefinitionValidator<'a> {
         ));
       }
 
-      if !self.sources.contains_key(&relation.to) {
+      if self.index.source(&relation.to).is_none() {
         self.issues.push(DefinitionIssue::new(
           DefinitionIssueCode::UnknownRelationTarget,
           format!("{location}.to"),
@@ -194,9 +198,9 @@ impl<'a> DefinitionValidator<'a> {
 
       let allowed_sources = HashSet::from([relation.from.clone(), relation.to.clone()]);
       let context = ExpressionContext::relation_predicate(
-        &self.sources,
-        &self.parameters,
-        &self.source_scopes,
+        self.definition,
+        self.index,
+        self.graph_topology,
         &allowed_sources,
       );
       expression::validate(
@@ -255,9 +259,9 @@ impl<'a> DefinitionValidator<'a> {
 
         let allowed_sources = HashSet::from([relation.to.clone()]);
         let context = ExpressionContext::scoped(
-          &self.sources,
-          &self.parameters,
-          &self.source_scopes,
+          self.definition,
+          self.index,
+          self.graph_topology,
           &allowed_sources,
           DefinitionIssueCode::RelationSelectionExpressionScope,
         );
@@ -278,7 +282,7 @@ impl<'a> DefinitionValidator<'a> {
       let location = format!("constraints[{constraint_index}]");
 
       if let ConstraintCondition::ParameterPresent { parameter } = &constraint.when {
-        if !self.parameters.contains_key(parameter) {
+        if self.index.parameter(parameter).is_none() {
           self.issues.push(DefinitionIssue::new(
             DefinitionIssueCode::UnknownParameter,
             format!("{location}.when.parameter"),
@@ -287,8 +291,7 @@ impl<'a> DefinitionValidator<'a> {
         }
       }
 
-      let context =
-        ExpressionContext::constraint(&self.sources, &self.parameters, &self.source_scopes);
+      let context = ExpressionContext::constraint(self.definition, self.index, self.graph_topology);
       expression::validate(
         &constraint.predicate,
         &format!("{location}.predicate"),
@@ -328,7 +331,7 @@ impl<'a> DefinitionValidator<'a> {
       }
 
       let context =
-        ExpressionContext::unrestricted(&self.sources, &self.parameters, &self.source_scopes);
+        ExpressionContext::unrestricted(self.definition, self.index, self.graph_topology);
       expression::validate(
         &field.expression,
         &format!("{location}.expression"),
@@ -337,6 +340,7 @@ impl<'a> DefinitionValidator<'a> {
       );
       projection::validate_visibility(
         self.definition,
+        self.index,
         &field.expression,
         &format!("{location}.expression"),
         &mut self.issues,
@@ -383,7 +387,7 @@ impl<'a> DefinitionValidator<'a> {
       }
 
       let context =
-        ExpressionContext::unrestricted(&self.sources, &self.parameters, &self.source_scopes);
+        ExpressionContext::unrestricted(self.definition, self.index, self.graph_topology);
       expression::validate(
         &object.presence,
         &format!("{location}.presence"),
@@ -456,7 +460,7 @@ impl<'a> DefinitionValidator<'a> {
 
       for (order_index, order) in ordering.order_by.iter().enumerate() {
         let context =
-          ExpressionContext::unrestricted(&self.sources, &self.parameters, &self.source_scopes);
+          ExpressionContext::unrestricted(self.definition, self.index, self.graph_topology);
         expression::validate(
           &order.expression,
           &format!("{location}.orderBy[{order_index}].expression"),
