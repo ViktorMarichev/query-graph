@@ -109,13 +109,13 @@ fn mapping() -> RelationalMapping {
           table: TableName::Qualified {
             catalog: None,
             schema: Some("dbo".into()),
-            name: "Controller#Link".into(),
+            name: "Attribute#Link".into(),
           },
           columns: HashMap::from([("idOwner".into(), "owner_id".into())]),
         },
       ),
-      ("value".into(), SourceMapping::new("ControllerObjectValue")),
-      ("detail".into(), SourceMapping::new("Requisite")),
+      ("value".into(), SourceMapping::new("AttributeValue")),
+      ("detail".into(), SourceMapping::new("AttributeDefinition")),
     ]),
   }
 }
@@ -141,8 +141,8 @@ fn compiles_default_projection_to_sql_server() {
       "SELECT\n",
       "  [t1].[id] AS [c0],\n",
       "  [t1].[value] AS [c1]\n",
-      "FROM [dbo].[Controller#Link] AS [t0]\n",
-      "INNER JOIN [ControllerObjectValue] AS [t1]\n",
+      "FROM [dbo].[Attribute#Link] AS [t0]\n",
+      "INNER JOIN [AttributeValue] AS [t1]\n",
       "  ON ([t0].[idValue] = [t1].[id])\n",
       "WHERE\n",
       "  ([t0].[owner_id] = @p0)\n",
@@ -246,7 +246,9 @@ fn plans_optional_join_for_an_explicit_projection() {
 
   let statement = relational_graph().compile_sql_server(&operation).unwrap();
 
-  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
+  assert!(statement
+    .sql
+    .contains("LEFT JOIN [AttributeDefinition] AS [t2]"));
   assert!(statement.sql.contains("[t2].[name] AS [c0]"));
   assert_eq!(statement.columns[0].relations, ["value", "detail"]);
   assert_eq!(statement.columns[0].scalar_type, ScalarType::String);
@@ -273,10 +275,10 @@ fn keeps_required_descendants_optional_below_an_optional_relation() {
     })
     .unwrap();
 
+  assert!(statement.sql.contains("LEFT JOIN [AttributeValue] AS [t1]"));
   assert!(statement
     .sql
-    .contains("LEFT JOIN [ControllerObjectValue] AS [t1]"));
-  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
+    .contains("LEFT JOIN [AttributeDefinition] AS [t2]"));
   assert!(statement.columns[0].nullable);
   assert!(statement
     .relations
@@ -305,7 +307,9 @@ fn infers_the_deepest_path_for_a_multi_source_projection() {
     .unwrap();
 
   assert_eq!(statement.columns[0].relations, ["value", "detail"]);
-  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
+  assert!(statement
+    .sql
+    .contains("LEFT JOIN [AttributeDefinition] AS [t2]"));
 }
 
 #[test]
@@ -433,8 +437,10 @@ fn plans_relation_paths_required_only_by_ordering() {
 
   assert!(statement
     .sql
-    .contains("INNER JOIN [ControllerObjectValue] AS [t1]"));
-  assert!(statement.sql.contains("LEFT JOIN [Requisite] AS [t2]"));
+    .contains("INNER JOIN [AttributeValue] AS [t1]"));
+  assert!(statement
+    .sql
+    .contains("LEFT JOIN [AttributeDefinition] AS [t2]"));
   assert!(statement.sql.contains("[t2].[name] ASC"));
 }
 
@@ -459,9 +465,9 @@ fn renders_sql_server_string_literals_as_unicode() {
 fn preserves_the_empty_schema_part_in_sql_server_table_names() {
   let mut mapping = mapping();
   mapping.sources.get_mut("link").unwrap().table = TableName::Qualified {
-    catalog: Some("Controller".into()),
+    catalog: Some("Application".into()),
     schema: None,
-    name: "Controller#Link".into(),
+    name: "Attribute#Link".into(),
   };
   let graph = MappedQueryGraph::new(definition().compile().unwrap(), mapping).unwrap();
 
@@ -474,7 +480,7 @@ fn preserves_the_empty_schema_part_in_sql_server_table_names() {
 
   assert!(statement
     .sql
-    .contains("FROM [Controller]..[Controller#Link] AS [t0]"));
+    .contains("FROM [Application]..[Attribute#Link] AS [t0]"));
 }
 
 #[test]
@@ -566,5 +572,5 @@ fn emits_presence_metadata_only_for_selected_projection_objects() {
     .unwrap();
 
   assert!(value_only.objects.is_empty());
-  assert!(!value_only.sql.contains("[Requisite] AS [t2]"));
+  assert!(!value_only.sql.contains("[AttributeDefinition] AS [t2]"));
 }

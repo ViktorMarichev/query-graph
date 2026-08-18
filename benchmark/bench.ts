@@ -20,28 +20,28 @@ import { registerDefinition } from '../index.js'
 const link = source('link', {
   id: 'int64',
   idOwner: 'int64',
-  idControllerObjectValue: 'int64',
-  idOrganisation: 'int64',
+  idAttributeValue: 'int64',
+  tenantId: 'int64',
   order: 'int32',
   dateDelete: nullable('dateTime'),
 })
 
 const value = source('value', {
   id: 'int64',
-  idControllerObjectRequisite: 'int64',
+  idAttributeDefinition: 'int64',
   idAttachment: nullable('int64'),
   value: nullable('string'),
   order: 'int32',
 })
 
-const requisite = source('requisite', {
+const attribute = source('attribute', {
   id: 'int64',
   idType: 'int64',
   code: 'string',
   name: 'string',
 })
 
-const requisiteType = source('requisiteType', {
+const attributeType = source('attributeType', {
   id: 'int64',
   code: 'string',
 })
@@ -56,29 +56,29 @@ const storage = source('storage', {
 })
 
 const idOwner = requiredParameter('idOwner', 'int64')
-const idOrganisation = requiredParameter('idOrganisation', 'int64')
+const tenantId = requiredParameter('tenantId', 'int64')
 
 const valueRelation = relation({
   name: 'value',
   from: link,
   to: value,
-  on: eq(link.field('idControllerObjectValue'), value.field('id')),
+  on: eq(link.field('idAttributeValue'), value.field('id')),
   required: true,
 })
 
-const requisiteRelation = relation({
-  name: 'requisite',
+const attributeRelation = relation({
+  name: 'attribute',
   from: value,
-  to: requisite,
-  on: eq(value.field('idControllerObjectRequisite'), requisite.field('id')),
+  to: attribute,
+  on: eq(value.field('idAttributeDefinition'), attribute.field('id')),
   required: true,
 })
 
-const requisiteTypeRelation = relation({
-  name: 'requisiteType',
-  from: requisite,
-  to: requisiteType,
-  on: eq(requisite.field('idType'), requisiteType.field('id')),
+const attributeTypeRelation = relation({
+  name: 'attributeType',
+  from: attribute,
+  to: attributeType,
+  on: eq(attribute.field('idType'), attributeType.field('id')),
   required: true,
 })
 
@@ -97,14 +97,14 @@ const storageRelation = relation({
 })
 
 const attributeValueGraphDefinition = defineGraph({
-  name: 'controllerAttributeValues',
+  name: 'recordAttributeValues',
   root: link,
-  sources: [link, value, requisite, requisiteType, attachment, storage],
-  parameters: [idOwner, idOrganisation],
-  relations: [valueRelation, requisiteRelation, requisiteTypeRelation, attachmentRelation, storageRelation],
+  sources: [link, value, attribute, attributeType, attachment, storage],
+  parameters: [idOwner, tenantId],
+  relations: [valueRelation, attributeRelation, attributeTypeRelation, attachmentRelation, storageRelation],
   constraints: [
     constraint({ predicate: eq(link.field('idOwner'), param(idOwner)) }),
-    constraint({ predicate: eq(link.field('idOrganisation'), param(idOrganisation)) }),
+    constraint({ predicate: eq(link.field('tenantId'), param(tenantId)) }),
     constraint({ predicate: isNull(link.field('dateDelete')) }),
   ],
   projection: [
@@ -119,18 +119,18 @@ const attributeValueGraphDefinition = defineGraph({
       default: true,
     }),
     project({
-      path: 'value.requisite.code',
-      expression: requisite.field('code'),
+      path: 'value.attribute.code',
+      expression: attribute.field('code'),
       default: true,
     }),
     project({
-      path: 'value.requisite.name',
-      expression: requisite.field('name'),
+      path: 'value.attribute.name',
+      expression: attribute.field('name'),
       default: true,
     }),
     project({
-      path: 'value.requisite.type',
-      expression: requisiteType.field('code'),
+      path: 'value.attribute.type',
+      expression: attributeType.field('code'),
       default: true,
     }),
     project({ path: 'value.file.storageId', expression: coalesce(storage.field('id'), 0) }),
@@ -149,47 +149,47 @@ const relationalMapping = {
     link: {
       table: {
         schema: 'dbo',
-        name: 'BUSINESS-OBJECT#ControllerAttributeValueLink',
+        name: 'APP#AttributeValueLink',
       },
     },
     value: {
       table: {
         schema: 'dbo',
-        name: 'SOFTWARE#ControllerObjectValue',
+        name: 'APP#AttributeValue',
       },
     },
-    requisite: {
+    attribute: {
       table: {
         schema: 'dbo',
-        name: 'BUSINESS-OBJECT#ControllerObjectRequisite',
+        name: 'APP#AttributeDefinition',
       },
     },
-    requisiteType: {
+    attributeType: {
       table: {
         schema: 'dbo',
-        name: 'CORE#Reference',
+        name: 'APP#AttributeType',
       },
     },
     attachment: {
       table: {
         schema: 'dbo',
-        name: 'ATTACHMENT#AttachmentStorage',
+        name: 'APP#AssetLink',
       },
     },
     storage: {
       table: {
         schema: 'dbo',
-        name: 'STORAGE#Storage',
+        name: 'APP#StorageObject',
       },
     },
   },
 }
 
 const operation = {
-  select: ['value.id', 'value.value', 'value.requisite.code', 'value.requisite.name', 'value.requisite.type'],
+  select: ['value.id', 'value.value', 'value.attribute.code', 'value.attribute.name', 'value.attribute.type'],
   parameters: {
     idOwner: 42,
-    idOrganisation: 1,
+    tenantId: 1,
   },
   offset: 0,
   limit: 25,

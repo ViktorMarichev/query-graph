@@ -63,11 +63,11 @@ const definition = defineGraph({
 const mapping = {
   sources: {
     link: {
-      table: { schema: 'dbo', name: 'ControllerAttributeValueLink' },
+      table: { schema: 'dbo', name: 'AttributeValueLink' },
       columns: { idOwner: 'owner_id' },
     },
     value: {
-      table: 'ControllerObjectValue',
+      table: 'AttributeValue',
     },
   },
 }
@@ -96,8 +96,8 @@ test('compiles a mapped graph to SQL Server', (t) => {
   ])
   t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'idOwner', scalarType: 'int64' }])
   t.regex(statement.sql, /\[t1\]\.\[id\] AS \[c0\]/)
-  t.regex(statement.sql, /FROM \[dbo\]\.\[ControllerAttributeValueLink\] AS \[t0\]/)
-  t.regex(statement.sql, /INNER JOIN \[ControllerObjectValue\] AS \[t1\]/)
+  t.regex(statement.sql, /FROM \[dbo\]\.\[AttributeValueLink\] AS \[t0\]/)
+  t.regex(statement.sql, /INNER JOIN \[AttributeValue\] AS \[t1\]/)
   t.regex(statement.sql, /\(\[t0\]\.\[owner_id\] = @p0\)/)
   t.regex(statement.sql, /ORDER BY\n  \[t0\]\.\[order\] ASC/)
   t.regex(statement.sql, /OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY$/)
@@ -120,8 +120,8 @@ test('compiles the same mapped graph to Oracle', (t) => {
   })
   t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'idOwner', scalarType: 'int64' }])
   t.regex(statement.sql, /"t1"\."id" AS "c0"/)
-  t.regex(statement.sql, /FROM "dbo"\."ControllerAttributeValueLink" "t0"/)
-  t.regex(statement.sql, /INNER JOIN "ControllerObjectValue" "t1"/)
+  t.regex(statement.sql, /FROM "dbo"\."AttributeValueLink" "t0"/)
+  t.regex(statement.sql, /INNER JOIN "AttributeValue" "t1"/)
   t.regex(statement.sql, /\("t0"\."owner_id" = :p0\)/)
   t.regex(statement.sql, /ORDER BY\n  "t0"\."order" ASC/)
   t.regex(statement.sql, /OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY$/)
@@ -220,7 +220,7 @@ test('returns relational mapping errors to Node.js', (t) => {
 })
 
 test('composes compatible relational mapping fragments', (t) => {
-  const table = { schema: 'dbo', name: 'ControllerAttributeValueLink' }
+  const table = { schema: 'dbo', name: 'AttributeValueLink' }
   const graph = registerDefinition(definition).withRelationalMappings([
     {
       sources: {
@@ -236,7 +236,7 @@ test('composes compatible relational mapping fragments', (t) => {
           table,
           columns: { order: 'sort_order' },
         },
-        value: { table: 'ControllerObjectValue' },
+        value: { table: 'AttributeValue' },
       },
     },
   ])
@@ -249,7 +249,7 @@ test('composes compatible relational mapping fragments', (t) => {
           order: 'sort_order',
         },
       },
-      value: { table: 'ControllerObjectValue' },
+      value: { table: 'AttributeValue' },
     },
   })
   const operation = { parameters: { idOwner: 42 } } as const
@@ -264,10 +264,10 @@ test('returns relational mapping fragment conflicts to Node.js', (t) => {
       {
         sources: {
           link: {
-            table: 'ControllerAttributeValueLink',
+            table: 'AttributeValueLink',
             columns: { idOwner: 'owner_id' },
           },
-          value: { table: 'ControllerObjectValue' },
+          value: { table: 'AttributeValue' },
         },
       },
       {

@@ -178,6 +178,6 @@ SQL execution намеренно остается у потребителя. Э�
 любой pool, transaction model, tracing и политику retry, не связывая planner с
 конкретным DB driver.
 
-### Rule 34
+### Rule of abstraction
 
 Every sufficiently generic abstraction eventually gets an implementation.

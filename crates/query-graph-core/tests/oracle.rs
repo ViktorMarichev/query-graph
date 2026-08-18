@@ -83,8 +83,8 @@ fn mapping() -> RelationalMapping {
         SourceMapping {
           table: TableName::Qualified {
             catalog: None,
-            schema: Some("SOFTWARE".into()),
-            name: "Controller#Link".into(),
+            schema: Some("APP".into()),
+            name: "Attribute#Link".into(),
           },
           columns: HashMap::from([("idOwner".into(), "owner_id".into())]),
         },
@@ -94,8 +94,8 @@ fn mapping() -> RelationalMapping {
         SourceMapping {
           table: TableName::Qualified {
             catalog: None,
-            schema: Some("SOFTWARE".into()),
-            name: "ControllerObjectValue".into(),
+            schema: Some("APP".into()),
+            name: "AttributeValue".into(),
           },
           columns: HashMap::new(),
         },
@@ -124,8 +124,8 @@ fn compiles_the_common_query_plan_to_oracle() {
     concat!(
       "SELECT\n",
       "  (\"t1\".\"value\" || ' suffix') AS \"c0\"\n",
-      "FROM \"SOFTWARE\".\"Controller#Link\" \"t0\"\n",
-      "INNER JOIN \"SOFTWARE\".\"ControllerObjectValue\" \"t1\"\n",
+      "FROM \"APP\".\"Attribute#Link\" \"t0\"\n",
+      "INNER JOIN \"APP\".\"AttributeValue\" \"t1\"\n",
       "  ON (\"t0\".\"idValue\" = \"t1\".\"id\")\n",
       "WHERE\n",
       "  (\"t0\".\"owner_id\" = :p0)\n",
@@ -177,8 +177,8 @@ fn enforces_oracle_version_capabilities() {
 
 #[test]
 fn keeps_long_logical_names_out_of_oracle_identifiers() {
-  const SOURCE: &str = "controller_attribute_value_link_logical_source";
-  const PATH: &str = "controllerAttributeValueWithLongLogicalProjectionPath";
+  const SOURCE: &str = "attribute_value_link_logical_source";
+  const PATH: &str = "attributeValueWithLongLogicalProjectionPath";
 
   let mut definition = GraphDefinition::new("physicalAliases", SOURCE);
   definition.sources = vec![SourceDefinition::new(
@@ -216,9 +216,9 @@ fn keeps_long_logical_names_out_of_oracle_identifiers() {
 fn rejects_a_sql_server_catalog_in_an_oracle_mapping() {
   let mut mapping = mapping();
   mapping.sources.get_mut("link").unwrap().table = TableName::Qualified {
-    catalog: Some("Controller".into()),
+    catalog: Some("Application".into()),
     schema: None,
-    name: "Controller#Link".into(),
+    name: "Attribute#Link".into(),
   };
   let graph = MappedQueryGraph::new(definition().compile().unwrap(), mapping).unwrap();
 

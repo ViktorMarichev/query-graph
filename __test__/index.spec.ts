@@ -17,7 +17,7 @@ import { registerDefinition } from '../index.js'
 const link = source('link', {
   id: 'int64',
   idOwner: 'int64',
-  idControllerObjectValue: 'int64',
+  idAttributeValue: 'int64',
 })
 
 const value = source('value', {
@@ -26,7 +26,7 @@ const value = source('value', {
 })
 
 const idOwner = requiredParameter('idOwner', 'int64')
-const valueRelation = relation('value', link, value, eq(link.field('idControllerObjectValue'), value.field('id')), {
+const valueRelation = relation('value', link, value, eq(link.field('idAttributeValue'), value.field('id')), {
   required: true,
 })
 

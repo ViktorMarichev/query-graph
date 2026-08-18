@@ -6,7 +6,7 @@ use query_graph_core::{
 };
 
 fn attribute_value_definition() -> GraphDefinition {
-  let mut definition = GraphDefinition::new("businessObjectRelationAttributeValues", "link");
+  let mut definition = GraphDefinition::new("recordAttributeValues", "link");
 
   definition.sources = vec![
     SourceDefinition::new(
@@ -14,8 +14,8 @@ fn attribute_value_definition() -> GraphDefinition {
       vec![
         FieldDefinition::new("id", ScalarType::Int64),
         FieldDefinition::new("idOwner", ScalarType::Int64),
-        FieldDefinition::new("idControllerObjectValue", ScalarType::Int64),
-        FieldDefinition::new("idOrganisation", ScalarType::Int64),
+        FieldDefinition::new("idAttributeValue", ScalarType::Int64),
+        FieldDefinition::new("tenantId", ScalarType::Int64),
         FieldDefinition::new("order", ScalarType::Int32),
       ],
     ),
@@ -23,13 +23,13 @@ fn attribute_value_definition() -> GraphDefinition {
       "value",
       vec![
         FieldDefinition::new("id", ScalarType::Int64),
-        FieldDefinition::new("idControllerObjectRequisite", ScalarType::Int64),
+        FieldDefinition::new("idAttributeDefinition", ScalarType::Int64),
         FieldDefinition::new("value", ScalarType::String).nullable(),
         FieldDefinition::new("order", ScalarType::Int32),
       ],
     ),
     SourceDefinition::new(
-      "requisite",
+      "attribute",
       vec![
         FieldDefinition::new("id", ScalarType::Int64),
         FieldDefinition::new("code", ScalarType::String),
@@ -40,7 +40,7 @@ fn attribute_value_definition() -> GraphDefinition {
 
   definition.parameters = vec![
     ParameterDefinition::required("idOwner", ScalarType::Int64),
-    ParameterDefinition::required("idOrganisation", ScalarType::Int64),
+    ParameterDefinition::required("tenantId", ScalarType::Int64),
   ];
 
   definition.relations = vec![
@@ -49,18 +49,18 @@ fn attribute_value_definition() -> GraphDefinition {
       "link",
       "value",
       Expression::eq(
-        Expression::field("link", "idControllerObjectValue"),
+        Expression::field("link", "idAttributeValue"),
         Expression::field("value", "id"),
       ),
     )
     .required(),
     RelationDefinition::new(
-      "requisite",
+      "attribute",
       "value",
-      "requisite",
+      "attribute",
       Expression::eq(
-        Expression::field("value", "idControllerObjectRequisite"),
-        Expression::field("requisite", "id"),
+        Expression::field("value", "idAttributeDefinition"),
+        Expression::field("attribute", "id"),
       ),
     )
     .required(),
@@ -72,8 +72,8 @@ fn attribute_value_definition() -> GraphDefinition {
       Expression::parameter("idOwner"),
     )),
     ConstraintDefinition::always(Expression::eq(
-      Expression::field("link", "idOrganisation"),
-      Expression::parameter("idOrganisation"),
+      Expression::field("link", "tenantId"),
+      Expression::parameter("tenantId"),
     )),
   ];
 
@@ -91,8 +91,8 @@ fn attribute_value_definition() -> GraphDefinition {
       )
       .selected_by_default(),
       ProjectionFieldDefinition::new(
-        vec!["value".into(), "requisite".into(), "name".into()],
-        Expression::field("requisite", "name"),
+        vec!["value".into(), "attribute".into(), "name".into()],
+        Expression::field("attribute", "name"),
       ),
     ],
   };
@@ -126,7 +126,7 @@ fn compiles_and_indexes_a_semantic_graph_definition() {
     .unwrap()
     .map(|relation| relation.name.as_str())
     .collect();
-  assert_eq!(outgoing, vec!["requisite"]);
+  assert_eq!(outgoing, vec!["attribute"]);
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn rejects_sources_that_cannot_be_reached_from_the_root() {
   let issues = definition.compile().unwrap_err().into_vec();
 
   assert!(issues.iter().any(|issue| {
-    issue.code == DefinitionIssueCode::UnreachableSource && issue.message.contains("requisite")
+    issue.code == DefinitionIssueCode::UnreachableSource && issue.message.contains("attribute")
   }));
 }
 

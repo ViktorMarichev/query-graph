@@ -98,7 +98,7 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
   t.regex(optionsError.message, /unknown configuration field "typo"/)
 
   const definition = defineGraph({
-    name: 'businessServiceSpecialists',
+    name: 'serviceMembers',
     root: staff,
     sources: [staff, staffService],
     parameters: [idService],
@@ -133,7 +133,7 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
     .withRelationalMapping({
       sources: {
         staff: { table: 'Staff' },
-        staffService: { table: 'BusinessServiceStaff' },
+        staffService: { table: 'ServiceMember' },
       },
     })
     .compileSqlServer({
@@ -142,7 +142,7 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
     })
 
   t.true(statement.sql.includes('EXISTS ('))
-  t.true(statement.sql.includes('FROM [BusinessServiceStaff] AS [t1]'))
+  t.true(statement.sql.includes('FROM [ServiceMember] AS [t1]'))
   t.false(statement.sql.includes('FROM [Staff] AS [t0]\nINNER JOIN'))
   t.deepEqual(statement.relations, [])
   t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'idService', scalarType: 'int64' }])

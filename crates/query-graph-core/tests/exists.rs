@@ -9,7 +9,7 @@ use query_graph_core::{
 use serde_json::json;
 
 fn definition() -> GraphDefinition {
-  let mut definition = GraphDefinition::new("provisionOfServiceSpecialists", "staff");
+  let mut definition = GraphDefinition::new("membersWithEventAccess", "staff");
   definition.sources = vec![
     SourceDefinition::new("staff", vec![FieldDefinition::new("id", ScalarType::Int64)]),
     SourceDefinition::new(
