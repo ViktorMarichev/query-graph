@@ -19,7 +19,7 @@ Many-связь в одном SQL может размножить root-стро�
 Child-модуль один раз закрепляет контракт ключа:
 
 ```ts
-const itemIds = requiredListParameter('itemIds', 'int64')
+const itemIds = requiredListParam('itemIds', 'int64')
 
 const childrenQuery = batchQuery({
   graph: childrenGraph,

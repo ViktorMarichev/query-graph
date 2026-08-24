@@ -84,11 +84,14 @@ export interface SourceRef<Key extends string = string, Fields extends FieldSpec
   >
 }
 
+declare const parameterRefBrand: unique symbol
+
 export interface ScalarParameterRef<
   Name extends string = string,
   Type extends ScalarType = ScalarType,
   Required extends boolean = boolean,
 > extends ParameterDefinition {
+  readonly [parameterRefBrand]: true
   name: Name
   scalarType: Type
   shape?: 'scalar'
@@ -100,6 +103,7 @@ export interface ListParameterRef<
   Type extends ScalarType = ScalarType,
   Required extends boolean = boolean,
 > extends ParameterDefinition {
+  readonly [parameterRefBrand]: true
   name: Name
   scalarType: Type
   shape: 'list'
@@ -121,7 +125,7 @@ export type RelationRef<
 > = RelationDefinition<Name, From, To, Required, Cardinality>
 
 export type LiteralInput = null | boolean | string | number
-export type ExpressionInput = Expression | LiteralInput | SummaryFieldDefinition
+export type ExpressionInput = Expression | LiteralInput | ScalarParameterRef | SummaryFieldDefinition
 
 type NumberLiteralScalarType<Value extends number> = number extends Value
   ? 'int64' | 'decimal'
@@ -134,26 +138,30 @@ type InputScalarType<Input extends ExpressionInput> =
     ? Type
     : Input extends ProjectionFieldDefinition<infer _Path, infer Type, infer _Nullability, infer _SelectedByDefault>
       ? Type
-      : Input extends null
-        ? null
-        : Input extends boolean
-          ? 'boolean'
-          : Input extends string
-            ? 'string'
-            : Input extends number
-              ? NumberLiteralScalarType<Input>
-              : ScalarType
+      : Input extends ScalarParameterRef<infer _Name, infer Type, infer _Required>
+        ? Type
+        : Input extends null
+          ? null
+          : Input extends boolean
+            ? 'boolean'
+            : Input extends string
+              ? 'string'
+              : Input extends number
+                ? NumberLiteralScalarType<Input>
+                : ScalarType
 
 type InputNullability<Input extends ExpressionInput> =
   Input extends ExpressionTypeMetadata<infer _Type, infer Nullability>
     ? Nullability
     : Input extends ProjectionFieldDefinition<infer _Path, infer _Type, infer Nullability, infer _SelectedByDefault>
       ? Nullability
-      : Input extends null
-        ? true
-        : Input extends Expression
-          ? boolean
-          : false
+      : Input extends ScalarParameterRef
+        ? false
+        : Input extends null
+          ? true
+          : Input extends Expression
+            ? boolean
+            : false
 
 export type ExpressionScalarType<Input extends ExpressionInput> = InputScalarType<Input>
 export type ExpressionNullability<Input extends ExpressionInput> = InputNullability<Input>
@@ -211,18 +219,23 @@ export function requiredParameter<const Name extends string, const Type extends 
   name: Name,
   scalarType: Type,
 ): ScalarParameterRef<Name, Type, true>
+export const requiredParam: typeof requiredParameter
 export function optionalParameter<const Name extends string, const Type extends ScalarType>(
   name: Name,
   scalarType: Type,
 ): ScalarParameterRef<Name, Type, false>
+export const optionalParam: typeof optionalParameter
 export function requiredListParameter<const Name extends string, const Type extends ScalarType>(
   name: Name,
   scalarType: Type,
 ): ListParameterRef<Name, Type, true>
+export const requiredListParam: typeof requiredListParameter
 export function optionalListParameter<const Name extends string, const Type extends ScalarType>(
   name: Name,
   scalarType: Type,
 ): ListParameterRef<Name, Type, false>
+export const optionalListParam: typeof optionalListParameter
+/** @deprecated Pass a scalar parameter reference directly to an expression factory. */
 export function param<const Name extends string, const Type extends ScalarType>(
   parameter: ScalarParameterRef<Name, Type>,
 ): TypedExpression<ParameterExpression<Name>, Type, false>
@@ -282,6 +295,7 @@ export function inParameter<
   expression: Value,
   parameter: ListParameterRef<Name, Type>,
 ): TypedExpression<InParameterExpression<Name>, 'boolean', InputNullability<Value>>
+export const inParam: typeof inParameter
 export function or<const Expressions extends readonly ExpressionInput[]>(
   ...expressions: Expressions
 ): TypedExpression<ExpressionGroup, 'boolean', AnyInputNullability<Expressions>>

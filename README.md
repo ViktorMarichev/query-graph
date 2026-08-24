@@ -38,8 +38,8 @@ npm install @query-graph/core
 
 ```ts
 import { registerDefinition } from '@query-graph/core'
-import { constraint, defineGraph, eq, param, project, requiredParameter, source } from '@query-graph/core/dsl'
-import type { QueryOperation, ResultOf } from '@query-graph/core/dsl'
+import { constraint, defineGraph, eq, project, requiredParam, source } from '@query-graph/core/dsl'
+import type { ResultOf } from '@query-graph/core/dsl'
 
 const users = source('users', {
   id: 'int64',
@@ -47,7 +47,7 @@ const users = source('users', {
   email: 'string',
 })
 
-const organisationId = requiredParameter('organisationId', 'int64')
+const organisationId = requiredParam('organisationId', 'int64')
 
 const usersDefinition = defineGraph({
   name: 'users',
@@ -56,7 +56,7 @@ const usersDefinition = defineGraph({
   parameters: [organisationId],
   constraints: [
     constraint({
-      predicate: eq(users.field('organisationId'), param(organisationId)),
+      predicate: eq(users.field('organisationId'), organisationId),
     }),
   ],
   projection: [
@@ -76,13 +76,8 @@ const usersGraph = registerDefinition(usersDefinition).withRelationalMapping({
   },
 })
 
-const operation = {
-  select: ['id', 'email'],
-  parameters: { organisationId: 42 },
-} as const satisfies QueryOperation<typeof usersDefinition>
-
-const statement = usersGraph.compileSqlServer(operation, { version: '2022' })
-type UserRow = ResultOf<typeof usersDefinition, typeof operation>
+const statement = usersGraph.compileSqlServer({ parameters: { organisationId: 42 } }, { version: '2022' })
+type UserRow = ResultOf<typeof usersDefinition>
 ```
 
 <code>statement</code> содержит:
@@ -95,15 +90,107 @@ type UserRow = ResultOf<typeof usersDefinition, typeof operation>
 | <code>objects</code>   | presence metadata для nullable вложенных объектов                                 |
 | <code>relations</code> | связи, выбранные planner для этой operation                                       |
 
-Executor берет значения из <code>operation.parameters</code> по
+Executor берет значения из <code>parameters</code> переданной operation по
 <code>bindings</code>, вызывает DB driver и восстанавливает объект по
 <code>columns</code> и <code>objects</code>. Разбирать SQL не нужно.
 
 Тот же mapped graph можно скомпилировать в Oracle:
 
 ```ts
-const oracleStatement = usersGraph.compileOracle(operation, { version: '19c' })
+const oracleStatement = usersGraph.compileOracle({ parameters: { organisationId: 42 } }, { version: '19c' })
 ```
+
+## Зачем нужен planner
+
+В реальном графе преимущество проявляется, когда одна definition обслуживает
+разные формы результата:
+
+```text
+orders
+|-- customer
+|   `-- organisation
+|-- latestPayment [firstBy]
+`-- items [batch many]
+
+constraints: organisationId, exists(activePromotion)
+```
+
+<code>ordersDefinition</code> содержит показанные на схеме relations и
+projection. Его небанальные части выглядят так:
+
+```ts
+const latestPayment = relation({
+  name: 'latestPayment',
+  from: orders,
+  to: payments,
+  on: eq(orders.field('id'), payments.field('orderId')),
+  selection: firstBy(desc(payments.field('createdAt'))),
+})
+
+const hasActivePromotion = constraint({
+  predicate: exists(promotions, eq(promotions.field('active'), true)),
+})
+
+const ordersDefinition = defineGraph({
+  name: 'orders',
+  root: orders,
+  sources: [orders, customers, organisations, payments, promotions],
+  parameters: [organisationId],
+  relations: [customer, customerOrganisation, latestPayment, activePromotion],
+  constraints: [byOrganisation, hasActivePromotion],
+  objects: [customerObject, latestPaymentObject],
+  projection: [orderId, customerName, customerOrganisationName, latestPaymentAmount],
+})
+
+const items = batchRelation({
+  name: 'items',
+  from: 'id',
+  query: batchQuery({
+    graph: orderItemsGraph,
+    key: { path: 'orderId', parameter: orderIds },
+  }),
+  cardinality: 'many',
+})
+
+const mappedOrders = registerDefinition(ordersDefinition).withRelationalMapping(orderMapping)
+const ordersGraph = composeGraph({ root: mappedOrders, relations: [items] })
+```
+
+Обычные source и projection declarations здесь свернуты в именованные
+константы. <code>customerObject</code> и <code>latestPaymentObject</code> созданы
+через <code>projectObject</code>, поэтому отсутствующая to-one строка становится
+<code>null</code>.
+
+Одна и та же definition теперь обслуживает дешевый список:
+
+```ts
+const listPlan = ordersGraph.compileSqlServerPlan({
+  select: ['id'],
+  parameters: { organisationId: 42 },
+})
+
+listPlan.root.relations // []
+listPlan.batches // []
+```
+
+И подробное представление:
+
+```ts
+const detailsPlan = ordersGraph.compileSqlServerPlan({
+  select: ['id', 'customer.name', 'latestPayment.amount', 'items.name'],
+  parameters: { organisationId: 42 },
+})
+
+detailsPlan.root.relations.map(({ name }) => name)
+// ['customer', 'latestPayment']
+
+detailsPlan.batches.map(({ name }) => name)
+// ['items']
+```
+
+Planner не добавляет невыбранную <code>customerOrganisation</code>,
+<code>exists(activePromotion)</code> остается semijoin без размножения root-строк,
+а <code>items</code> загружается одним batch-запросом для всех найденных orders.
 
 ## Модель
 
@@ -160,9 +247,9 @@ import { defineGraph, relation, project } from '@query-graph/core/dsl'
 ```
 
 <code>@query-graph/core/definition</code> сохраняет позиционные фабрики только
-для совместимости линии 1.2.x. <code>@query-graph/dsl-object</code> остается
-тонким deprecated facade над <code>@query-graph/core/dsl</code>. Новому коду эти
-entrypoint не нужны.
+для обратной совместимости с ранним API 1.x.
+<code>@query-graph/dsl-object</code> остается тонким deprecated facade над
+<code>@query-graph/core/dsl</code>. Новому коду эти entrypoint не нужны.
 
 Batch-фабрики временно доступны из package root, но новый код должен импортировать
 их из <code>@query-graph/core/dsl</code>.
@@ -177,7 +264,3 @@ JavaScript.
 SQL execution намеренно остается у потребителя. Это позволяет использовать
 любой pool, transaction model, tracing и политику retry, не связывая planner с
 конкретным DB driver.
-
-### Rule of abstraction
-
-Every sufficiently generic abstraction eventually gets an implementation.

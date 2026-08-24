@@ -6,6 +6,11 @@ import * as objectDsl from '@query-graph/dsl-object'
 
 const sharedPrimitives = [
   'source',
+  'requiredParam',
+  'optionalParam',
+  'requiredListParam',
+  'optionalListParam',
+  'inParam',
   'eq',
   'count',
   'asc',
@@ -35,6 +40,12 @@ test('positional DSL is a compatibility adapter over shared object primitives', 
   for (const name of structuralFactories) {
     t.not(canonicalObjectDsl[name], functionalDsl[name])
   }
+
+  t.is(canonicalObjectDsl.requiredParam, canonicalObjectDsl.requiredParameter)
+  t.is(canonicalObjectDsl.optionalParam, canonicalObjectDsl.optionalParameter)
+  t.is(canonicalObjectDsl.requiredListParam, canonicalObjectDsl.requiredListParameter)
+  t.is(canonicalObjectDsl.optionalListParam, canonicalObjectDsl.optionalListParameter)
+  t.is(canonicalObjectDsl.inParam, canonicalObjectDsl.inParameter)
 
   t.false('GRAPH_DEFINITION_VERSION' in canonicalObjectDsl)
   t.false('field' in canonicalObjectDsl)

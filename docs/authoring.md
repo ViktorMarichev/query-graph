@@ -22,13 +22,18 @@ const users = source('users', {
 ## Параметры
 
 ```ts
-const id = requiredParameter('id', 'int64')
-const status = optionalParameter('status', 'string')
-const ids = requiredListParameter('ids', 'int64')
+const id = requiredParam('id', 'int64')
+const status = optionalParam('status', 'string')
+const ids = requiredListParam('ids', 'int64')
+const optionalIds = optionalListParam('optionalIds', 'int64')
 ```
 
-Scalar parameter используется через <code>param</code>, list parameter через
-<code>inParameter</code>. Optional parameter не активирует constraint с
+Scalar parameter передается в expression напрямую, list parameter используется
+через <code>inParam</code>. Явная форма <code>param(id)</code> поддерживается
+для совместимости. Полные имена <code>requiredParameter</code>,
+<code>optionalParameter</code>, <code>requiredListParameter</code>,
+<code>optionalListParameter</code> и <code>inParameter</code> остаются алиасами
+тех же factories. Optional parameter не активирует constraint с
 <code>when</code>, пока значение отсутствует.
 
 ## Expressions
@@ -37,7 +42,7 @@ DSL предоставляет сравнения, boolean groups, null tests, s
 агрегаты и literals:
 
 ```ts
-const predicate = and(eq(users.field('organisationId'), param(organisationId)), isNull(users.field('dateDelete')))
+const predicate = and(eq(users.field('organisationId'), organisationId), isNull(users.field('dateDelete')))
 ```
 
 Типы operands проверяются TypeScript во время authoring и повторно Rust при
@@ -72,7 +77,7 @@ const profileRelation = relation({
 ```ts
 constraint({
   when: organisationId,
-  predicate: eq(users.field('organisationId'), param(organisationId)),
+  predicate: eq(users.field('organisationId'), organisationId),
 })
 
 constraint({

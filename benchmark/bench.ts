@@ -9,10 +9,9 @@ import {
   isNull,
   nullable,
   ordering,
-  param,
   project,
   relation,
-  requiredParameter,
+  requiredParam,
   source,
 } from '../dsl.js'
 import { registerDefinition } from '../index.js'
@@ -55,8 +54,8 @@ const storage = source('storage', {
   id: 'int64',
 })
 
-const idOwner = requiredParameter('idOwner', 'int64')
-const tenantId = requiredParameter('tenantId', 'int64')
+const idOwner = requiredParam('idOwner', 'int64')
+const tenantId = requiredParam('tenantId', 'int64')
 
 const valueRelation = relation({
   name: 'value',
@@ -103,8 +102,8 @@ const attributeValueGraphDefinition = defineGraph({
   parameters: [idOwner, tenantId],
   relations: [valueRelation, attributeRelation, attributeTypeRelation, attachmentRelation, storageRelation],
   constraints: [
-    constraint({ predicate: eq(link.field('idOwner'), param(idOwner)) }),
-    constraint({ predicate: eq(link.field('tenantId'), param(tenantId)) }),
+    constraint({ predicate: eq(link.field('idOwner'), idOwner) }),
+    constraint({ predicate: eq(link.field('tenantId'), tenantId) }),
     constraint({ predicate: isNull(link.field('dateDelete')) }),
   ],
   projection: [
