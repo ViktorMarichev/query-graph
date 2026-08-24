@@ -33,6 +33,18 @@ const oracle = graph.compileOracle(operation, { version: '19c' })
 Version capabilities проверяются до возврата SQL. Например, pagination и
 <code>firstBy</code> могут требовать более новую версию диалекта.
 
+Semantic functions рендерятся с одинаковым поведением через разные конструкции
+диалектов:
+
+| DSL                              | Oracle                        | SQL Server                        |
+| -------------------------------- | ----------------------------- | --------------------------------- |
+| <code>divide(left, right)</code> | <code>left / right</code>     | дробное <code>left / right</code> |
+| <code>truncate(value)</code>     | <code>TRUNC(value)</code>     | <code>ROUND(value, 0, 1)</code>   |
+| <code>modulo(left, right)</code> | <code>MOD(left, right)</code> | <code>left % right</code>         |
+
+SQL Server compiler принудительно переводит <code>divide</code> в дробную
+арифметику, чтобы два integer operands не дали integer division.
+
 ## Bindings
 
 Compiler никогда не вставляет operation values в SQL. Каждый binding содержит:

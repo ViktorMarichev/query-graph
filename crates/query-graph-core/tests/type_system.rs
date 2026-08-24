@@ -14,6 +14,9 @@ fn root_source() -> SourceDefinition {
       FieldDefinition::new("optionalName", ScalarType::String).nullable(),
       FieldDefinition::new("active", ScalarType::Boolean),
       FieldDefinition::new("payload", ScalarType::Json).nullable(),
+      FieldDefinition::new("durationMinutes", ScalarType::Int64).nullable(),
+      FieldDefinition::new("ratio", ScalarType::Float64),
+      FieldDefinition::new("amount", ScalarType::Decimal),
     ],
   )
 }
@@ -189,6 +192,134 @@ fn validates_semantic_function_arities_and_arguments() {
         Expression::Function {
           name: SemanticFunction::Upper,
           arguments: vec![Expression::field("root", "id")],
+        },
+      ),
+    ],
+  };
+
+  let codes = issue_codes(definition);
+
+  assert!(codes.contains(&DefinitionIssueCode::InvalidFunctionArity));
+  assert!(codes.contains(&DefinitionIssueCode::InvalidExpressionType));
+}
+
+#[test]
+fn infers_portable_numeric_functions() {
+  let mut definition = definition();
+  definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
+    fields: vec![
+      ProjectionFieldDefinition::new(
+        vec!["hoursDuration".into()],
+        Expression::Function {
+          name: SemanticFunction::Truncate,
+          arguments: vec![Expression::Function {
+            name: SemanticFunction::Divide,
+            arguments: vec![
+              Expression::field("root", "durationMinutes"),
+              Expression::literal(LiteralValue::Integer(60)),
+            ],
+          }],
+        },
+      ),
+      ProjectionFieldDefinition::new(
+        vec!["minutesDuration".into()],
+        Expression::Function {
+          name: SemanticFunction::Modulo,
+          arguments: vec![
+            Expression::field("root", "durationMinutes"),
+            Expression::literal(LiteralValue::Integer(60)),
+          ],
+        },
+      ),
+      ProjectionFieldDefinition::new(
+        vec!["ratio".into()],
+        Expression::Function {
+          name: SemanticFunction::Divide,
+          arguments: vec![
+            Expression::field("root", "ratio"),
+            Expression::literal(LiteralValue::Integer(2)),
+          ],
+        },
+      ),
+      ProjectionFieldDefinition::new(
+        vec!["truncatedDuration".into()],
+        Expression::Function {
+          name: SemanticFunction::Truncate,
+          arguments: vec![Expression::field("root", "durationMinutes")],
+        },
+      ),
+      ProjectionFieldDefinition::new(
+        vec!["decimalRemainder".into()],
+        Expression::Function {
+          name: SemanticFunction::Modulo,
+          arguments: vec![
+            Expression::field("root", "amount"),
+            Expression::literal(LiteralValue::Integer(2)),
+          ],
+        },
+      ),
+    ],
+  };
+
+  let graph = definition.compile().unwrap();
+
+  assert_eq!(
+    graph.projection_type("hoursDuration"),
+    Some(ExpressionType::new(ScalarType::Decimal, true))
+  );
+  assert_eq!(
+    graph.projection_type("minutesDuration"),
+    Some(ExpressionType::new(ScalarType::Int64, true))
+  );
+  assert_eq!(
+    graph.projection_type("ratio"),
+    Some(ExpressionType::new(ScalarType::Float64, false))
+  );
+  assert_eq!(
+    graph.projection_type("truncatedDuration"),
+    Some(ExpressionType::new(ScalarType::Int64, true))
+  );
+  assert_eq!(
+    graph.projection_type("decimalRemainder"),
+    Some(ExpressionType::new(ScalarType::Decimal, false))
+  );
+}
+
+#[test]
+fn validates_numeric_function_arities_and_arguments() {
+  let mut definition = definition();
+  definition.projection = ProjectionDefinition {
+    objects: Vec::new(),
+    fields: vec![
+      ProjectionFieldDefinition::new(
+        vec!["wrongArity".into()],
+        Expression::Function {
+          name: SemanticFunction::Truncate,
+          arguments: vec![
+            Expression::field("root", "quantity"),
+            Expression::literal(LiteralValue::Integer(1)),
+          ],
+        },
+      ),
+      ProjectionFieldDefinition::new(
+        vec!["wrongType".into()],
+        Expression::Function {
+          name: SemanticFunction::Divide,
+          arguments: vec![
+            Expression::field("root", "name"),
+            Expression::literal(LiteralValue::Integer(2)),
+          ],
+        },
+      ),
+      ProjectionFieldDefinition::new(
+        vec!["floatModulo".into()],
+        Expression::Function {
+          name: SemanticFunction::Modulo,
+          arguments: vec![
+            Expression::field("root", "ratio"),
+            Expression::literal(LiteralValue::Integer(2)),
+          ],
         },
       ),
     ],

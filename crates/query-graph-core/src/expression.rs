@@ -22,6 +22,9 @@ pub enum SemanticFunction {
   Upper,
   Coalesce,
   Concat,
+  Divide,
+  Truncate,
+  Modulo,
 }
 
 impl SemanticFunction {
@@ -31,6 +34,9 @@ impl SemanticFunction {
       Self::Upper => "upper",
       Self::Coalesce => "coalesce",
       Self::Concat => "concat",
+      Self::Divide => "divide",
+      Self::Truncate => "truncate",
+      Self::Modulo => "modulo",
     }
   }
 }

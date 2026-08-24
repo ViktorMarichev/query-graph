@@ -184,6 +184,8 @@ type AverageScalarType<Type extends ScalarType | null> = Type extends 'float64'
     ? 'decimal'
     : Exclude<Type, null>
 
+type DivideScalarType<Type extends ScalarType | null> = 'float64' extends Type ? 'float64' : 'decimal'
+
 type InputNullabilities<Inputs extends readonly ExpressionInput[]> = {
   [Index in keyof Inputs]: InputNullability<Inputs[Index]>
 }
@@ -340,6 +342,25 @@ export function concat<const First extends ExpressionInput, const Rest extends r
   first: First,
   ...rest: Rest
 ): TypedExpression<FunctionExpression, 'string', AllInputNullability<readonly [First, ...Rest]>>
+export function divide<const Left extends ExpressionInput, const Right extends ExpressionInput>(
+  left: Left,
+  right: Right,
+): TypedExpression<
+  FunctionExpression,
+  DivideScalarType<InputScalarType<Left | Right>>,
+  AnyInputNullability<readonly [Left, Right]>
+>
+export function truncate<const Value extends ExpressionInput>(
+  expression: Value,
+): TypedExpression<FunctionExpression, Exclude<InputScalarType<Value>, null>, InputNullability<Value>>
+export function modulo<const Left extends ExpressionInput, const Right extends ExpressionInput>(
+  left: Left,
+  right: Right,
+): TypedExpression<
+  FunctionExpression,
+  PromoteScalarType<InputScalarType<Left | Right>>,
+  AnyInputNullability<readonly [Left, Right]>
+>
 
 export function count(expression?: ExpressionInput): TypedExpression<AggregateExpression, 'int64', false>
 export function countDistinct(expression: ExpressionInput): TypedExpression<AggregateExpression, 'int64', false>

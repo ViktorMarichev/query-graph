@@ -119,25 +119,23 @@ impl SqlDialect for SqlServerDialect {
   }
 
   fn render_function(&self, function: SemanticFunction, arguments: &[String]) -> String {
-    if function == SemanticFunction::Concat && self.version == SqlServerVersion::V2008 {
-      return format!(
+    match function {
+      SemanticFunction::Lower => format!("LOWER({})", arguments[0]),
+      SemanticFunction::Upper => format!("UPPER({})", arguments[0]),
+      SemanticFunction::Coalesce => format!("COALESCE({})", arguments.join(", ")),
+      SemanticFunction::Concat if self.version == SqlServerVersion::V2008 => format!(
         "({})",
         arguments
           .iter()
           .map(|argument| format!("COALESCE({argument}, N'')"))
           .collect::<Vec<_>>()
           .join(" + ")
-      );
+      ),
+      SemanticFunction::Concat => format!("CONCAT({})", arguments.join(", ")),
+      SemanticFunction::Divide => format!("((1.0 * {}) / {})", arguments[0], arguments[1]),
+      SemanticFunction::Truncate => format!("ROUND({}, 0, 1)", arguments[0]),
+      SemanticFunction::Modulo => format!("({} % {})", arguments[0], arguments[1]),
     }
-
-    let sql_name = match function {
-      SemanticFunction::Lower => "LOWER",
-      SemanticFunction::Upper => "UPPER",
-      SemanticFunction::Coalesce => "COALESCE",
-      SemanticFunction::Concat => "CONCAT",
-    };
-
-    format!("{sql_name}({})", arguments.join(", "))
   }
 
   fn render_aggregate(&self, function: AggregateFunction, expression: Option<&str>) -> String {

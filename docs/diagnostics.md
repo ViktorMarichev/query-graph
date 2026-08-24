@@ -47,6 +47,6 @@ JavaScript.
 
 ## Совместимость diagnostics
 
-Wire schema остается версии 10. В совместимых выпусках сохраняются diagnostic
+Wire schema остается версии 11. В совместимых выпусках сохраняются diagnostic
 codes и locations. Message предназначен человеку и не должен использоваться как
 machine-readable contract.

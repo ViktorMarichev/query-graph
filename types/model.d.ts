@@ -28,7 +28,7 @@ export type ParameterShape = 'scalar' | 'list'
 export type RelationCardinality = 'one' | 'many'
 export type OrderDirection = 'asc' | 'desc'
 export type NullsOrder = 'first' | 'last'
-export type SemanticFunctionName = 'lower' | 'upper' | 'coalesce' | 'concat'
+export type SemanticFunctionName = 'lower' | 'upper' | 'coalesce' | 'concat' | 'divide' | 'truncate' | 'modulo'
 export type AggregateFunctionName = 'count' | 'countDistinct' | 'sum' | 'average' | 'minimum' | 'maximum'
 export type ProjectionFieldRole = 'value' | 'dimension' | 'measure'
 
@@ -376,7 +376,7 @@ export interface FirstBySelection {
 export type RelationSelection = FirstBySelection
 
 export interface GraphDefinitionInput {
-  schemaVersion: 10
+  schemaVersion: 11
   name: string
   root: string
   sources: SourceDefinition[]

@@ -1,7 +1,7 @@
 # Authoring DSL
 
 Authoring API находится в <code>@query-graph/core/dsl</code>. Он создает
-семантический definition версии 10, который не содержит таблиц, SQL aliases или
+семантический definition версии 11, который не содержит таблиц, SQL aliases или
 синтаксиса диалекта.
 
 ## Sources и поля
@@ -45,8 +45,31 @@ DSL предоставляет сравнения, boolean groups, null tests, s
 const predicate = and(eq(users.field('organisationId'), organisationId), isNull(users.field('dateDelete')))
 ```
 
-Типы operands проверяются TypeScript во время authoring и повторно Rust при
-регистрации.
+Semantic functions позволяют оставить вычисляемые поля частью графа, не
+привязывая definition к синтаксису Oracle или SQL Server:
+
+```ts
+const durationProjection = [
+  project({
+    path: 'hoursDuration',
+    expression: truncate(divide(services.field('durationMinutes'), 60)),
+  }),
+  project({
+    path: 'minutesDuration',
+    expression: modulo(services.field('durationMinutes'), 60),
+  }),
+]
+```
+
+<code>divide</code> возвращает decimal для точных числовых типов и float64,
+если хотя бы один operand имеет тип float64. <code>truncate</code> отбрасывает
+дробную часть по направлению к нулю и сохраняет scalar type. <code>modulo</code>
+принимает int32, int64 и decimal; float64 отклоняется, чтобы definition одинаково
+работал в поддерживаемых диалектах. Nullability распространяется от operands к
+результату.
+
+TypeScript выводит тип и nullability результата во время authoring. Rust при
+регистрации повторно проверяет arity и совместимость типов operands.
 
 ## Relations
 

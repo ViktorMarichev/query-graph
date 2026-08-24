@@ -197,6 +197,9 @@ pub(crate) fn infer_function(
     }
     SemanticFunction::Coalesce => infer_coalesce(arguments),
     SemanticFunction::Concat => infer_concat(arguments),
+    SemanticFunction::Divide => infer_divide(arguments),
+    SemanticFunction::Truncate => infer_truncate(arguments),
+    SemanticFunction::Modulo => infer_modulo(arguments),
   }
 }
 
@@ -384,6 +387,60 @@ fn infer_concat(arguments: &[InferredType]) -> Result<InferredType, TypeSystemEr
   ))
 }
 
+fn infer_divide(arguments: &[InferredType]) -> Result<InferredType, TypeSystemError> {
+  let (common_type, nullable) = infer_binary_numeric_arguments("divide", arguments)?;
+  let scalar_type = if common_type == ScalarType::Float64 {
+    ScalarType::Float64
+  } else {
+    ScalarType::Decimal
+  };
+
+  Ok(InferredType::scalar(scalar_type, nullable))
+}
+
+fn infer_modulo(arguments: &[InferredType]) -> Result<InferredType, TypeSystemError> {
+  let (scalar_type, nullable) = infer_binary_numeric_arguments("modulo", arguments)?;
+  if scalar_type == ScalarType::Float64 {
+    return Err(TypeSystemError::new(
+      TypeSystemErrorKind::InvalidType,
+      "modulo is not defined for float64 values",
+    ));
+  }
+
+  Ok(InferredType::scalar(scalar_type, nullable))
+}
+
+fn infer_binary_numeric_arguments(
+  name: &str,
+  arguments: &[InferredType],
+) -> Result<(ScalarType, bool), TypeSystemError> {
+  require_arity(name, arguments.len(), 2, 2)?;
+
+  let left = arguments[0];
+  let right = arguments[1];
+  require_numeric_or_null(left, &format!("{name} argument"))?;
+  require_numeric_or_null(right, &format!("{name} argument"))?;
+
+  let Some(common_type) = common_scalar_type(left.scalar_type, right.scalar_type)
+    .map_err(|()| incompatible_types(name, left, right))?
+  else {
+    return Err(unresolved_type(&format!("{name} result")));
+  };
+
+  Ok((common_type, left.nullable || right.nullable))
+}
+
+fn infer_truncate(arguments: &[InferredType]) -> Result<InferredType, TypeSystemError> {
+  require_arity("truncate", arguments.len(), 1, 1)?;
+  let argument = arguments[0];
+  require_numeric_or_null(argument, "truncate argument")?;
+  let Some(scalar_type) = argument.scalar_type else {
+    return Err(unresolved_type("truncate result"));
+  };
+
+  Ok(InferredType::scalar(scalar_type, argument.nullable))
+}
+
 fn require_arity(
   name: &str,
   actual: usize,
@@ -424,6 +481,17 @@ fn require_boolean_or_null(value: InferredType, role: &str) -> Result<(), TypeSy
     Err(TypeSystemError::new(
       TypeSystemErrorKind::InvalidType,
       format!("{role} must be boolean, received {}", value.describe()),
+    ))
+  }
+}
+
+fn require_numeric_or_null(value: InferredType, role: &str) -> Result<(), TypeSystemError> {
+  if value.scalar_type.is_none_or(is_numeric) {
+    Ok(())
+  } else {
+    Err(TypeSystemError::new(
+      TypeSystemErrorKind::InvalidType,
+      format!("{role} must be numeric, received {}", value.describe()),
     ))
   }
 }

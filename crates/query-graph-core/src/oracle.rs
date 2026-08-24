@@ -122,6 +122,9 @@ impl SqlDialect for OracleDialect {
       SemanticFunction::Upper => format!("UPPER({})", arguments[0]),
       SemanticFunction::Coalesce => format!("COALESCE({})", arguments.join(", ")),
       SemanticFunction::Concat => format!("({})", arguments.join(" || ")),
+      SemanticFunction::Divide => format!("({} / {})", arguments[0], arguments[1]),
+      SemanticFunction::Truncate => format!("TRUNC({})", arguments[0]),
+      SemanticFunction::Modulo => format!("MOD({}, {})", arguments[0], arguments[1]),
     }
   }
 

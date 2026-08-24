@@ -17,6 +17,7 @@
 - выбор JOIN только для реально запрошенных полей и условий;
 - scalar и list parameters без подстановки значений в SQL;
 - <code>exists</code>, <code>firstBy</code>, nullable projection objects и именованные ordering;
+- вычисляемые проекции с переносимыми строковыми и числовыми функциями;
 - summary-графы с dimensions, measures, <code>GROUP BY</code> и <code>HAVING</code>;
 - batch relations для загрузки коллекций после пагинации root;
 - один семантический definition для SQL Server и Oracle.
