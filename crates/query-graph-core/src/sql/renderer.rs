@@ -50,7 +50,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     Ok(self.dialect.render_table_reference(&table, &alias))
   }
 
-  pub(super) fn render_expression(
+  pub(super) fn render_value(
     &mut self,
     expression: &Expression,
   ) -> Result<String, SqlCompileError> {
@@ -58,6 +58,27 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       Expression::Field { source, field } => self.render_field(source, field),
       Expression::Parameter { name } => self.render_parameter(name),
       Expression::Literal { value } => Ok(self.dialect.render_literal(value)),
+      Expression::Function { name, arguments } => {
+        let arguments = self.render_values(arguments)?;
+        Ok(self.dialect.render_function(*name, &arguments))
+      }
+      Expression::Aggregate {
+        function,
+        expression,
+      } => self.render_aggregate(*function, expression.as_deref()),
+      _ => {
+        // Render once before reusing the predicate text in a three-valued CASE.
+        let predicate = self.render_predicate(expression)?;
+        Ok(self.dialect.render_predicate_value(&predicate))
+      }
+    }
+  }
+
+  pub(super) fn render_predicate(
+    &mut self,
+    expression: &Expression,
+  ) -> Result<String, SqlCompileError> {
+    match expression {
       Expression::Eq { left, right } => self.render_comparison(left, "=", right, false),
       Expression::NotEq { left, right } => self.render_comparison(left, "<>", right, true),
       Expression::LessThan { left, right } => self.render_binary(left, "<", right),
@@ -73,31 +94,28 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
         expression,
         parameter,
       } => self.render_in_parameter(expression, parameter),
-      Expression::And { expressions } => self.render_expression_group(expressions, "AND"),
-      Expression::Or { expressions } => self.render_expression_group(expressions, "OR"),
-      Expression::Not { expression } => {
-        Ok(format!("(NOT {})", self.render_expression(expression)?))
-      }
+      Expression::And { expressions } => self.render_predicate_group(expressions, "AND"),
+      Expression::Or { expressions } => self.render_predicate_group(expressions, "OR"),
+      Expression::Not { expression } => Ok(format!("(NOT {})", self.render_predicate(expression)?)),
       Expression::IsNull { expression } => {
-        Ok(format!("({} IS NULL)", self.render_expression(expression)?))
+        Ok(format!("({} IS NULL)", self.render_value(expression)?))
       }
-      Expression::IsNotNull { expression } => Ok(format!(
-        "({} IS NOT NULL)",
-        self.render_expression(expression)?
-      )),
+      Expression::IsNotNull { expression } => {
+        Ok(format!("({} IS NOT NULL)", self.render_value(expression)?))
+      }
       Expression::Exists {
         source,
         from,
         predicate,
       } => self.render_exists(source, from.as_deref(), predicate.as_deref()),
-      Expression::Function { name, arguments } => {
-        let arguments = self.render_expressions(arguments)?;
-        Ok(self.dialect.render_function(*name, &arguments))
+      Expression::Field { .. }
+      | Expression::Parameter { .. }
+      | Expression::Literal { .. }
+      | Expression::Function { .. }
+      | Expression::Aggregate { .. } => {
+        let value = self.render_value(expression)?;
+        Ok(self.dialect.render_value_predicate(&value))
       }
-      Expression::Aggregate {
-        function,
-        expression,
-      } => self.render_aggregate(*function, expression.as_deref()),
     }
   }
 
@@ -105,7 +123,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     &mut self,
     order: &crate::OrderByDefinition,
   ) -> Result<String, SqlCompileError> {
-    let expression = self.render_expression(&order.expression)?;
+    let expression = self.render_value(&order.expression)?;
     Ok(
       self
         .dialect
@@ -137,7 +155,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     let alias = self.source_alias(&relation.to)?;
     let projection = format!("{}.*", self.dialect.quote_identifier(&alias));
     let source = self.render_source(&relation.to)?;
-    let predicate = self.render_expression(&relation.on)?;
+    let predicate = self.render_predicate(&relation.on)?;
     let query = self
       .dialect
       .render_first_by_query(&projection, &source, &predicate, &order_by)?;
@@ -161,7 +179,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     expression: Option<&Expression>,
   ) -> Result<String, SqlCompileError> {
     let rendered_expression = expression
-      .map(|expression| self.render_expression(expression))
+      .map(|expression| self.render_value(expression))
       .transpose()?;
 
     if function != AggregateFunction::Count && rendered_expression.is_none() {
@@ -197,8 +215,8 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     expression: &Expression,
     values: &[Expression],
   ) -> Result<String, SqlCompileError> {
-    let expression = self.render_expression(expression)?;
-    let values = self.render_expressions(values)?;
+    let expression = self.render_value(expression)?;
+    let values = self.render_values(values)?;
     Ok(format!("({expression} IN ({}))", values.join(", ")))
   }
 
@@ -219,7 +237,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       return Ok("(1 = 0)".to_owned());
     }
 
-    let expression = self.render_expression(expression)?;
+    let expression = self.render_value(expression)?;
     let placeholders: Result<Vec<_>, _> = (0..value_count)
       .map(|index| self.render_parameter_binding(parameter, Some(index)))
       .collect();
@@ -261,7 +279,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       sql.push_str(&format!("\n    CROSS APPLY {target}"));
     } else {
       sql.push_str(&format!("\n    FROM {}", self.render_source(&first.to)?));
-      where_predicates.push(self.render_expression(&first.on)?);
+      where_predicates.push(self.render_predicate(&first.on)?);
     }
 
     for relation_index in &relation_indices[1..] {
@@ -271,13 +289,13 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
         sql.push_str(&format!("\n    CROSS APPLY {target}"));
       } else {
         let target = self.render_source(&relation.to)?;
-        let condition = self.render_expression(&relation.on)?;
+        let condition = self.render_predicate(&relation.on)?;
         sql.push_str(&format!("\n    INNER JOIN {target}\n      ON {condition}"));
       }
     }
 
     if let Some(predicate) = predicate {
-      where_predicates.push(self.render_expression(predicate)?);
+      where_predicates.push(self.render_predicate(predicate)?);
     }
     if let Some((first, rest)) = where_predicates.split_first() {
       sql.push_str(&format!("\n    WHERE {first}"));
@@ -344,8 +362,8 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
   ) -> Result<String, SqlCompileError> {
     Ok(format!(
       "({} {operator} {})",
-      self.render_expression(left)?,
-      self.render_expression(right)?
+      self.render_value(left)?,
+      self.render_value(right)?
     ))
   }
 
@@ -373,28 +391,26 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     negated: bool,
   ) -> Result<String, SqlCompileError> {
     let operator = if negated { "IS NOT NULL" } else { "IS NULL" };
-    Ok(format!(
-      "({} {operator})",
-      self.render_expression(expression)?
-    ))
+    Ok(format!("({} {operator})", self.render_value(expression)?))
   }
 
-  fn render_expression_group(
+  fn render_predicate_group(
     &mut self,
     expressions: &[Expression],
     operator: &str,
   ) -> Result<String, SqlCompileError> {
-    let expressions = self.render_expressions(expressions)?;
+    let expressions: Result<Vec<_>, _> = expressions
+      .iter()
+      .map(|expression| self.render_predicate(expression))
+      .collect();
+    let expressions = expressions?;
     Ok(format!("({})", expressions.join(&format!(" {operator} "))))
   }
 
-  fn render_expressions(
-    &mut self,
-    expressions: &[Expression],
-  ) -> Result<Vec<String>, SqlCompileError> {
+  fn render_values(&mut self, expressions: &[Expression]) -> Result<Vec<String>, SqlCompileError> {
     expressions
       .iter()
-      .map(|expression| self.render_expression(expression))
+      .map(|expression| self.render_value(expression))
       .collect()
   }
 }

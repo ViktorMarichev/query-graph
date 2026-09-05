@@ -116,6 +116,22 @@ impl SqlDialect for OracleDialect {
     sql::render_literal(value, "")
   }
 
+  fn render_predicate_value(&self, predicate: &str) -> String {
+    if self.version == OracleVersion::V23ai {
+      predicate.to_owned()
+    } else {
+      sql::render_predicate_value(predicate)
+    }
+  }
+
+  fn render_value_predicate(&self, value: &str) -> String {
+    if self.version == OracleVersion::V23ai {
+      format!("TO_BOOLEAN({value})")
+    } else {
+      sql::render_value_predicate(value)
+    }
+  }
+
   fn render_function(&self, function: SemanticFunction, arguments: &[String]) -> String {
     match function {
       SemanticFunction::Lower => format!("LOWER({})", arguments[0]),

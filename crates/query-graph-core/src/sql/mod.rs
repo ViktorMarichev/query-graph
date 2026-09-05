@@ -65,6 +65,14 @@ pub(super) trait SqlDialect {
 
   fn render_literal(&self, value: &LiteralValue) -> String;
 
+  fn render_predicate_value(&self, predicate: &str) -> String {
+    render_predicate_value(predicate)
+  }
+
+  fn render_value_predicate(&self, value: &str) -> String {
+    render_value_predicate(value)
+  }
+
   fn render_function(&self, function: SemanticFunction, arguments: &[String]) -> String;
 
   fn render_aggregate(&self, function: AggregateFunction, expression: Option<&str>) -> String;
@@ -144,7 +152,7 @@ pub(crate) fn compile(
       let projection = &graph.definition().projection.fields[*projection_index];
       Ok(format!(
         "  {} AS {}",
-        renderer.render_expression(&projection.expression)?,
+        renderer.render_value(&projection.expression)?,
         dialect.quote_identifier(&column.name)
       ))
     })
@@ -154,7 +162,7 @@ pub(crate) fn compile(
     let presence = &graph.definition().projection.objects[*object_index].presence;
     select_items.push(format!(
       "  {} AS {}",
-      renderer.render_expression(presence)?,
+      renderer.render_value(presence)?,
       dialect.quote_identifier(&object.presence_column)
     ));
   }
@@ -185,7 +193,7 @@ pub(crate) fn compile(
       "LEFT JOIN"
     };
     let target = renderer.render_source(&relation.to)?;
-    let condition = renderer.render_expression(&relation.on)?;
+    let condition = renderer.render_predicate(&relation.on)?;
     sql.push_str(&format!("\n{join_type} {target}\n  ON {condition}"));
   }
 
@@ -193,7 +201,7 @@ pub(crate) fn compile(
     let predicates: Result<Vec<_>, _> = plan
       .pre_aggregation_constraint_indices()
       .iter()
-      .map(|index| renderer.render_expression(&graph.definition().constraints[*index].predicate))
+      .map(|index| renderer.render_predicate(&graph.definition().constraints[*index].predicate))
       .collect();
     sql.push_str(&format!("\nWHERE\n  {}", predicates?.join("\n  AND ")));
   }
@@ -202,7 +210,7 @@ pub(crate) fn compile(
     let dimensions: Result<Vec<_>, _> = graph
       .dimension_projection_indices()
       .iter()
-      .map(|index| renderer.render_expression(&graph.projection_at(*index).expression))
+      .map(|index| renderer.render_value(&graph.projection_at(*index).expression))
       .collect();
     sql.push_str(&format!("\nGROUP BY\n  {}", dimensions?.join(",\n  ")));
   }
@@ -211,7 +219,7 @@ pub(crate) fn compile(
     let predicates: Result<Vec<_>, _> = plan
       .post_aggregation_constraint_indices()
       .iter()
-      .map(|index| renderer.render_expression(&graph.definition().constraints[*index].predicate))
+      .map(|index| renderer.render_predicate(&graph.definition().constraints[*index].predicate))
       .collect();
     sql.push_str(&format!("\nHAVING\n  {}", predicates?.join("\n  AND ")));
   }
@@ -312,6 +320,14 @@ impl From<PlanError> for SqlCompileError {
   fn from(error: PlanError) -> Self {
     Self::Plan(error)
   }
+}
+
+pub(super) fn render_predicate_value(predicate: &str) -> String {
+  format!("(CASE WHEN {predicate} THEN 1 WHEN NOT ({predicate}) THEN 0 ELSE NULL END)")
+}
+
+pub(super) fn render_value_predicate(value: &str) -> String {
+  format!("({value} = 1)")
 }
 
 pub(crate) fn render_literal(value: &LiteralValue, string_prefix: &str) -> String {

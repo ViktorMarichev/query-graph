@@ -52,6 +52,22 @@ SQL Server compiler принудительно переводит <code>divide</
 объединении. <code>NULL</code> обрабатывается как пустая строка согласно
 [семантике CONCAT в SQL Server](https://learn.microsoft.com/en-us/sql/t-sql/functions/concat-transact-sql).
 
+## Boolean expressions
+
+Компилятор различает значения и условия. Boolean-поле в <code>WHERE</code>,
+<code>ON</code> или логическом выражении превращается в сравнение с <code>1</code>.
+Условие в <code>SELECT</code>, <code>GROUP BY</code> или аргументе функции
+превращается в <code>CASE</code>: <code>TRUE</code> дает <code>1</code>,
+<code>FALSE</code> — <code>0</code>, <code>UNKNOWN</code> — <code>NULL</code>.
+Boolean metadata и TypeScript-типы сохраняются; преобразование значений драйвера
+остается ответственностью executor.
+
+В Oracle 23ai условия сохраняют нативный SQL-тип <code>BOOLEAN</code> в контексте
+значения. В контексте условия скалярные значения оборачиваются в
+<code>TO_BOOLEAN</code>, который принимает как числовое, так и boolean-представление.
+Прямые проекции полей и существующие сравнения с boolean literals сохраняют
+прежний SQL.
+
 ## Bindings
 
 Compiler никогда не вставляет operation values в SQL. Каждый binding содержит:
