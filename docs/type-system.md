@@ -16,6 +16,10 @@ TypeScript помогает автору до регистрации, Rust ос�
 <code>int64</code> принимает number только в безопасном диапазоне JavaScript.
 Decimal string проверяется как конечная десятичная запись.
 
+<code>integer(value)</code> поддерживает весь диапазон от
+<code>Number.MIN_SAFE_INTEGER</code> до <code>Number.MAX_SAFE_INTEGER</code>,
+включая значения за пределами 32 бит.
+
 ## QueryOperation
 
 Definition передает свои параметры, projection paths и ordering names в
@@ -33,6 +37,10 @@ const operation = {
 
 Required parameters обязательны, optional параметры могут отсутствовать,
 list parameters принимают readonly arrays.
+
+В Node API <code>offset</code> и <code>limit</code> принимают безопасные целые
+JavaScript, включая значения больше <code>2 \*\* 32 - 1</code>.
+<code>offset</code> должен быть неотрицательным, <code>limit</code> — положительным.
 
 ## Nullability
 

@@ -1,5 +1,38 @@
-use query_graph_core::{GraphDefinition, QueryOperation, RelationalMapping};
+use query_graph_core::{GraphDefinition, LiteralValue, QueryOperation, RelationalMapping};
 use serde_json::json;
+
+#[test]
+fn integer_wire_fields_keep_rust_ranges_and_reject_floats() {
+  for value in [i64::MIN, -5_000_000_000, 5_000_000_000, i64::MAX] {
+    assert_eq!(
+      serde_json::from_value::<LiteralValue>(json!({ "kind": "integer", "value": value })).unwrap(),
+      LiteralValue::Integer(value)
+    );
+  }
+
+  for name in ["offset", "limit"] {
+    let operation: QueryOperation = serde_json::from_value(json!({ name: u64::MAX })).unwrap();
+    assert_eq!(
+      if name == "offset" {
+        operation.offset
+      } else {
+        operation.limit
+      },
+      Some(u64::MAX)
+    );
+  }
+
+  // The Node adapter repairs JS number representation; core wire decoding stays strict.
+  for value in [json!(5_000_000_000.0), json!(1.5), json!("5000000000")] {
+    assert!(serde_json::from_value::<LiteralValue>(json!({
+      "kind": "integer", "value": value
+    }))
+    .is_err());
+    for name in ["offset", "limit"] {
+      assert!(serde_json::from_value::<QueryOperation>(json!({ name: value })).is_err());
+    }
+  }
+}
 
 #[test]
 fn rejects_unknown_definition_fields() {

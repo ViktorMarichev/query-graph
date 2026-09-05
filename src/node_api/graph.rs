@@ -3,8 +3,7 @@ use std::sync::Arc;
 use napi::{Env, Result};
 use napi_derive::napi;
 use query_graph_core::{
-  CompiledGraph, GraphDefinition, MappedQueryGraph, OracleCompiler, RelationalMapping,
-  SqlServerCompiler,
+  CompiledGraph, MappedQueryGraph, OracleCompiler, RelationalMapping, SqlServerCompiler,
 };
 use serde_json::Value;
 
@@ -12,7 +11,10 @@ use crate::node_error;
 
 use super::{
   composition::ComposedQueryGraph,
-  parsing::{compile_operation, compile_options, OracleCompileOptions, SqlServerCompileOptions},
+  parsing::{
+    compile_operation, compile_options, parse_definition, OracleCompileOptions,
+    SqlServerCompileOptions,
+  },
   statement::CompiledSqlStatement,
 };
 
@@ -162,8 +164,7 @@ impl RelationalQueryGraph {
   ts_return_type = "import('./dsl.js').QueryGraph<Definition>"
 )]
 pub fn register_definition(env: Env, definition: Value) -> Result<QueryGraph> {
-  let definition: GraphDefinition =
-    serde_json::from_value(definition).map_err(|error| node_error::definition_wire(&env, error))?;
+  let definition = parse_definition(&env, definition)?;
   let graph = definition
     .compile()
     .map_err(|issues| node_error::definition(&env, &issues))?;
