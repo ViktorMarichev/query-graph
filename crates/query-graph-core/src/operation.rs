@@ -78,46 +78,8 @@ impl QueryOperation {
       projection_indices.push(projection_index);
     }
 
-    let ordering_index = match self.ordering.as_deref() {
-      Some(name) => match graph.ordering_index(name) {
-        Some(index) => Some(index),
-        None => {
-          issues.push(OperationIssue::new(
-            OperationIssueCode::UnknownOrdering,
-            "ordering",
-            format!("ordering {name:?} is not defined by the graph"),
-          ));
-          None
-        }
-      },
-      None => graph.default_ordering_index(),
-    };
-
-    for parameter in self.parameters.keys() {
-      if graph.parameter(parameter).is_none() {
-        issues.push(OperationIssue::new(
-          OperationIssueCode::UnknownParameter,
-          format!("parameters.{parameter}"),
-          format!("parameter {parameter:?} is not defined by the graph"),
-        ));
-      }
-    }
-
-    for parameter in &graph.definition().parameters {
-      match self.parameters.get(&parameter.name) {
-        Some(value) => {
-          validate_parameter_value(parameter, value, &mut issues);
-        }
-        None if parameter.required => {
-          issues.push(OperationIssue::new(
-            OperationIssueCode::MissingParameter,
-            format!("parameters.{}", parameter.name),
-            format!("required parameter {:?} is missing", parameter.name),
-          ));
-        }
-        None => {}
-      }
-    }
+    let ordering_index = validate_ordering(graph, self.ordering.as_deref(), &mut issues);
+    validate_parameters(graph, &self.parameters, &mut issues);
 
     if self.limit == Some(0) {
       issues.push(OperationIssue::new(
@@ -164,6 +126,59 @@ impl QueryOperation {
         })
         .collect(),
     ))
+  }
+}
+
+pub(crate) fn validate_ordering(
+  graph: &CompiledGraph,
+  ordering: Option<&str>,
+  issues: &mut Vec<OperationIssue>,
+) -> Option<usize> {
+  match ordering {
+    Some(name) => match graph.ordering_index(name) {
+      Some(index) => Some(index),
+      None => {
+        issues.push(OperationIssue::new(
+          OperationIssueCode::UnknownOrdering,
+          "ordering",
+          format!("ordering {name:?} is not defined by the graph"),
+        ));
+        None
+      }
+    },
+    None => graph.default_ordering_index(),
+  }
+}
+
+pub(crate) fn validate_parameters(
+  graph: &CompiledGraph,
+  parameters: &HashMap<String, Value>,
+  issues: &mut Vec<OperationIssue>,
+) {
+  for parameter in parameters.keys() {
+    if graph.parameter(parameter).is_none() {
+      issues.push(OperationIssue::new(
+        OperationIssueCode::UnknownParameter,
+        format!("parameters.{parameter}"),
+        format!("parameter {parameter:?} is not defined by the graph"),
+      ));
+    }
+  }
+
+  for parameter in &graph.definition().parameters {
+    match parameters.get(&parameter.name) {
+      Some(value) => {
+        validate_parameter_value(parameter, value, issues);
+      }
+      None if parameter.required => {
+        issues.push(OperationIssue::new(
+          OperationIssueCode::MissingParameter,
+          format!("parameters.{}", parameter.name),
+          format!("required parameter {:?} is missing", parameter.name),
+        ));
+      }
+      None => {}
+    }
   }
 }
 

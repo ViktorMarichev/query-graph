@@ -55,6 +55,10 @@ fn root_graph() -> MappedQueryGraph {
 }
 
 fn attachment_graph() -> MappedQueryGraph {
+  attachment_graph_with(|_| {})
+}
+
+fn attachment_graph_with(customize: impl FnOnce(&mut GraphDefinition)) -> MappedQueryGraph {
   let mut definition = GraphDefinition::new("attachmentsByIds", "attachment");
   definition.sources = vec![SourceDefinition::new(
     "attachment",
@@ -105,6 +109,7 @@ fn attachment_graph() -> MappedQueryGraph {
       "path",
     ))],
   )];
+  customize(&mut definition);
 
   MappedQueryGraph::new(
     definition.compile().unwrap(),
@@ -210,6 +215,208 @@ fn reports_composition_errors_before_query_compilation() {
   assert!(codes.contains(&CompositionIssueCode::UnknownParentKey));
   assert!(codes.contains(&CompositionIssueCode::InvalidStaticParameterType));
   assert!(codes.contains(&CompositionIssueCode::UnknownChildOrdering));
+}
+
+#[test]
+fn preserves_ordering_and_static_parameter_diagnostics_in_validation_order() {
+  let child = attachment_graph_with(|definition| {
+    definition.parameters.extend([
+      ParameterDefinition::required("locale", ScalarType::String),
+      ParameterDefinition::optional_list("tags", ScalarType::String),
+    ]);
+  });
+  let mut invalid = relation("preview");
+  invalid.ordering = Some("missing".into());
+  invalid.parameters = HashMap::from([
+    ("kind".into(), json!(42)),
+    ("tags".into(), json!(["valid", 42])),
+    ("unknown".into(), json!(true)),
+  ]);
+  let issues = ComposedQueryGraph::new(root_graph())
+    .with_batch_relation(child.clone(), invalid.clone())
+    .unwrap_err();
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![
+      (
+        CompositionIssueCode::UnknownChildOrdering,
+        "relations[0].ordering"
+      ),
+      (
+        CompositionIssueCode::UnknownStaticParameter,
+        "relations[0].parameters.unknown"
+      ),
+      (
+        CompositionIssueCode::InvalidStaticParameterType,
+        "relations[0].parameters.kind"
+      ),
+      (
+        CompositionIssueCode::MissingStaticParameter,
+        "relations[0].parameters.locale"
+      ),
+      (
+        CompositionIssueCode::InvalidStaticParameterType,
+        "relations[0].parameters.tags[1]"
+      ),
+    ]
+  );
+
+  invalid.parameters.insert("ids".into(), json!([]));
+  let error = child
+    .compile_sql_server(&QueryOperation {
+      select: Some(vec!["missing".into(), "path".into(), "path".into()]),
+      ordering: invalid.ordering,
+      parameters: invalid.parameters,
+      limit: Some(0),
+      ..QueryOperation::default()
+    })
+    .unwrap_err();
+  let query_graph_core::SqlCompileError::Plan(query_graph_core::PlanError::Operation(issues)) =
+    error
+  else {
+    panic!("expected operation validation error");
+  };
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![
+      (OperationIssueCode::UnknownSelection, "select[0]"),
+      (OperationIssueCode::DuplicateSelection, "select[2]"),
+      (OperationIssueCode::UnknownOrdering, "ordering"),
+      (OperationIssueCode::UnknownParameter, "parameters.unknown"),
+      (OperationIssueCode::InvalidParameterType, "parameters.kind"),
+      (OperationIssueCode::MissingParameter, "parameters.locale"),
+      (
+        OperationIssueCode::InvalidParameterType,
+        "parameters.tags[1]"
+      ),
+      (OperationIssueCode::InvalidPagination, "limit"),
+    ]
+  );
+}
+
+#[test]
+fn preserves_key_diagnostics_without_duplicate_static_parameter_errors() {
+  for (key_defined, expected_code) in [
+    (false, CompositionIssueCode::UnknownKeyParameter),
+    (true, CompositionIssueCode::KeyParameterNotList),
+  ] {
+    let child = attachment_graph_with(|definition| {
+      definition.constraints.remove(0);
+      if key_defined {
+        definition.parameters[0] = ParameterDefinition::required("ids", ScalarType::Int64);
+      } else {
+        definition.parameters.remove(0);
+      }
+    });
+    let issues = ComposedQueryGraph::new(root_graph())
+      .with_batch_relation(child, relation("preview"))
+      .unwrap_err();
+    assert_eq!(
+      issues
+        .as_slice()
+        .iter()
+        .map(|issue| (issue.code, issue.location.as_str()))
+        .collect::<Vec<_>>(),
+      vec![(expected_code, "relations[0].parameter")]
+    );
+  }
+}
+
+#[test]
+fn validates_static_configuration_even_when_the_child_key_projection_is_unknown() {
+  let mut invalid = relation("preview");
+  invalid.to = "missing".into();
+  invalid.ordering = Some("missing".into());
+  invalid.parameters.insert("kind".into(), json!(42));
+  let issues = ComposedQueryGraph::new(root_graph())
+    .with_batch_relation(attachment_graph(), invalid)
+    .unwrap_err();
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![
+      (CompositionIssueCode::UnknownChildKey, "relations[0].to"),
+      (
+        CompositionIssueCode::UnknownChildOrdering,
+        "relations[0].ordering"
+      ),
+      (
+        CompositionIssueCode::InvalidStaticParameterType,
+        "relations[0].parameters.kind"
+      ),
+    ]
+  );
+}
+
+#[test]
+fn preserves_the_static_validation_skip_for_a_child_without_projections() {
+  let child = attachment_graph_with(|definition| definition.projection.fields.clear());
+  let mut invalid = relation("preview");
+  invalid.ordering = Some("missing".into());
+  invalid.parameters.insert("kind".into(), json!(42));
+  let issues = ComposedQueryGraph::new(root_graph())
+    .with_batch_relation(child, invalid)
+    .unwrap_err();
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![(CompositionIssueCode::UnknownChildKey, "relations[0].to")]
+  );
+}
+
+#[test]
+fn preserves_the_key_location_prefix_filter_until_deferred_compilation() {
+  let child = attachment_graph_with(|definition| {
+    definition.parameters.push(ParameterDefinition::required(
+      "ids[other]",
+      ScalarType::String,
+    ));
+  });
+  let mut definition = relation("preview");
+  definition.parameters.insert("ids[other]".into(), json!(42));
+  // This characterizes the existing prefix filter, not the intended parameter semantics.
+  let graph = ComposedQueryGraph::new(root_graph())
+    .with_batch_relation(child, definition)
+    .unwrap();
+  let plan = graph
+    .compile_sql_server_plan(&QueryOperation {
+      select: Some(vec!["preview.path".into()]),
+      parameters: HashMap::from([("idOrganisation".into(), json!(7))]),
+      ..QueryOperation::default()
+    })
+    .unwrap();
+  let error = plan.compile_batch("preview", &[json!(12)]).unwrap_err();
+  let ComposedCompileError::Sql(query_graph_core::SqlCompileError::Plan(
+    query_graph_core::PlanError::Operation(issues),
+  )) = error
+  else {
+    panic!("expected deferred operation validation error");
+  };
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![(
+      OperationIssueCode::InvalidParameterType,
+      "parameters.ids[other]"
+    )]
+  );
 }
 
 #[test]

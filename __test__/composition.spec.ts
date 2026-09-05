@@ -180,7 +180,10 @@ test('reports composition and deferred key errors through QueryGraphError', (t) 
   ) as QueryGraphError
   t.is(compositionError.code, 'QUERY_GRAPH_COMPOSITION_INVALID')
   t.is(compositionError.phase, 'composition')
-  t.true(compositionError.issues.some((issue) => issue.code === 'invalidStaticParameterType'))
+  t.deepEqual(
+    compositionError.issues.map(({ code, location }) => ({ code, location })),
+    [{ code: 'invalidStaticParameterType', location: 'relations[0].parameters.attachmentKind' }],
+  )
   const incompatibleQuery = batchQuery({
     graph: attachmentGraph,
     key: {
@@ -217,6 +220,82 @@ test('reports composition and deferred key errors through QueryGraphError', (t) 
     code: 'invalidParameterType',
     location: 'parameters.attachmentIds[0]',
   })
+})
+
+test('preserves composition diagnostic locations and ordering for static parameters', (t) => {
+  const cases = [
+    {
+      parameters: {},
+      ordering: undefined,
+      issues: [{ code: 'missingStaticParameter', location: 'relations[0].parameters.attachmentKind' }],
+    },
+    {
+      parameters: { attachmentKind: 42, attachmentPaths: ['valid', false], unknown: true },
+      ordering: 'missing',
+      issues: [
+        { code: 'unknownChildOrdering', location: 'relations[0].ordering' },
+        { code: 'unknownStaticParameter', location: 'relations[0].parameters.unknown' },
+        { code: 'invalidStaticParameterType', location: 'relations[0].parameters.attachmentKind' },
+        { code: 'invalidStaticParameterType', location: 'relations[0].parameters.attachmentPaths[1]' },
+      ],
+    },
+    {
+      parameters: { attachmentKind: 'preview', attachmentPaths: 'not-a-list' },
+      ordering: undefined,
+      issues: [{ code: 'invalidStaticParameterType', location: 'relations[0].parameters.attachmentPaths' }],
+    },
+  ]
+
+  for (const { parameters, ordering, issues } of cases) {
+    const invalidRelation = batchRelation({
+      name: 'preview',
+      from: 'idAttachment',
+      query: attachmentBatchQuery,
+      cardinality: 'one',
+      parameters,
+      ordering,
+    } as never)
+    const error = t.throws(() =>
+      composeGraph({ root: newsGraph, relations: [invalidRelation as never] }),
+    ) as QueryGraphError
+
+    t.is(error.name, 'QueryGraphError')
+    t.is(error.phase, 'composition')
+    t.is(error.code, 'QUERY_GRAPH_COMPOSITION_INVALID')
+    t.deepEqual(
+      error.issues.map(({ code, location }) => ({ code, location })),
+      issues,
+    )
+  }
+})
+
+test('preserves deferred diagnostics for a static parameter matching the key location prefix', (t) => {
+  const childGraph = registerDefinition({
+    ...attachmentDefinition,
+    parameters: [...attachmentDefinition.parameters, requiredParameter('attachmentIds[other]', 'string')],
+  }).withRelationalMapping({ sources: { attachment: { table: 'Attachment' } } })
+  const query = batchQuery({ graph: childGraph, key: { path: 'idAttachment', parameter: attachmentIds } })
+  // Characterize the existing location-prefix filter; correcting it would change the error phase.
+  const relation = batchRelation({
+    name: 'preview',
+    from: 'idAttachment',
+    query,
+    cardinality: 'one',
+    parameters: { attachmentKind: 'preview', 'attachmentIds[other]': 42 as unknown as string },
+  })
+  const composed = composeGraph({ root: newsGraph, relations: [relation] })
+  const operation = { select: ['preview.path'], parameters: { idOrganisation: 7 } } as const
+
+  for (const plan of [composed.compileSqlServerPlan(operation), composed.compileOraclePlan(operation)]) {
+    const error = t.throws(() => plan.compileBatch('preview', [12])) as QueryGraphError
+    t.is(error.name, 'QueryGraphError')
+    t.is(error.phase, 'operation')
+    t.is(error.code, 'QUERY_GRAPH_OPERATION_INVALID')
+    t.deepEqual(
+      error.issues.map(({ code, location }) => ({ code, location })),
+      [{ code: 'invalidParameterType', location: 'parameters.attachmentIds[other]' }],
+    )
+  }
 })
 
 test('rejects invalid batch query and relation configurations', (t) => {

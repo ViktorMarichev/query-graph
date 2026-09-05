@@ -1,6 +1,9 @@
 use serde_json::Value;
 
-use crate::{MappedQueryGraph, OperationIssueCode, ParameterShape, QueryOperation};
+use crate::{
+  operation::{validate_ordering, validate_parameters},
+  MappedQueryGraph, OperationIssueCode, ParameterShape,
+};
 
 use super::model::{
   BatchRelation, BatchRelationDefinition, CompositionIssue, CompositionIssueCode, CompositionIssues,
@@ -139,22 +142,10 @@ fn validate_child_operation(
   location: &str,
   issues: &mut Vec<CompositionIssue>,
 ) {
-  let selected_path = graph
-    .graph()
-    .projection(&definition.to)
-    .map(|_| definition.to.clone())
-    .or_else(|| {
-      graph
-        .graph()
-        .definition()
-        .projection
-        .fields
-        .first()
-        .map(|field| field.path.join("."))
-    });
-  let Some(selected_path) = selected_path else {
+  // Preserve the existing static-validation boundary for children without projections.
+  if graph.graph().definition().projection.fields.is_empty() {
     return;
-  };
+  }
 
   let mut parameters = definition.parameters.clone();
   if graph
@@ -165,19 +156,16 @@ fn validate_child_operation(
     parameters.insert(definition.parameter.clone(), Value::Array(Vec::new()));
   }
 
-  let operation = QueryOperation {
-    select: Some(vec![selected_path]),
-    ordering: definition.ordering.clone(),
-    parameters,
-    ..QueryOperation::default()
-  };
-
-  let Err(operation_issues) = operation.validate(graph.graph()) else {
-    return;
-  };
+  let mut operation_issues = Vec::new();
+  validate_ordering(
+    graph.graph(),
+    definition.ordering.as_deref(),
+    &mut operation_issues,
+  );
+  validate_parameters(graph.graph(), &parameters, &mut operation_issues);
 
   let key_location = format!("parameters.{}", definition.parameter);
-  for issue in operation_issues.into_vec() {
+  for issue in operation_issues {
     if issue.location == key_location || issue.location.starts_with(&format!("{key_location}[")) {
       continue;
     }

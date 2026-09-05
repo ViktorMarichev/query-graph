@@ -70,13 +70,13 @@ export type ParameterValue<Parameter extends ParameterDefinition> = Parameter ex
   ? readonly ScalarParameterValue<Parameter['scalarType']>[]
   : ScalarParameterValue<Parameter['scalarType']>
 
-type RequiredParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
+export type RequiredParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
   ? Parameter extends { required?: true }
     ? Parameter
     : never
   : never
 
-type OptionalParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
+export type OptionalParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
   ? Parameter extends { required?: true }
     ? never
     : Parameter
@@ -88,9 +88,9 @@ export type OperationParameters<Definition extends GraphDefinitionInput> = {
   [Parameter in OptionalParameter<DefinitionParameter<Definition>> as Parameter['name']]?: ParameterValue<Parameter>
 }
 
-type OperationParameterInput<Definition extends GraphDefinitionInput> = [DefinitionParameter<Definition>] extends [
-  never,
-]
+export type OperationParameterInput<Definition extends GraphDefinitionInput> = [
+  DefinitionParameter<Definition>,
+] extends [never]
   ? { parameters?: never }
   : [RequiredParameter<DefinitionParameter<Definition>>] extends [never]
     ? { parameters?: OperationParameters<Definition> }

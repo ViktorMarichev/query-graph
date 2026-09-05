@@ -12,34 +12,16 @@ import type {
   DefinitionParameter,
   DefinitionProjectionField,
   DefinitionProjectionPath,
-  OperationParameters,
+  OperationParameterInput,
+  OptionalParameter,
   OracleCompileOptions,
   ParameterValue,
   QueryOperationBase,
   RelationalQueryGraph,
+  RequiredParameter,
   SqlServerCompileOptions,
 } from './runtime.js'
 import type { ListParameterRef } from './authoring.js'
-
-type RequiredParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
-  ? Parameter extends { required?: true }
-    ? Parameter
-    : never
-  : never
-
-type OptionalParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
-  ? Parameter extends { required?: true }
-    ? never
-    : Parameter
-  : never
-
-type OperationParameterInput<Definition extends GraphDefinitionInput> = [DefinitionParameter<Definition>] extends [
-  never,
-]
-  ? { parameters?: never }
-  : [RequiredParameter<DefinitionParameter<Definition>>] extends [never]
-    ? { parameters?: OperationParameters<Definition> }
-    : { parameters: OperationParameters<Definition> }
 
 type ProjectionFieldPath<Field> =
   Field extends ProjectionTypeMetadata<infer Path, infer _Type, infer _Nullability, infer _SelectedByDefault>

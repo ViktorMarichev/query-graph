@@ -3,6 +3,9 @@ import test from 'ava'
 import { registerDefinition } from '../index.js'
 import {
   asc,
+  batchQuery,
+  batchRelation,
+  composeGraph,
   constraint,
   defineGraph,
   defineGraphModule,
@@ -17,9 +20,11 @@ import {
   param,
   project,
   relation,
+  requiredListParameter,
   requiredParameter,
   source,
 } from '../definition.js'
+import type { GraphDefinitionInput, RelationalQueryGraph } from '../definition.js'
 
 test('propagates definition parameters and projection paths to query operations', (t) => {
   const staff = source('staff', {
@@ -194,4 +199,84 @@ test('keeps parameters optional for a parameterless definition', (t) => {
     })
   }
   t.is(typeof invalidOperation, 'function')
+})
+
+test('preserves parameter contracts across ordinary and composed operations', (t) => {
+  const item = source('item', { id: 'int64' })
+  const base = {
+    name: 'parameterContracts',
+    root: item,
+    sources: [item],
+    projection: [project('id', item.field('id'), { default: true })],
+  }
+  const parameterlessDefinition = defineGraph(base)
+  const optionalDefinition = defineGraph({
+    ...base,
+    parameters: [optionalParameter('kind', 'string'), optionalListParameter('ids', 'int64')],
+  })
+  const ids = requiredListParameter('ids', 'int64')
+  const childDefinition = defineGraph({
+    ...base,
+    parameters: [ids, requiredParameter('kind', 'string'), optionalListParameter('labels', 'string')],
+  })
+
+  // These calls are checked by tsc without asking the runtime to accept invalid operations.
+  const check = (
+    parameterless: RelationalQueryGraph<typeof parameterlessDefinition>,
+    optional: RelationalQueryGraph<typeof optionalDefinition>,
+    child: RelationalQueryGraph<typeof childDefinition>,
+    broad: RelationalQueryGraph<GraphDefinitionInput>,
+  ) => {
+    const noParameters = composeGraph({ root: parameterless, relations: [] })
+    noParameters.compileSqlServerPlan({})
+    // @ts-expect-error A parameterless composed definition rejects parameters.
+    noParameters.compileSqlServerPlan({ parameters: { unknown: true } })
+
+    const optionalParameters = composeGraph({ root: optional, relations: [] })
+    const optionalValues = { kind: 'preview', ids: [1, '2'] as const }
+    optional.compileSqlServer({})
+    optional.compileSqlServer({ parameters: {} })
+    optional.compileSqlServer({ parameters: optionalValues })
+    optionalParameters.compileSqlServerPlan({})
+    optionalParameters.compileSqlServerPlan({ parameters: {} })
+    optionalParameters.compileSqlServerPlan({ parameters: optionalValues })
+    // @ts-expect-error Optional composed scalar parameters retain their scalar type.
+    optionalParameters.compileSqlServerPlan({ parameters: { kind: 1 } })
+    // @ts-expect-error Optional composed list parameters require an array.
+    optionalParameters.compileSqlServerPlan({ parameters: { ids: 1 } })
+    // @ts-expect-error Optional composed parameters reject unknown names.
+    optionalParameters.compileSqlServerPlan({ parameters: { unknown: true } })
+
+    const requiredParameters = composeGraph({ root: child, relations: [] })
+    const childValues = { ids: [1, '2'] as const, kind: 'preview', labels: ['a', 'b'] as const }
+    child.compileSqlServer({ parameters: childValues })
+    requiredParameters.compileSqlServerPlan({ parameters: childValues })
+    // @ts-expect-error Required composed parameters make the property mandatory.
+    requiredParameters.compileSqlServerPlan({})
+    // @ts-expect-error Supplying the list does not satisfy another required parameter.
+    requiredParameters.compileSqlServerPlan({ parameters: { ids: [1] } })
+    // @ts-expect-error Every composed list element must have the declared scalar type.
+    requiredParameters.compileSqlServerPlan({ parameters: { ids: [false], kind: 'preview' } })
+
+    const query = batchQuery({ graph: child, key: { path: 'id', parameter: ids } })
+    const relation = { name: 'children', from: 'id', query, cardinality: 'many' } as const
+    batchRelation({ ...relation, parameters: { kind: 'preview' } })
+    batchRelation({ ...relation, parameters: { kind: 'preview', labels: ['a', 'b'] as const } })
+    // @ts-expect-error Excluding the batch key leaves kind required.
+    batchRelation(relation)
+    // @ts-expect-error Optional static parameters do not satisfy required ones.
+    batchRelation({ ...relation, parameters: { labels: [] } })
+    // @ts-expect-error The deferred batch key cannot be supplied as a static parameter.
+    batchRelation({ ...relation, parameters: { kind: 'preview', ids: [1] } })
+    // @ts-expect-error Static child parameters reject unknown names.
+    batchRelation({ ...relation, parameters: { kind: 'preview', unknown: true } })
+
+    const broadParameters = composeGraph({ root: broad, relations: [] })
+    broad.compileSqlServer({})
+    broad.compileSqlServer({ parameters: { dynamic: ['a', 1] } })
+    broadParameters.compileSqlServerPlan({})
+    broadParameters.compileSqlServerPlan({ parameters: { dynamic: ['a', 1] } })
+  }
+
+  t.is(typeof check, 'function')
 })
