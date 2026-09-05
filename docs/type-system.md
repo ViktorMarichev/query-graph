@@ -46,6 +46,15 @@ Nullability выражения складывается из:
 Required relation под optional ancestor остается nullable. Это свойство
 вычисляется из topology один раз при регистрации.
 
+В <code>fieldType</code> флаг <code>nullable</code> типа <code>boolean</code>
+означает, что поле может быть NULL. Литеральные <code>true</code> и
+<code>false</code> позволяют вывести точную nullability.
+
+Сравнения <code>eq</code>/<code>neq</code> с гарантированным <code>null</code>
+(включая <code>literal(null)</code>) дают non-null результат. Тип операнда
+<code>string | null</code> сам по себе не гарантирует сравнение именно с NULL:
+nullable поле при сравнении со строкой может дать NULL.
+
 ## ResultOf
 
 ```ts

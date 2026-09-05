@@ -198,7 +198,13 @@ export interface FieldTypeOptions {
   selectable?: boolean
 }
 
-type OptionNullable<Options extends FieldTypeOptions> = Options extends { nullable: true } ? true : false
+type OptionNullable<Options extends FieldTypeOptions> = Options extends unknown
+  ? Options['nullable'] extends infer Nullable
+    ? Nullable extends true
+      ? true
+      : false
+    : never
+  : never
 type OptionSelectable<Options extends FieldTypeOptions> = Options extends { selectable: false } ? false : true
 
 export function fieldType<const Type extends ScalarType, const Options extends FieldTypeOptions = Record<never, never>>(
@@ -248,11 +254,20 @@ export function literal<const Value extends LiteralInput>(
 export function integer(value: number): TypedExpression<LiteralExpression, 'int64', false>
 export function decimal(value: string | number): TypedExpression<LiteralExpression, 'decimal', false>
 
-type EqualityNullability<Left extends ExpressionInput, Right extends ExpressionInput> = null extends
-  | InputScalarType<Left>
-  | InputScalarType<Right>
+// A null literal becomes IS NULL / IS NOT NULL, so literals do not add equality nullability.
+type EqualityOperandNullability<Input extends ExpressionInput> = Input extends LiteralExpression
   ? false
-  : AnyInputNullability<readonly [Left, Right]>
+  : InputNullability<Input>
+
+type EqualityNullability<Left extends ExpressionInput, Right extends ExpressionInput> = Left extends unknown
+  ? Right extends unknown
+    ? [InputScalarType<Left>] extends [null]
+      ? false
+      : [InputScalarType<Right>] extends [null]
+        ? false
+        : AnyNullability<readonly [EqualityOperandNullability<Left>, EqualityOperandNullability<Right>]>
+    : never
+  : never
 
 export function eq<const Left extends ExpressionInput, const Right extends ExpressionInput>(
   left: Left,
