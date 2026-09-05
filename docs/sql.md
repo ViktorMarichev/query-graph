@@ -45,6 +45,13 @@ Semantic functions рендерятся с одинаковым поведени
 SQL Server compiler принудительно переводит <code>divide</code> в дробную
 арифметику, чтобы два integer operands не дали integer division.
 
+В SQL Server 2012 и новее <code>concat</code> с одним аргументом компилируется
+с дополнительной пустой строкой <code>''</code>. Списки длиннее 254 аргументов
+разделяются на вложенные вызовы с сохранением порядка. Промежуточные группы
+используют <code>nvarchar(max)</code>, чтобы избежать обрезания строк при
+объединении. <code>NULL</code> обрабатывается как пустая строка согласно
+[семантике CONCAT в SQL Server](https://learn.microsoft.com/en-us/sql/t-sql/functions/concat-transact-sql).
+
 ## Bindings
 
 Compiler никогда не вставляет operation values в SQL. Каждый binding содержит:
