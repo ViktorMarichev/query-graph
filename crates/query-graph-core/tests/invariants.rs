@@ -231,6 +231,48 @@ fn validates_exists_correlation_source() {
   assert!(codes.contains(&DefinitionIssueCode::UnknownExistsSource));
 }
 
+#[test]
+fn rejects_exists_correlation_from_a_deeper_source_without_panicking() {
+  for target in ["middle", "root", "other"] {
+    let mut definition = GraphDefinition::new("backwardExists", "root");
+    definition.sources = vec![
+      source("root"),
+      source("middle"),
+      source("leaf"),
+      source("other"),
+    ];
+    definition.relations = vec![
+      relation("middle", "root", "middle"),
+      relation("leaf", "middle", "leaf"),
+      relation("other", "root", "other"),
+    ];
+    definition.constraints = vec![ConstraintDefinition::always(Expression::exists_from(
+      target, "leaf",
+    ))];
+
+    let issues = definition.compile().unwrap_err();
+    let mut expected = vec![(
+      DefinitionIssueCode::InvalidExistsSource,
+      "constraints[0].predicate.from",
+    )];
+    if target == "root" {
+      expected.push((
+        DefinitionIssueCode::InvalidExistsSource,
+        "constraints[0].predicate.source",
+      ));
+    }
+    assert_eq!(
+      issues
+        .as_slice()
+        .iter()
+        .map(|issue| (issue.code, issue.location.as_str()))
+        .collect::<Vec<_>>(),
+      expected,
+      "exists target {target:?} must return diagnostics"
+    );
+  }
+}
+
 fn relation(name: &str, from: &str, to: &str) -> RelationDefinition {
   RelationDefinition::new(
     name,

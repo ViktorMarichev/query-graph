@@ -115,7 +115,7 @@ impl GraphTopology {
     let to_path = self.relation_path(to)?;
     to_path
       .starts_with(from_path)
-      .then_some(&to_path[from_path.len()..])
+      .then(|| &to_path[from_path.len()..])
   }
 
   pub(crate) fn source_is_reachable(&self, source: usize) -> bool {

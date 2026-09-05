@@ -79,7 +79,7 @@ impl QueryOperation {
     }
 
     let ordering_index = validate_ordering(graph, self.ordering.as_deref(), &mut issues);
-    validate_parameters(graph, &self.parameters, &mut issues);
+    validate_parameters(graph, &self.parameters, None, &mut issues);
 
     if self.limit == Some(0) {
       issues.push(OperationIssue::new(
@@ -153,9 +153,13 @@ pub(crate) fn validate_ordering(
 pub(crate) fn validate_parameters(
   graph: &CompiledGraph,
   parameters: &HashMap<String, Value>,
+  excluded_parameter: Option<&str>,
   issues: &mut Vec<OperationIssue>,
 ) {
   for parameter in parameters.keys() {
+    if excluded_parameter == Some(parameter.as_str()) {
+      continue;
+    }
     if graph.parameter(parameter).is_none() {
       issues.push(OperationIssue::new(
         OperationIssueCode::UnknownParameter,
@@ -166,6 +170,9 @@ pub(crate) fn validate_parameters(
   }
 
   for parameter in &graph.definition().parameters {
+    if excluded_parameter == Some(parameter.name.as_str()) {
+      continue;
+    }
     match parameters.get(&parameter.name) {
       Some(value) => {
         validate_parameter_value(parameter, value, issues);

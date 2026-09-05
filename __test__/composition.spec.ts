@@ -269,33 +269,42 @@ test('preserves composition diagnostic locations and ordering for static paramet
   }
 })
 
-test('preserves deferred diagnostics for a static parameter matching the key location prefix', (t) => {
+test('validates static parameters sharing the batch key prefix during composition', (t) => {
   const childGraph = registerDefinition({
     ...attachmentDefinition,
-    parameters: [...attachmentDefinition.parameters, requiredParameter('attachmentIds[other]', 'string')],
+    parameters: [
+      ...attachmentDefinition.parameters,
+      requiredParameter('attachmentIds[other]', 'string'),
+      requiredParameter('attachmentIds[missing]', 'string'),
+      optionalListParameter('attachmentIds[list]', 'string'),
+    ],
   }).withRelationalMapping({ sources: { attachment: { table: 'Attachment' } } })
   const query = batchQuery({ graph: childGraph, key: { path: 'idAttachment', parameter: attachmentIds } })
-  // Characterize the existing location-prefix filter; correcting it would change the error phase.
   const relation = batchRelation({
     name: 'preview',
     from: 'idAttachment',
     query,
     cardinality: 'one',
-    parameters: { attachmentKind: 'preview', 'attachmentIds[other]': 42 as unknown as string },
-  })
-  const composed = composeGraph({ root: newsGraph, relations: [relation] })
-  const operation = { select: ['preview.path'], parameters: { idOrganisation: 7 } } as const
-
-  for (const plan of [composed.compileSqlServerPlan(operation), composed.compileOraclePlan(operation)]) {
-    const error = t.throws(() => plan.compileBatch('preview', [12])) as QueryGraphError
-    t.is(error.name, 'QueryGraphError')
-    t.is(error.phase, 'operation')
-    t.is(error.code, 'QUERY_GRAPH_OPERATION_INVALID')
-    t.deepEqual(
-      error.issues.map(({ code, location }) => ({ code, location })),
-      [{ code: 'invalidParameterType', location: 'parameters.attachmentIds[other]' }],
-    )
-  }
+    parameters: {
+      attachmentKind: 'preview',
+      'attachmentIds[other]': 42,
+      'attachmentIds[unknown]': true,
+      'attachmentIds[list]': ['valid', false],
+    },
+  } as never)
+  const error = t.throws(() => composeGraph({ root: newsGraph, relations: [relation as never] })) as QueryGraphError
+  t.is(error.name, 'QueryGraphError')
+  t.is(error.phase, 'composition')
+  t.is(error.code, 'QUERY_GRAPH_COMPOSITION_INVALID')
+  t.deepEqual(
+    error.issues.map(({ code, location }) => ({ code, location })),
+    [
+      { code: 'unknownStaticParameter', location: 'relations[0].parameters.attachmentIds[unknown]' },
+      { code: 'invalidStaticParameterType', location: 'relations[0].parameters.attachmentIds[other]' },
+      { code: 'missingStaticParameter', location: 'relations[0].parameters.attachmentIds[missing]' },
+      { code: 'invalidStaticParameterType', location: 'relations[0].parameters.attachmentIds[list][1]' },
+    ],
+  )
 })
 
 test('rejects invalid batch query and relation configurations', (t) => {

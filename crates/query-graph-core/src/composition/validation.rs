@@ -1,5 +1,3 @@
-use serde_json::Value;
-
 use crate::{
   operation::{validate_ordering, validate_parameters},
   MappedQueryGraph, OperationIssueCode, ParameterShape,
@@ -147,29 +145,20 @@ fn validate_child_operation(
     return;
   }
 
-  let mut parameters = definition.parameters.clone();
-  if graph
-    .graph()
-    .parameter(&definition.parameter)
-    .is_some_and(|parameter| parameter.shape == ParameterShape::List)
-  {
-    parameters.insert(definition.parameter.clone(), Value::Array(Vec::new()));
-  }
-
   let mut operation_issues = Vec::new();
   validate_ordering(
     graph.graph(),
     definition.ordering.as_deref(),
     &mut operation_issues,
   );
-  validate_parameters(graph.graph(), &parameters, &mut operation_issues);
+  validate_parameters(
+    graph.graph(),
+    &definition.parameters,
+    Some(&definition.parameter),
+    &mut operation_issues,
+  );
 
-  let key_location = format!("parameters.{}", definition.parameter);
   for issue in operation_issues {
-    if issue.location == key_location || issue.location.starts_with(&format!("{key_location}[")) {
-      continue;
-    }
-
     let (code, issue_location) = match issue.code {
       OperationIssueCode::UnknownOrdering => (
         CompositionIssueCode::UnknownChildOrdering,

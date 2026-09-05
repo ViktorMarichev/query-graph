@@ -44,12 +44,19 @@ execFileSync(
   [
     '-e',
     [
+      "const assert = require('node:assert/strict')",
+      "const nativeLoadedMessage = 'DSL entrypoint loaded the native adapter'",
+      'function assertNativeNotLoaded() {',
+      "  if (Object.hasOwn(require.cache, require.resolve('./native.js'))) {",
+      '    throw new Error(nativeLoadedMessage)',
+      '  }',
+      '}',
       "const dsl = require('@query-graph/core/dsl')",
       "if (typeof dsl.defineGraph !== 'function') throw new Error('DSL entrypoint is incomplete')",
-      'if (Object.keys(require.cache).some((file) => /[\\\\/]native\\\\.js$/.test(file))) {',
-      "  throw new Error('DSL entrypoint loaded the native adapter')",
-      '}',
-    ].join(';'),
+      'assertNativeNotLoaded()',
+      "require('./native.js')",
+      'assert.throws(assertNativeNotLoaded, { message: nativeLoadedMessage })',
+    ].join('\n'),
   ],
   { cwd: root, stdio: 'inherit' },
 )

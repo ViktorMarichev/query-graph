@@ -45,6 +45,12 @@ Rust выполняет semantic validation:
 Такое разделение дает ранние ошибки опечаток, не дублируя planner rules в
 JavaScript.
 
+Статические параметры batch relation проверяются при <code>composeGraph</code>:
+ошибки относятся к фазе <code>composition</code>, в том числе для имен параметров
+с квадратными скобками. Параметр batch key исключается из этой проверки по точному
+имени; значения ключей проверяются позже, при <code>compileBatch</code>, в фазе
+<code>operation</code>.
+
 ## Совместимость diagnostics
 
 Wire schema остается версии 11. В совместимых выпусках сохраняются diagnostic

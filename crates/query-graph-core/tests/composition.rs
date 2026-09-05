@@ -328,6 +328,23 @@ fn preserves_key_diagnostics_without_duplicate_static_parameter_errors() {
       vec![(expected_code, "relations[0].parameter")]
     );
   }
+
+  let mut definition = relation("preview");
+  definition.parameters.insert("ids".into(), json!(false));
+  let issues = ComposedQueryGraph::new(root_graph())
+    .with_batch_relation(attachment_graph(), definition)
+    .unwrap_err();
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![(
+      CompositionIssueCode::KeyParameterIsStatic,
+      "relations[0].parameters.ids"
+    )]
+  );
 }
 
 #[test]
@@ -379,16 +396,68 @@ fn preserves_the_static_validation_skip_for_a_child_without_projections() {
 }
 
 #[test]
-fn preserves_the_key_location_prefix_filter_until_deferred_compilation() {
+fn validates_static_parameters_whose_names_share_the_batch_key_prefix() {
+  let child = attachment_graph_with(|definition| {
+    definition.parameters.extend([
+      ParameterDefinition::required("ids[other]", ScalarType::String),
+      ParameterDefinition::required("ids[missing]", ScalarType::String),
+      ParameterDefinition::optional_list("ids[list]", ScalarType::String),
+    ]);
+  });
+  let mut definition = relation("preview");
+  definition.parameters.extend([
+    ("ids[other]".into(), json!(42)),
+    ("ids[unknown]".into(), json!(true)),
+    ("ids[list]".into(), json!(["valid", false])),
+  ]);
+  let issues = ComposedQueryGraph::new(root_graph())
+    .with_batch_relation(child, definition)
+    .unwrap_err();
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![
+      (
+        CompositionIssueCode::UnknownStaticParameter,
+        "relations[0].parameters.ids[unknown]"
+      ),
+      (
+        CompositionIssueCode::InvalidStaticParameterType,
+        "relations[0].parameters.ids[other]"
+      ),
+      (
+        CompositionIssueCode::MissingStaticParameter,
+        "relations[0].parameters.ids[missing]"
+      ),
+      (
+        CompositionIssueCode::InvalidStaticParameterType,
+        "relations[0].parameters.ids[list][1]"
+      ),
+    ]
+  );
+}
+
+#[test]
+fn accepts_valid_static_parameters_sharing_the_batch_key_prefix() {
   let child = attachment_graph_with(|definition| {
     definition.parameters.push(ParameterDefinition::required(
       "ids[other]",
       ScalarType::String,
     ));
+    definition
+      .constraints
+      .push(ConstraintDefinition::always(Expression::eq(
+        Expression::field("attachment", "kind"),
+        Expression::parameter("ids[other]"),
+      )));
   });
   let mut definition = relation("preview");
-  definition.parameters.insert("ids[other]".into(), json!(42));
-  // This characterizes the existing prefix filter, not the intended parameter semantics.
+  definition
+    .parameters
+    .insert("ids[other]".into(), json!("preview"));
   let graph = ComposedQueryGraph::new(root_graph())
     .with_batch_relation(child, definition)
     .unwrap();
@@ -399,24 +468,15 @@ fn preserves_the_key_location_prefix_filter_until_deferred_compilation() {
       ..QueryOperation::default()
     })
     .unwrap();
-  let error = plan.compile_batch("preview", &[json!(12)]).unwrap_err();
-  let ComposedCompileError::Sql(query_graph_core::SqlCompileError::Plan(
-    query_graph_core::PlanError::Operation(issues),
-  )) = error
-  else {
-    panic!("expected deferred operation validation error");
-  };
-  assert_eq!(
-    issues
-      .as_slice()
-      .iter()
-      .map(|issue| (issue.code, issue.location.as_str()))
-      .collect::<Vec<_>>(),
-    vec![(
-      OperationIssueCode::InvalidParameterType,
-      "parameters.ids[other]"
-    )]
-  );
+  let statement = plan.compile_batch("preview", &[json!(12)]).unwrap();
+  assert!(statement
+    .bindings
+    .iter()
+    .any(|binding| binding.parameter == "ids[other]" && binding.index.is_none()));
+  assert!(statement
+    .bindings
+    .iter()
+    .any(|binding| binding.parameter == "ids" && binding.index == Some(0)));
 }
 
 #[test]
