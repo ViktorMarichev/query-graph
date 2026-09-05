@@ -9,6 +9,7 @@ use crate::{
 };
 
 mod aggregation;
+mod exists_dependencies;
 mod expression;
 mod projection;
 mod structure;
@@ -142,5 +143,6 @@ pub(crate) fn validate(
   index: &DefinitionIndex,
   topology: &GraphTopology,
 ) -> Result<(), DefinitionIssues> {
-  structure::validate(definition, index, topology)
+  structure::validate(definition, index, topology)?;
+  exists_dependencies::validate(definition, index, topology)
 }

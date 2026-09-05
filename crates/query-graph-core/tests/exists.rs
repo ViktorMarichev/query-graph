@@ -253,6 +253,120 @@ fn requires_optional_parameters_used_by_the_exists_relation_path() {
 }
 
 #[test]
+fn requires_transitive_exists_parameters_only_for_active_constraints() {
+  for first_by in [false, true] {
+    let mut definition = definition();
+    definition.parameters = vec![
+      ParameterDefinition::optional("enabled", ScalarType::Boolean),
+      ParameterDefinition::optional("p", ScalarType::Int64),
+      ParameterDefinition::optional("preferred", ScalarType::Int64),
+    ];
+    definition.constraints = vec![ConstraintDefinition::when_parameter(
+      "enabled",
+      Expression::exists("staffRole"),
+    )];
+    for (index, target, from) in [
+      (0, "accessRole", "staffRole"),
+      (1, "accessEventRole", "accessRole"),
+      (2, "event", "accessEventRole"),
+    ] {
+      definition.relations[index].on = Expression::and([
+        definition.relations[index].on.clone(),
+        Expression::exists_from(target, from),
+      ]);
+    }
+    definition.relations[3].on = Expression::and([
+      definition.relations[3].on.clone(),
+      Expression::eq(Expression::field("event", "id"), Expression::parameter("p")),
+    ]);
+    if first_by {
+      definition.relations[3] = definition.relations[3].clone().first_by([
+        OrderByDefinition::asc(Expression::parameter("preferred")),
+        OrderByDefinition::asc(Expression::field("event", "id")),
+      ]);
+    }
+    let graph = MappedQueryGraph::new(definition.compile().unwrap(), mapping()).unwrap();
+    let missing = QueryOperation {
+      parameters: HashMap::from([("enabled".into(), json!(true))]),
+      ..QueryOperation::default()
+    };
+    let mut expected_parameters = vec!["p"];
+    if first_by {
+      expected_parameters.push("preferred");
+    }
+
+    for result in [
+      graph.compile_sql_server(&missing),
+      graph.compile_oracle(&missing),
+    ] {
+      let SqlCompileError::Plan(PlanError::Operation(issues)) = result.unwrap_err() else {
+        panic!("expected operation validation error, firstBy={first_by}");
+      };
+      assert_eq!(
+        issues
+          .as_slice()
+          .iter()
+          .map(|issue| (issue.code, issue.location.clone()))
+          .collect::<Vec<_>>(),
+        expected_parameters
+          .iter()
+          .map(|name| (
+            OperationIssueCode::MissingParameter,
+            format!("parameters.{name}")
+          ))
+          .collect::<Vec<_>>()
+      );
+    }
+
+    let supplied = QueryOperation {
+      parameters: HashMap::from([
+        ("enabled".into(), json!(true)),
+        ("p".into(), json!(7)),
+        ("preferred".into(), json!(8)),
+      ]),
+      ..QueryOperation::default()
+    };
+    let expected_bindings = if first_by {
+      vec!["preferred", "p"]
+    } else {
+      vec!["p"]
+    };
+    for result in [
+      graph.compile_sql_server(&supplied),
+      graph.compile_oracle(&supplied),
+    ] {
+      let statement = result.unwrap();
+      assert_eq!(statement.sql.matches("EXISTS (").count(), 4);
+      assert_eq!(
+        statement
+          .bindings
+          .iter()
+          .map(|binding| (binding.name.clone(), binding.parameter.as_str()))
+          .collect::<Vec<_>>(),
+        expected_bindings
+          .iter()
+          .enumerate()
+          .map(|(index, name)| (format!("p{index}"), *name))
+          .collect::<Vec<_>>()
+      );
+      assert!(statement.relations.is_empty());
+      assert!(statement.columns[0].relations.is_empty());
+      assert_eq!(statement.sql.contains("CROSS APPLY"), first_by);
+    }
+
+    for result in [
+      graph.compile_sql_server(&QueryOperation::default()),
+      graph.compile_oracle(&QueryOperation::default()),
+    ] {
+      let statement = result.unwrap();
+      assert!(!statement.sql.contains("EXISTS"));
+      assert!(statement.bindings.is_empty());
+      assert!(statement.relations.is_empty());
+    }
+  }
+}
+
+#[test]
 fn anchors_exists_to_an_outer_relation_source() {
   let mut definition = definition();
   definition.parameters.clear();

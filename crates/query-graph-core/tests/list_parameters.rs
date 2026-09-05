@@ -51,6 +51,30 @@ fn graph(required: bool) -> MappedQueryGraph {
   .unwrap()
 }
 
+fn parameter_membership_graph(reuse_parameter: bool) -> MappedQueryGraph {
+  let mut definition = definition(true);
+  definition
+    .parameters
+    .push(ParameterDefinition::required("probe", ScalarType::Int64));
+  definition.constraints[0].predicate =
+    Expression::in_parameter(Expression::parameter("probe"), "ids");
+  if reuse_parameter {
+    definition
+      .constraints
+      .push(ConstraintDefinition::always(Expression::eq(
+        Expression::field("staff", "id"),
+        Expression::parameter("probe"),
+      )));
+  }
+  MappedQueryGraph::new(
+    definition.compile().unwrap(),
+    RelationalMapping {
+      sources: HashMap::from([("staff".into(), SourceMapping::new("Staff"))]),
+    },
+  )
+  .unwrap()
+}
+
 #[test]
 fn expands_list_parameters_to_typed_sql_server_bindings() {
   let operation = QueryOperation {
@@ -99,6 +123,88 @@ fn renders_an_empty_present_list_as_false_without_bindings() {
 
   assert!(statement.sql.contains("WHERE\n  (1 = 0)"));
   assert!(statement.bindings.is_empty());
+}
+
+#[test]
+fn omits_left_operand_bindings_when_the_list_is_empty() {
+  let graph = parameter_membership_graph(false);
+  let operation = QueryOperation {
+    parameters: HashMap::from([("ids".into(), json!([])), ("probe".into(), json!(12))]),
+    ..QueryOperation::default()
+  };
+  for statement in [
+    graph.compile_sql_server(&operation).unwrap(),
+    graph.compile_oracle(&operation).unwrap(),
+  ] {
+    assert!(statement.sql.ends_with("WHERE\n  (1 = 0)"));
+    assert!(statement.bindings.is_empty());
+  }
+}
+
+#[test]
+fn retains_a_left_operand_parameter_used_after_an_empty_list() {
+  let graph = parameter_membership_graph(true);
+  let operation = QueryOperation {
+    parameters: HashMap::from([("ids".into(), json!([])), ("probe".into(), json!(12))]),
+    ..QueryOperation::default()
+  };
+  for (statement, prefix) in [
+    (graph.compile_sql_server(&operation).unwrap(), "@"),
+    (graph.compile_oracle(&operation).unwrap(), ":"),
+  ] {
+    assert!(statement.sql.contains("WHERE\n  (1 = 0)\n  AND "));
+    assert_eq!(
+      statement
+        .bindings
+        .iter()
+        .map(|binding| (
+          binding.name.as_str(),
+          binding.parameter.as_str(),
+          binding.index
+        ))
+        .collect::<Vec<_>>(),
+      vec![("p0", "probe", None)]
+    );
+    assert_eq!(statement.sql.matches(&format!("{prefix}p0")).count(), 1);
+  }
+}
+
+#[test]
+fn preserves_left_operand_then_list_binding_order_for_a_nonempty_list() {
+  let graph = parameter_membership_graph(true);
+  let operation = QueryOperation {
+    parameters: HashMap::from([("ids".into(), json!([12, 18])), ("probe".into(), json!(12))]),
+    ..QueryOperation::default()
+  };
+  for (statement, prefix) in [
+    (graph.compile_sql_server(&operation).unwrap(), "@"),
+    (graph.compile_oracle(&operation).unwrap(), ":"),
+  ] {
+    assert!(statement
+      .sql
+      .contains(&format!("({prefix}p0 IN ({prefix}p1, {prefix}p2))")));
+    assert_eq!(
+      statement
+        .bindings
+        .iter()
+        .map(|binding| (
+          binding.name.as_str(),
+          binding.parameter.as_str(),
+          binding.index
+        ))
+        .collect::<Vec<_>>(),
+      vec![
+        ("p0", "probe", None),
+        ("p1", "ids", Some(0)),
+        ("p2", "ids", Some(1))
+      ]
+    );
+    assert!(statement
+      .bindings
+      .iter()
+      .all(|binding| binding.scalar_type == ScalarType::Int64));
+    assert_eq!(statement.sql.matches(&format!("{prefix}p0")).count(), 2);
+  }
 }
 
 #[test]

@@ -272,33 +272,35 @@ fn add_expression_parameters<'a>(
   expression: &'a Expression,
   parameters: &mut HashSet<&'a str>,
 ) -> Result<(), PlanError> {
-  expression.for_each_parameter(&mut |parameter| {
-    parameters.insert(parameter);
-  });
+  let mut pending = vec![expression];
+  let mut visited_relations = HashSet::new();
 
-  let mut exists_sources = Vec::new();
-  expression.for_each_exists_source(&mut |source, from| {
-    exists_sources.push((source, from));
-  });
+  while let Some(expression) = pending.pop() {
+    expression.for_each_parameter(&mut |parameter| {
+      parameters.insert(parameter);
+    });
 
-  for (source, from) in exists_sources {
-    let from = from.unwrap_or(graph.root().key.as_str());
-    let relation_path = graph
-      .relation_path_indices_between(from, source)
-      .ok_or_else(|| PlanError::InvalidCompiledGraph {
-        message: format!("exists expression source {source:?} is not reachable from {from:?}"),
-      })?;
+    let mut exists_sources = Vec::new();
+    expression.for_each_exists_source(&mut |source, from| {
+      exists_sources.push((source, from));
+    });
 
-    for relation_index in relation_path {
-      let relation = &graph.definition().relations[*relation_index];
-      relation.on.for_each_parameter(&mut |parameter| {
-        parameters.insert(parameter);
-      });
-      if let Some(selection) = &relation.selection {
-        for order in selection.order_by() {
-          order.expression.for_each_parameter(&mut |parameter| {
-            parameters.insert(parameter);
-          });
+    for (source, from) in exists_sources {
+      let from = from.unwrap_or(graph.root().key.as_str());
+      let relation_path = graph
+        .relation_path_indices_between(from, source)
+        .ok_or_else(|| PlanError::InvalidCompiledGraph {
+          message: format!("exists expression source {source:?} is not reachable from {from:?}"),
+        })?;
+
+      for relation_index in relation_path {
+        if !visited_relations.insert(*relation_index) {
+          continue;
+        }
+        let relation = &graph.definition().relations[*relation_index];
+        pending.push(&relation.on);
+        if let Some(selection) = &relation.selection {
+          pending.extend(selection.order_by().iter().map(|order| &order.expression));
         }
       }
     }

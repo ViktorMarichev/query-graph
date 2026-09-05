@@ -1,6 +1,7 @@
 import test from 'ava'
 
 import {
+  and,
   asc,
   coalesce,
   concat,
@@ -12,6 +13,7 @@ import {
   isNull,
   lower,
   nullable,
+  optionalParameter,
   ordering,
   param,
   project,
@@ -20,6 +22,7 @@ import {
   source,
   upper,
 } from '../definition.js'
+import type { QueryGraphError } from '../definition.js'
 import { registerDefinition } from '../index.js'
 
 type Equal<Left, Right> =
@@ -146,6 +149,55 @@ test('builds and compiles a typed exists constraint as a semijoin', (t) => {
   t.false(statement.sql.includes('FROM [Staff] AS [t0]\nINNER JOIN'))
   t.deepEqual(statement.relations, [])
   t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'idService', scalarType: 'int64' }])
+})
+
+test('reports parameters of nested exists relation dependencies as operation diagnostics', (t) => {
+  const root = source('root', { id: 'int64' })
+  const middle = source('middle', { id: 'int64' })
+  const leaf = source('leaf', { id: 'int64' })
+  const enabled = optionalParameter('enabled', 'boolean')
+  const p = optionalParameter('p', 'int64')
+  const definition = defineGraph({
+    name: 'nestedExistsParameters',
+    root,
+    sources: [root, middle, leaf],
+    parameters: [enabled, p],
+    relations: [
+      relation(
+        'middle',
+        root,
+        middle,
+        and(eq(root.field('id'), middle.field('id')), exists(leaf, undefined, { from: middle })),
+      ),
+      relation('leaf', middle, leaf, and(eq(middle.field('id'), leaf.field('id')), eq(leaf.field('id'), param(p)))),
+    ],
+    constraints: [constraint(exists(middle), { when: enabled })],
+    projection: [project('id', root.field('id'), { default: true })],
+  })
+  const graph = registerDefinition(definition).withRelationalMapping({
+    sources: { root: { table: 'Root' }, middle: { table: 'Middle' }, leaf: { table: 'Leaf' } },
+  })
+
+  for (const method of ['compileSqlServer', 'compileOracle'] as const) {
+    const error = t.throws(() => graph[method]({ parameters: { enabled: true } })) as QueryGraphError
+    t.is(error.name, 'QueryGraphError')
+    t.is(error.code, 'QUERY_GRAPH_OPERATION_INVALID')
+    t.is(error.phase, 'operation')
+    t.deepEqual(
+      error.issues.map(({ code, location }) => ({ code, location })),
+      [{ code: 'missingParameter', location: 'parameters.p' }],
+    )
+
+    const statement = graph[method]({ parameters: { enabled: true, p: 7 } })
+    t.deepEqual(statement.bindings, [{ name: 'p0', parameter: 'p', scalarType: 'int64' }])
+    t.deepEqual(statement.relations, [])
+    t.is(statement.sql.match(/EXISTS \(/g)?.length, 2)
+
+    const inactive = graph[method]({})
+    t.deepEqual(inactive.bindings, [])
+    t.deepEqual(inactive.relations, [])
+    t.false(inactive.sql.includes('EXISTS'))
+  }
 })
 
 test('composes graph modules into a flat wire definition', (t) => {

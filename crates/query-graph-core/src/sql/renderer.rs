@@ -207,7 +207,6 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     expression: &Expression,
     parameter: &str,
   ) -> Result<String, SqlCompileError> {
-    let expression = self.render_expression(expression)?;
     let value_count = self
       .operation
       .parameters
@@ -220,6 +219,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       return Ok("(1 = 0)".to_owned());
     }
 
+    let expression = self.render_expression(expression)?;
     let placeholders: Result<Vec<_>, _> = (0..value_count)
       .map(|index| self.render_parameter_binding(parameter, Some(index)))
       .collect();

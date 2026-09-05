@@ -63,6 +63,58 @@ test('returns definition diagnostics for backward exists correlation without abo
   ])
 })
 
+test('returns definition diagnostics for cyclic exists dependencies', (t) => {
+  const script = `
+    const { registerDefinition } = require('./index.js')
+    const { and, defineGraph, eq, exists, relation, source } = require('./dsl.js')
+    const root = source('root', { id: 'int64' })
+    const left = source('left', { id: 'int64' })
+    const right = source('right', { id: 'int64' })
+    const errors = ['self', 'mutual'].map((kind) => {
+      const leftOn = and(
+        eq(root.field('id'), left.field('id')),
+        exists(kind === 'self' ? left : right, undefined, { from: root }),
+      )
+      const rightOn = eq(root.field('id'), right.field('id'))
+      try {
+        registerDefinition(defineGraph({
+          name: 'cyclicExists', root, sources: [root, left, right],
+          relations: [
+            relation({ name: 'left', from: root, to: left, on: leftOn }),
+            relation({ name: 'right', from: root, to: right,
+              on: kind === 'self' ? rightOn : and(rightOn, exists(left, undefined, { from: root })),
+            }),
+          ],
+        }))
+        return null
+      } catch (error) {
+        return {
+          name: error.name, code: error.code, phase: error.phase,
+          issues: error.issues.map(({ code, location }) => ({ code, location })),
+        }
+      }
+    })
+    process.stdout.write(JSON.stringify(errors))
+  `
+  const result = spawnSync(execPath, ['-e', script], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    encoding: 'utf8',
+    timeout: 10_000,
+  })
+
+  t.is(result.error, undefined)
+  t.is(result.status, 0, result.stderr)
+  t.deepEqual(
+    JSON.parse(result.stdout),
+    [0, 1].map((index) => ({
+      name: 'QueryGraphError',
+      code: 'QUERY_GRAPH_DEFINITION_INVALID',
+      phase: 'definition',
+      issues: [{ code: 'invalidExistsContext', location: `relations[${index}].on` }],
+    })),
+  )
+})
+
 test('accepts safe JavaScript integers for int64 parameters', (t) => {
   const root = source('root', { id: 'int64' })
   const id = requiredParameter('id', 'int64')

@@ -45,6 +45,13 @@ Rust выполняет semantic validation:
 Такое разделение дает ранние ошибки опечаток, не дублируя planner rules в
 JavaScript.
 
+Циклические зависимости relation predicates через <code>exists</code> отклоняются
+при регистрации definition: <code>invalidExistsContext</code> указывает на
+<code>relations[i].on</code>, замыкающий цикл. Параметры, необходимые вложенным
+<code>exists</code>, проверяются в фазе <code>operation</code>; отсутствующий
+параметр получает <code>missingParameter</code> с location
+<code>parameters.&lt;name&gt;</code>.
+
 Статические параметры batch relation проверяются при <code>composeGraph</code>:
 ошибки относятся к фазе <code>composition</code>, в том числе для имен параметров
 с квадратными скобками. Параметр batch key исключается из этой проверки по точному

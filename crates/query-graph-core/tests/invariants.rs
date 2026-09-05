@@ -1,7 +1,7 @@
 use query_graph_core::{
   ConstraintDefinition, DefinitionIssueCode, Expression, FieldDefinition, GraphDefinition,
-  ProjectionDefinition, ProjectionFieldDefinition, RelationDefinition, ScalarType,
-  SemanticFunction, SourceDefinition, GRAPH_DEFINITION_VERSION,
+  OrderByDefinition, ProjectionDefinition, ProjectionFieldDefinition, RelationDefinition,
+  ScalarType, SemanticFunction, SourceDefinition, GRAPH_DEFINITION_VERSION,
 };
 
 fn source(key: &str) -> SourceDefinition {
@@ -271,6 +271,104 @@ fn rejects_exists_correlation_from_a_deeper_source_without_panicking() {
       "exists target {target:?} must return diagnostics"
     );
   }
+}
+
+#[test]
+fn rejects_exists_paths_that_expand_the_containing_relation() {
+  for target in ["child", "leaf"] {
+    for selected in [false, true] {
+      let mut definition = GraphDefinition::new("recursiveExists", "root");
+      definition.sources = vec![source("root"), source("child"), source("leaf")];
+      let mut child = relation("child", "root", "child");
+      child.on = Expression::and([child.on, Expression::exists_from(target, "root")]);
+      if selected {
+        child = child.first_by([OrderByDefinition::asc(Expression::field("child", "id"))]);
+      }
+      definition.relations = vec![child, relation("leaf", "child", "leaf")];
+
+      let issues = definition.compile().unwrap_err();
+      assert_eq!(
+        issues
+          .as_slice()
+          .iter()
+          .map(|issue| (issue.code, issue.location.as_str()))
+          .collect::<Vec<_>>(),
+        vec![(DefinitionIssueCode::InvalidExistsContext, "relations[0].on")],
+      );
+    }
+  }
+}
+
+#[test]
+fn rejects_indirect_exists_dependency_cycles() {
+  let mut definition = GraphDefinition::new("mutualExists", "root");
+  definition.sources = vec![source("root"), source("left"), source("right")];
+  definition.relations = vec![
+    relation("left", "root", "left"),
+    relation("right", "root", "right"),
+  ];
+  for (relation, target) in definition.relations.iter_mut().zip(["right", "left"]) {
+    relation.on = Expression::and([relation.on.clone(), Expression::exists_from(target, "root")]);
+  }
+
+  let issues = definition.compile().unwrap_err();
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![(DefinitionIssueCode::InvalidExistsContext, "relations[1].on")],
+  );
+}
+
+#[test]
+fn checks_dependencies_inside_nested_exists_predicates() {
+  let mut definition = GraphDefinition::new("nestedRecursiveExists", "root");
+  definition.sources = vec![source("root"), source("left"), source("right")];
+  definition.relations = vec![
+    relation("left", "root", "left"),
+    relation("right", "root", "right"),
+  ];
+  definition.relations[0].on = Expression::and([
+    definition.relations[0].on.clone(),
+    Expression::exists_from_where("right", "root", Expression::exists_from("left", "root")),
+  ]);
+
+  let issues = definition.compile().unwrap_err();
+  assert_eq!(
+    issues
+      .as_slice()
+      .iter()
+      .map(|issue| (issue.code, issue.location.as_str()))
+      .collect::<Vec<_>>(),
+    vec![(DefinitionIssueCode::InvalidExistsContext, "relations[0].on")],
+  );
+}
+
+#[test]
+fn accepts_shared_acyclic_exists_dependencies() {
+  let mut definition = GraphDefinition::new("sharedExists", "root");
+  definition.sources = vec![
+    source("root"),
+    source("left"),
+    source("right"),
+    source("flag"),
+  ];
+  definition.relations = vec![
+    relation("left", "root", "left"),
+    relation("right", "root", "right"),
+    relation("flag", "root", "flag"),
+  ];
+  for relation in &mut definition.relations[..2] {
+    relation.on = Expression::and([
+      relation.on.clone(),
+      Expression::exists_from("flag", "root"),
+      Expression::exists_from("flag", "root"),
+    ]);
+  }
+
+  assert!(definition.compile().is_ok());
 }
 
 fn relation(name: &str, from: &str, to: &str) -> RelationDefinition {

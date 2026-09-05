@@ -81,6 +81,42 @@ test('expands list parameters and exposes element indices to the consumer', (t) 
   t.deepEqual(empty.bindings, [])
 })
 
+test('keeps only rendered bindings when a list has a parameter left operand', (t) => {
+  const staff = source('staff', { id: 'int64' })
+  const ids = requiredListParameter('ids', 'int64')
+  const probe = requiredParameter('probe', 'int64')
+  for (const reuseParameter of [false, true]) {
+    const definition = defineGraph({
+      name: 'parameterMembership',
+      root: staff,
+      sources: [staff],
+      parameters: [ids, probe],
+      constraints: [
+        constraint(inParameter(probe, ids)),
+        ...(reuseParameter ? [constraint(eq(staff.field('id'), probe))] : []),
+      ],
+      projection: [project('id', staff.field('id'), { default: true })],
+    })
+    const graph = registerDefinition(definition).withRelationalMapping({ sources: { staff: { table: 'Staff' } } })
+    const operation = { parameters: { ids: [], probe: 12 } }
+    for (const statement of [graph.compileSqlServer(operation), graph.compileOracle(operation)]) {
+      t.true(statement.sql.includes('WHERE\n  (1 = 0)'))
+      t.deepEqual(statement.bindings, reuseParameter ? [{ name: 'p0', parameter: 'probe', scalarType: 'int64' }] : [])
+      t.is((statement.sql.match(/[@:]p0/g) ?? []).length, reuseParameter ? 1 : 0)
+    }
+    const nonemptyOperation = { parameters: { ids: [12, 18], probe: 12 } }
+    for (const statement of [graph.compileSqlServer(nonemptyOperation), graph.compileOracle(nonemptyOperation)]) {
+      t.regex(statement.sql, /\([@:]p0 IN \([@:]p1, [@:]p2\)\)/)
+      t.deepEqual(statement.bindings, [
+        { name: 'p0', parameter: 'probe', scalarType: 'int64' },
+        { name: 'p1', parameter: 'ids', scalarType: 'int64', index: 0 },
+        { name: 'p2', parameter: 'ids', scalarType: 'int64', index: 1 },
+      ])
+      t.is((statement.sql.match(/[@:]p0/g) ?? []).length, reuseParameter ? 2 : 1)
+    }
+  }
+})
+
 test('builds a database-independent firstBy relation selection', (t) => {
   const staff = source('staff', { id: 'int64' })
   const personStaff = source('personStaff', {
