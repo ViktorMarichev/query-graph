@@ -216,6 +216,13 @@ fn sql_diagnostic(error: &SqlCompileError) -> Value {
     SqlCompileError::Plan(PlanError::Operation(_)) => ("invalidOperation", "operation"),
     SqlCompileError::MissingSourceMapping(_) => ("missingSourceMapping", "mapping"),
     SqlCompileError::MissingParameter(_) => ("missingParameter", "operation.parameters"),
+    SqlCompileError::TooManyParameters { .. } => ("tooManyParameters", "operation.parameters"),
+    SqlCompileError::GroupExpansionLimitExceeded { .. } => {
+      ("groupExpansionLimitExceeded", "operation.parameters")
+    }
+    SqlCompileError::GroupValueExpansionLimitExceeded { .. } => {
+      ("groupValueExpansionLimitExceeded", "operation.parameters")
+    }
     SqlCompileError::UnsupportedTableQualifier { .. } => ("unsupportedTableQualifier", "mapping"),
     SqlCompileError::UnsupportedDialectFeature { .. } => ("unsupportedDialectFeature", "sql"),
     SqlCompileError::PaginationRequiresOrder { .. } => ("paginationRequiresOrder", "operation"),

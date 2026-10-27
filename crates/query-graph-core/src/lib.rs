@@ -41,7 +41,8 @@ use path::ProjectionPath;
 pub use planner::PlanError;
 pub use relational_graph::MappedQueryGraph;
 pub use sql::{
-  ParameterBinding, SqlColumn, SqlCompileError, SqlProjectionObject, SqlRelation, SqlStatement,
+  BindingPathSegment, ParameterBinding, SqlColumn, SqlCompileError, SqlProjectionObject,
+  SqlRelation, SqlStatement,
 };
 pub use sql_server::{SqlServerCompiler, SqlServerVersion};
 pub use type_system::ExpressionType;

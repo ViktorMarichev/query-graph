@@ -1,7 +1,7 @@
 # Authoring DSL
 
 Authoring API находится в <code>@query-graph/core/dsl</code>. Он создает
-семантический definition версии 11, который не содержит таблиц, SQL aliases или
+семантический definition версии 12, который не содержит таблиц, SQL aliases или
 синтаксиса диалекта.
 
 ## Sources и поля
@@ -35,6 +35,76 @@ Scalar parameter передается в expression напрямую, list param
 <code>optionalListParameter</code> и <code>inParameter</code> остаются алиасами
 тех же factories. Optional parameter не активирует constraint с
 <code>when</code>, пока значение отсутствует.
+
+### Группированные параметры
+
+Grouped list parameter описывает массив групп <code>{ key, values }</code>.
+Каждая группа содержит один ключ и список значений:
+
+```ts
+import { allGroups, and, constraint, eq, inParam, optionalGroupsParam, source } from '@query-graph/core/dsl'
+
+const attributes = source('attributes', { name: 'string', valueId: 'int64' })
+const filters = optionalGroupsParam('filters', { key: 'string', value: 'int64' })
+const attributeFilter = constraint({
+  predicate: allGroups(filters, ({ key, values }) =>
+    and(eq(attributes.field('name'), key), inParam(attributes.field('valueId'), values)),
+  ),
+})
+
+// Operation parameters:
+const parameters = {
+  filters: [
+    { key: 'color', values: [1, 2] },
+    { key: 'size', values: [3] },
+  ],
+}
+```
+
+Добавьте <code>filters</code> в <code>parameters</code> definition, а
+<code>attributeFilter</code> в <code>constraints</code>. Если разные группы
+должны совпасть с разными связанными строками, поместите <code>exists</code>
+внутрь callback и объявите соответствующую relation.
+
+<code>requiredGroupsParam</code> требует присутствия массива в operation.
+Полные имена <code>optionalGroupsParameter</code> и
+<code>requiredGroupsParameter</code> являются алиасами тех же factories.
+Неизвестные поля конфигурации, scalar types и некорректные аргументы factories
+отклоняются сразу при authoring.
+
+Callback <code>allGroups</code> вызывается ровно один раз при построении AST,
+а не для каждой runtime-группы. <code>key</code> является типизированным scalar
+expression, <code>values</code> является отдельной scoped list reference только
+для <code>inParam</code>/<code>inParameter</code>. Ни grouped parameter, ни
+<code>values</code> нельзя передать в <code>param</code> или использовать как
+обычное scalar expression. <code>values</code> также нельзя объявить root parameter.
+
+Каждый binder получает UUID scope через <code>node:crypto.randomUUID()</code>,
+независимо от загрузки отдельных экземпляров или копий DSL. Вложенный callback
+может захватить <code>key</code> и <code>values</code> внешнего callback;
+одноименные параметры не смешивают их scopes. Ссылки за пределами своего binder,
+в том числе захваченные из соседнего callback, отклоняются Rust при регистрации.
+Scope является внутренним идентификатором, его конкретное значение не гарантируется.
+
+Семантика компиляции:
+
+- отсутствующий optional parameter и пустой массив групп дают <code>true</code>;
+- неактивное тело не требует optional scalar parameters или JOIN, используемых
+  только внутри него;
+- predicates всех групп объединяются через <code>AND</code>;
+- повторяющиеся ключи остаются независимыми группами, их values не объединяются;
+- пустой <code>values</code> дает <code>false</code> в <code>inParam</code>;
+- nullable predicate сохраняет обычную трехзначную SQL-семантику.
+
+Rust разрешает <code>allGroups</code> только в constraint predicates, включая
+вложенные boolean expressions и <code>exists</code>. Projection, ordering,
+relation predicates и aggregate bodies не поддерживают binder.
+
+Wire definition сохраняет тип элементов в <code>scalarType</code> и добавляет
+<code>shape: 'groupedList'</code> и <code>keyType</code>. AST использует
+<code>{ kind: 'allGroups', parameter, scope, predicate }</code>,
+<code>{ kind: 'groupKey', scope }</code> и
+<code>{ kind: 'inGroupValues', expression, scope }</code>.
 
 ## Expressions
 

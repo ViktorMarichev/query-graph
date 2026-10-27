@@ -113,13 +113,14 @@ pub(crate) fn build(
   for constraint_index in &constraint_indices {
     add_expression_relations(
       graph,
+      operation,
       &graph.definition().constraints[*constraint_index].predicate,
       &mut required_relations,
     )?;
   }
 
   for order in order_by {
-    add_expression_relations(graph, &order.expression, &mut required_relations)?;
+    add_expression_relations(graph, operation, &order.expression, &mut required_relations)?;
   }
 
   let relation_indices = order_relations(graph, required_relations)?;
@@ -127,6 +128,7 @@ pub(crate) fn build(
   for projection_index in &operation_plan.projection_indices {
     add_expression_parameters(
       graph,
+      operation,
       &graph.definition().projection.fields[*projection_index].expression,
       &mut required_parameters,
     )?;
@@ -134,6 +136,7 @@ pub(crate) fn build(
   for object_index in &projection_object_indices {
     add_expression_parameters(
       graph,
+      operation,
       &graph.definition().projection.objects[*object_index].presence,
       &mut required_parameters,
     )?;
@@ -141,6 +144,7 @@ pub(crate) fn build(
   for projection_index in graph.dimension_projection_indices() {
     add_expression_parameters(
       graph,
+      operation,
       &graph.projection_at(*projection_index).expression,
       &mut required_parameters,
     )?;
@@ -148,19 +152,30 @@ pub(crate) fn build(
   for constraint_index in &constraint_indices {
     add_expression_parameters(
       graph,
+      operation,
       &graph.definition().constraints[*constraint_index].predicate,
       &mut required_parameters,
     )?;
   }
   for order in order_by {
-    add_expression_parameters(graph, &order.expression, &mut required_parameters)?;
+    add_expression_parameters(
+      graph,
+      operation,
+      &order.expression,
+      &mut required_parameters,
+    )?;
   }
   for relation_index in &relation_indices {
     let relation = &graph.definition().relations[*relation_index];
-    add_expression_parameters(graph, &relation.on, &mut required_parameters)?;
+    add_expression_parameters(graph, operation, &relation.on, &mut required_parameters)?;
     if let Some(selection) = &relation.selection {
       for order in selection.order_by() {
-        add_expression_parameters(graph, &order.expression, &mut required_parameters)?;
+        add_expression_parameters(
+          graph,
+          operation,
+          &order.expression,
+          &mut required_parameters,
+        )?;
       }
     }
   }
@@ -246,12 +261,25 @@ impl From<OperationIssues> for PlanError {
 
 fn add_expression_relations(
   graph: &CompiledGraph,
+  operation: &QueryOperation,
   expression: &Expression,
   relations: &mut HashSet<usize>,
 ) -> Result<(), PlanError> {
   let mut sources = HashSet::new();
-  expression.for_each_outer_source(&mut |source| {
-    sources.insert(source);
+  walk_active(expression, operation, &mut |expression| {
+    match expression {
+      Expression::Field { source, .. } => {
+        sources.insert(source.as_str());
+      }
+      Expression::Exists { from, .. } => {
+        if let Some(from) = from {
+          sources.insert(from.as_str());
+        }
+        return false;
+      }
+      _ => {}
+    }
+    true
   });
 
   for source in sources {
@@ -269,6 +297,7 @@ fn add_expression_relations(
 
 fn add_expression_parameters<'a>(
   graph: &'a CompiledGraph,
+  operation: &QueryOperation,
   expression: &'a Expression,
   parameters: &mut HashSet<&'a str>,
 ) -> Result<(), PlanError> {
@@ -276,13 +305,21 @@ fn add_expression_parameters<'a>(
   let mut visited_relations = HashSet::new();
 
   while let Some(expression) = pending.pop() {
-    expression.for_each_parameter(&mut |parameter| {
-      parameters.insert(parameter);
-    });
-
     let mut exists_sources = Vec::new();
-    expression.for_each_exists_source(&mut |source, from| {
-      exists_sources.push((source, from));
+    walk_active(expression, operation, &mut |expression| {
+      match expression {
+        Expression::Parameter { name } => {
+          parameters.insert(name.as_str());
+        }
+        Expression::InParameter { parameter, .. } | Expression::AllGroups { parameter, .. } => {
+          parameters.insert(parameter.as_str());
+        }
+        Expression::Exists { source, from, .. } => {
+          exists_sources.push((source.as_str(), from.as_deref()));
+        }
+        _ => {}
+      }
+      true
     });
 
     for (source, from) in exists_sources {
@@ -307,6 +344,64 @@ fn add_expression_parameters<'a>(
   }
 
   Ok(())
+}
+
+fn walk_active<'a>(
+  expression: &'a Expression,
+  operation: &QueryOperation,
+  visitor: &mut impl FnMut(&'a Expression) -> bool,
+) {
+  walk_active_scoped(expression, operation, &mut Vec::new(), visitor);
+}
+
+fn walk_active_scoped<'a>(
+  expression: &'a Expression,
+  operation: &QueryOperation,
+  scopes: &mut Vec<(&'a str, bool)>,
+  visitor: &mut impl FnMut(&'a Expression) -> bool,
+) {
+  if let Expression::AllGroups {
+    parameter,
+    scope,
+    predicate,
+  } = expression
+  {
+    let Some(groups) = operation
+      .parameters
+      .get(parameter)
+      .and_then(serde_json::Value::as_array)
+      .filter(|groups| !groups.is_empty())
+    else {
+      return;
+    };
+    if !visitor(expression) {
+      return;
+    }
+    // Analyze the union of rendered dependencies without expanding the group product.
+    let has_values = groups.iter().any(|group| {
+      group
+        .get("values")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|values| !values.is_empty())
+    });
+    scopes.push((scope, has_values));
+    walk_active_scoped(predicate, operation, scopes, visitor);
+    scopes.pop();
+    return;
+  }
+  if let Expression::InGroupValues { scope, .. } = expression {
+    let (_, has_values) = scopes
+      .iter()
+      .rev()
+      .find(|(active, _)| active == scope)
+      .expect("validated group references must have an active scope");
+    if !has_values {
+      return;
+    }
+  }
+  if visitor(expression) {
+    expression.for_each_child(&mut |child| walk_active_scoped(child, operation, scopes, visitor));
+  }
 }
 
 fn order_relations(

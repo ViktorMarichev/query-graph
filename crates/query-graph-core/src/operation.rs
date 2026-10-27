@@ -306,6 +306,89 @@ fn validate_parameter_value(
         }
       }
     }
+    ParameterShape::GroupedList => {
+      validate_grouped_parameter_value(parameter, value, &location, issues);
+    }
+  }
+}
+
+fn validate_grouped_parameter_value(
+  parameter: &ParameterDefinition,
+  value: &Value,
+  location: &str,
+  issues: &mut Vec<OperationIssue>,
+) {
+  let Some(groups) = value.as_array() else {
+    issues.push(OperationIssue::new(
+      OperationIssueCode::InvalidParameterType,
+      location,
+      "expected grouped list of {key, values} objects",
+    ));
+    return;
+  };
+  let key_type = parameter
+    .key_type
+    .expect("structural validation must resolve grouped parameter key types");
+
+  for (group_index, group) in groups.iter().enumerate() {
+    let location = format!("{location}[{group_index}]");
+    let Some(group) = group.as_object() else {
+      issues.push(OperationIssue::new(
+        OperationIssueCode::InvalidParameterType,
+        location,
+        "expected {key, values} object",
+      ));
+      continue;
+    };
+
+    for field in group
+      .keys()
+      .filter(|field| *field != "key" && *field != "values")
+    {
+      issues.push(OperationIssue::new(
+        OperationIssueCode::InvalidParameterType,
+        format!("{location}.{field}"),
+        format!("unknown group field {field:?}; expected only key and values"),
+      ));
+    }
+
+    match group.get("key") {
+      Some(key) if is_valid_scalar(key, key_type) => {}
+      Some(_) => issues.push(OperationIssue::new(
+        OperationIssueCode::InvalidParameterType,
+        format!("{location}.key"),
+        format!("expected {key_type:?}"),
+      )),
+      None => issues.push(OperationIssue::new(
+        OperationIssueCode::InvalidParameterType,
+        format!("{location}.key"),
+        "required group key is missing",
+      )),
+    }
+
+    match group.get("values") {
+      Some(Value::Array(values)) => {
+        for (value_index, value) in values.iter().enumerate() {
+          if !is_valid_scalar(value, parameter.scalar_type) {
+            issues.push(OperationIssue::new(
+              OperationIssueCode::InvalidParameterType,
+              format!("{location}.values[{value_index}]"),
+              format!("expected {:?}", parameter.scalar_type),
+            ));
+          }
+        }
+      }
+      Some(_) => issues.push(OperationIssue::new(
+        OperationIssueCode::InvalidParameterType,
+        format!("{location}.values"),
+        format!("expected list of {:?}", parameter.scalar_type),
+      )),
+      None => issues.push(OperationIssue::new(
+        OperationIssueCode::InvalidParameterType,
+        format!("{location}.values"),
+        "required group values are missing",
+      )),
+    }
   }
 }
 

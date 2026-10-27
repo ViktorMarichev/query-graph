@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CompiledGraph, DefinitionIssues, Expression};
 
-pub const GRAPH_DEFINITION_VERSION: u32 = 11;
+pub const GRAPH_DEFINITION_VERSION: u32 = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -136,6 +136,8 @@ impl ScalarType {
 pub struct ParameterDefinition {
   pub name: String,
   pub scalar_type: ScalarType,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub key_type: Option<ScalarType>,
   #[serde(default)]
   pub shape: ParameterShape,
   #[serde(default)]
@@ -147,6 +149,7 @@ impl ParameterDefinition {
     Self {
       name: name.into(),
       scalar_type,
+      key_type: None,
       shape: ParameterShape::Scalar,
       required: true,
     }
@@ -156,6 +159,7 @@ impl ParameterDefinition {
     Self {
       name: name.into(),
       scalar_type,
+      key_type: None,
       shape: ParameterShape::Scalar,
       required: false,
     }
@@ -165,6 +169,7 @@ impl ParameterDefinition {
     Self {
       name: name.into(),
       scalar_type,
+      key_type: None,
       shape: ParameterShape::List,
       required: true,
     }
@@ -174,8 +179,34 @@ impl ParameterDefinition {
     Self {
       name: name.into(),
       scalar_type,
+      key_type: None,
       shape: ParameterShape::List,
       required: false,
+    }
+  }
+
+  pub fn required_grouped_list(
+    name: impl Into<String>,
+    key_type: ScalarType,
+    value_type: ScalarType,
+  ) -> Self {
+    Self {
+      name: name.into(),
+      scalar_type: value_type,
+      key_type: Some(key_type),
+      shape: ParameterShape::GroupedList,
+      required: true,
+    }
+  }
+
+  pub fn optional_grouped_list(
+    name: impl Into<String>,
+    key_type: ScalarType,
+    value_type: ScalarType,
+  ) -> Self {
+    Self {
+      required: false,
+      ..Self::required_grouped_list(name, key_type, value_type)
     }
   }
 }
@@ -186,6 +217,7 @@ pub enum ParameterShape {
   #[default]
   Scalar,
   List,
+  GroupedList,
 }
 
 impl ParameterShape {
@@ -193,6 +225,7 @@ impl ParameterShape {
     match self {
       Self::Scalar => "scalar",
       Self::List => "list",
+      Self::GroupedList => "groupedList",
     }
   }
 }

@@ -38,6 +38,45 @@ const operation = {
 Required parameters обязательны, optional параметры могут отсутствовать,
 list parameters принимают readonly arrays.
 
+Grouped list parameters выводятся как:
+
+```ts
+readonly {
+  key: ScalarParameterValue<KeyType>
+  values: readonly ScalarParameterValue<ValueType>[]
+}[]
+```
+
+Например, <code>requiredGroupsParam('filters', { key: 'string', value: 'int64' })</code>
+требует <code>parameters.filters</code> типа
+<code>readonly { key: string; values: readonly (number | string)[] }[]</code>.
+Optional grouped parameter может отсутствовать, но не заменяться на <code>null</code>.
+Оба массива принимают readonly tuples, в том числе из <code>as const</code>.
+
+Контейнер групп, отдельная группа и контейнер <code>values</code> не могут быть
+<code>null</code>. Ключ и элементы списка следуют обычному scalar contract:
+<code>null</code> запрещен для всех типов, кроме <code>json</code>. JSON сохраняет
+существующую семантику JSON values, включая <code>null</code> и вложенные структуры.
+Rust проверяет наличие <code>key</code>/<code>values</code>, неизвестные поля
+группы и scalar types, включая ограничения числовых значений.
+
+Grouped parameters сохраняют эти типы при композиции GraphModule и могут быть
+статическими параметрами дочернего <code>batchRelation</code>. Ключ
+<code>batchQuery</code> по-прежнему требует обычный list parameter, не grouped list.
+
+В callback <code>allGroups</code> ключ имеет scalar type <code>KeyType</code>,
+а <code>GroupValuesRef&lt;ValueType&gt;</code> принимается только как второй аргумент
+<code>inParameter</code>/<code>inParam</code>. TypeScript исключает эту reference
+из scalar expressions и root parameters; Rust проверяет lexical scope и
+совместимость типов сравнения и membership.
+
+Для grouped bindings <code>path</code> указывает на значение внутри operation
+parameter: <code>[groupIndex, 'key']</code> или
+<code>[groupIndex, 'values', valueIndex]</code>. Scalar bindings остаются без
+<code>index</code>/<code>path</code>, обычные list bindings сохраняют
+<code>index</code>. Поля <code>index</code> и <code>path</code> взаимоисключающие.
+Это же правило действует для результатов <code>compileBatch</code>.
+
 В Node API <code>offset</code> и <code>limit</code> принимают безопасные целые
 JavaScript, включая значения больше <code>2 \*\* 32 - 1</code>.
 <code>offset</code> должен быть неотрицательным, <code>limit</code> — положительным.
@@ -62,6 +101,11 @@ Required relation под optional ancestor остается nullable. Это с�
 (включая <code>literal(null)</code>) дают non-null результат. Тип операнда
 <code>string | null</code> сам по себе не гарантирует сравнение именно с NULL:
 nullable поле при сравнении со строкой может дать NULL.
+
+<code>allGroups</code> возвращает boolean с nullability predicate шаблона.
+Пустой набор групп дает <code>true</code>, но при наличии групп nullable
+сравнение внутри callback может дать SQL UNKNOWN. Если callback возвращает
+<code>exists</code>, результат остается non-null boolean.
 
 ## ResultOf
 
@@ -94,7 +138,8 @@ compilation не меняются.
 Rust проверяет:
 
 - ссылки на sources, fields и parameters;
-- scalar/list shape параметров;
+- scalar/list/groupedList shape параметров и key type grouped parameters;
+- lexical scopes ключей и списков групп, допустимость binder в constraint context;
 - совместимость сравнений и функций;
 - boolean тип predicates;
 - orderable и groupable expressions;

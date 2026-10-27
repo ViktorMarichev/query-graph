@@ -2,15 +2,32 @@ use std::collections::HashMap;
 
 use crate::{
   AggregateFunction, CompiledGraph, CompiledRelationalMapping, Expression, PlanError,
-  QueryOperation, RelationDefinition,
+  QueryOperation, RelationDefinition, ScalarType,
 };
 
-use super::{ParameterBinding, SqlCompileError, SqlDialect};
+use super::{BindingPathSegment, ParameterBinding, SqlCompileError, SqlDialect};
+
+const MAX_GROUP_EXPANSIONS: usize = 10_000;
+const MAX_GROUP_VALUE_EXPANSIONS: usize = 100_000;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct BindingKey {
   parameter: String,
-  index: Option<usize>,
+  address: BindingAddress,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum BindingAddress {
+  Scalar,
+  Index(usize),
+  Path(Vec<BindingPathSegment>),
+}
+
+#[derive(Clone)]
+struct GroupScope {
+  scope: String,
+  parameter: String,
+  index: usize,
 }
 
 pub(super) struct Renderer<'a, D> {
@@ -20,6 +37,9 @@ pub(super) struct Renderer<'a, D> {
   dialect: &'a D,
   binding_names: HashMap<BindingKey, String>,
   bindings: Vec<ParameterBinding>,
+  group_scopes: Vec<GroupScope>,
+  group_expansions: usize,
+  group_value_expansions: usize,
 }
 
 impl<'a, D: SqlDialect> Renderer<'a, D> {
@@ -36,6 +56,9 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       dialect,
       binding_names: HashMap::new(),
       bindings: Vec::new(),
+      group_scopes: Vec::new(),
+      group_expansions: 0,
+      group_value_expansions: 0,
     }
   }
 
@@ -57,6 +80,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     match expression {
       Expression::Field { source, field } => self.render_field(source, field),
       Expression::Parameter { name } => self.render_parameter(name),
+      Expression::GroupKey { scope } => self.render_group_key(scope),
       Expression::Literal { value } => Ok(self.dialect.render_literal(value)),
       Expression::Function { name, arguments } => {
         let arguments = self.render_values(arguments)?;
@@ -94,6 +118,14 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
         expression,
         parameter,
       } => self.render_in_parameter(expression, parameter),
+      Expression::AllGroups {
+        parameter,
+        scope,
+        predicate,
+      } => self.render_all_groups(parameter, scope, predicate),
+      Expression::InGroupValues { expression, scope } => {
+        self.render_in_group_values(expression, scope)
+      }
       Expression::And { expressions } => self.render_predicate_group(expressions, "AND"),
       Expression::Or { expressions } => self.render_predicate_group(expressions, "OR"),
       Expression::Not { expression } => Ok(format!("(NOT {})", self.render_predicate(expression)?)),
@@ -110,6 +142,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       } => self.render_exists(source, from.as_deref(), predicate.as_deref()),
       Expression::Field { .. }
       | Expression::Parameter { .. }
+      | Expression::GroupKey { .. }
       | Expression::Literal { .. }
       | Expression::Function { .. }
       | Expression::Aggregate { .. } => {
@@ -236,6 +269,9 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     if value_count == 0 {
       return Ok("(1 = 0)".to_owned());
     }
+    if !self.group_scopes.is_empty() {
+      self.reserve_group_values(value_count)?;
+    }
 
     let expression = self.render_value(expression)?;
     let placeholders: Result<Vec<_>, _> = (0..value_count)
@@ -256,6 +292,129 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     }
 
     format!("({expression} IN ({}))", values.join(", "))
+  }
+
+  fn render_all_groups(
+    &mut self,
+    parameter: &str,
+    scope: &str,
+    predicate: &Expression,
+  ) -> Result<String, SqlCompileError> {
+    // Values belong to this operation; the registered template is never rewritten.
+    let count = self
+      .operation
+      .parameters
+      .get(parameter)
+      .and_then(serde_json::Value::as_array)
+      .map_or(0, Vec::len);
+    if count == 0 {
+      return Ok("(1 = 1)".to_owned());
+    }
+    if count > MAX_GROUP_EXPANSIONS - self.group_expansions {
+      return Err(SqlCompileError::GroupExpansionLimitExceeded {
+        limit: MAX_GROUP_EXPANSIONS,
+      });
+    }
+    self.group_expansions += count;
+
+    let mut predicates = Vec::with_capacity(count);
+    for index in 0..count {
+      self.group_scopes.push(GroupScope {
+        scope: scope.to_owned(),
+        parameter: parameter.to_owned(),
+        index,
+      });
+      let rendered = self.render_predicate(predicate);
+      self.group_scopes.pop();
+      predicates.push(rendered?);
+    }
+    Ok(format!("({})", predicates.join(" AND ")))
+  }
+
+  fn group_scope(&self, scope: &str) -> Result<GroupScope, SqlCompileError> {
+    self
+      .group_scopes
+      .iter()
+      .rev()
+      .find(|group| group.scope == scope)
+      .cloned()
+      .ok_or_else(|| {
+        SqlCompileError::Plan(PlanError::InvalidCompiledGraph {
+          message: format!("group reference {scope:?} is outside its template"),
+        })
+      })
+  }
+
+  fn reserve_group_values(&mut self, count: usize) -> Result<(), SqlCompileError> {
+    if count > MAX_GROUP_VALUE_EXPANSIONS - self.group_value_expansions {
+      return Err(SqlCompileError::GroupValueExpansionLimitExceeded {
+        limit: MAX_GROUP_VALUE_EXPANSIONS,
+      });
+    }
+    self.group_value_expansions += count;
+    Ok(())
+  }
+
+  fn render_group_key(&mut self, scope: &str) -> Result<String, SqlCompileError> {
+    let group = self.group_scope(scope)?;
+    let scalar_type = self
+      .graph
+      .parameter(&group.parameter)
+      .and_then(|parameter| parameter.key_type)
+      .ok_or_else(|| {
+        SqlCompileError::Plan(PlanError::InvalidCompiledGraph {
+          message: format!("grouped parameter {:?} has no key type", group.parameter),
+        })
+      })?;
+    self.render_binding(
+      &group.parameter,
+      BindingAddress::Path(vec![
+        BindingPathSegment::Index(group.index),
+        BindingPathSegment::Property("key".to_owned()),
+      ]),
+      scalar_type,
+    )
+  }
+
+  fn render_in_group_values(
+    &mut self,
+    expression: &Expression,
+    scope: &str,
+  ) -> Result<String, SqlCompileError> {
+    let group = self.group_scope(scope)?;
+    let count = self
+      .operation
+      .parameters
+      .get(&group.parameter)
+      .and_then(|groups| groups.get(group.index))
+      .and_then(|group| group.get("values"))
+      .and_then(serde_json::Value::as_array)
+      .map(Vec::len)
+      .ok_or_else(|| SqlCompileError::MissingParameter(group.parameter.clone()))?;
+    if count == 0 {
+      return Ok("(1 = 0)".to_owned());
+    }
+    self.reserve_group_values(count)?;
+    let scalar_type = self
+      .graph
+      .parameter(&group.parameter)
+      .ok_or_else(|| SqlCompileError::MissingParameter(group.parameter.clone()))?
+      .scalar_type;
+    let expression = self.render_value(expression)?;
+    let placeholders: Result<Vec<_>, _> = (0..count)
+      .map(|index| {
+        self.render_binding(
+          &group.parameter,
+          BindingAddress::Path(vec![
+            BindingPathSegment::Index(group.index),
+            BindingPathSegment::Property("values".to_owned()),
+            BindingPathSegment::Index(index),
+          ]),
+          scalar_type,
+        )
+      })
+      .collect();
+    Ok(self.render_in_values(&expression, &placeholders?))
   }
 
   fn render_exists(
@@ -339,13 +498,35 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       .graph
       .parameter(parameter)
       .ok_or_else(|| SqlCompileError::MissingParameter(parameter.to_owned()))?;
+    self.render_binding(
+      parameter,
+      index.map_or(BindingAddress::Scalar, BindingAddress::Index),
+      definition.scalar_type,
+    )
+  }
+
+  fn render_binding(
+    &mut self,
+    parameter: &str,
+    address: BindingAddress,
+    scalar_type: ScalarType,
+  ) -> Result<String, SqlCompileError> {
     let key = BindingKey {
       parameter: parameter.to_owned(),
-      index,
+      address: address.clone(),
     };
 
     if let Some(binding_name) = self.binding_names.get(&key) {
       return Ok(self.dialect.render_placeholder(binding_name));
+    }
+
+    if let Some(limit) = self.dialect.parameter_limit() {
+      if self.bindings.len() >= limit {
+        return Err(SqlCompileError::TooManyParameters {
+          dialect: self.dialect.name(),
+          limit,
+        });
+      }
     }
 
     let binding_name = format!("p{}", self.bindings.len());
@@ -353,8 +534,15 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     self.bindings.push(ParameterBinding {
       name: binding_name.clone(),
       parameter: parameter.to_owned(),
-      scalar_type: definition.scalar_type,
-      index,
+      scalar_type,
+      index: match address {
+        BindingAddress::Index(index) => Some(index),
+        _ => None,
+      },
+      path: match address {
+        BindingAddress::Path(path) => Some(path),
+        _ => None,
+      },
     });
 
     Ok(self.dialect.render_placeholder(&binding_name))

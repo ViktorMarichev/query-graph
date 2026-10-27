@@ -47,7 +47,7 @@ function integerDefinition(value: number, authoring: 'wire' | 'dsl'): GraphDefin
     })
   }
   return {
-    schemaVersion: 11,
+    schemaVersion: 12,
     name: 'integerInputs',
     root: 'item',
     sources: [{ key: 'item', fields: [{ name: 'id', scalarType: 'int64' }] }],

@@ -24,7 +24,7 @@ export type ScalarParameterValue<Type extends ScalarType> = Type extends 'boolea
           ? JsonValue
           : never
 
-export type ParameterShape = 'scalar' | 'list'
+export type ParameterShape = 'scalar' | 'list' | 'groupedList'
 export type RelationCardinality = 'one' | 'many'
 export type OrderDirection = 'asc' | 'desc'
 export type NullsOrder = 'first' | 'last'
@@ -86,6 +86,7 @@ export interface ParameterDefinition {
   name: string
   scalarType: ScalarType
   shape?: ParameterShape
+  keyType?: ScalarType
   required?: boolean
 }
 
@@ -144,6 +145,24 @@ export interface InParameterExpression<Name extends string = string> {
   parameter: Name
 }
 
+export interface GroupKeyExpression {
+  kind: 'groupKey'
+  scope: string
+}
+
+export interface InGroupValuesExpression {
+  kind: 'inGroupValues'
+  expression: Expression
+  scope: string
+}
+
+export interface AllGroupsExpression<Name extends string = string> {
+  kind: 'allGroups'
+  parameter: Name
+  scope: string
+  predicate: Expression
+}
+
 export interface ExpressionGroup {
   kind: 'and' | 'or'
   expressions: Expression[]
@@ -181,6 +200,9 @@ export type Expression =
   | LikeExpression
   | InExpression
   | InParameterExpression
+  | GroupKeyExpression
+  | InGroupValuesExpression
+  | AllGroupsExpression
   | ExpressionGroup
   | UnaryExpression
   | ExistsExpression
@@ -376,7 +398,7 @@ export interface FirstBySelection {
 export type RelationSelection = FirstBySelection
 
 export interface GraphDefinitionInput {
-  schemaVersion: 11
+  schemaVersion: 12
   name: string
   root: string
   sources: SourceDefinition[]

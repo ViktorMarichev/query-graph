@@ -198,6 +198,8 @@ fn is_predicate(expression: &Expression) -> bool {
       | Expression::Like { .. }
       | Expression::In { .. }
       | Expression::InParameter { .. }
+      | Expression::InGroupValues { .. }
+      | Expression::AllGroups { .. }
       | Expression::And { .. }
       | Expression::Or { .. }
       | Expression::Not { .. }
@@ -234,6 +236,14 @@ fn validate_grouped_expression(
         DefinitionIssueCode::UngroupedExpression,
         location,
         "exists cannot be combined with aggregates in one grouped expression",
+      ));
+      return;
+    }
+    Expression::AllGroups { .. } => {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::InvalidAllGroupsContext,
+        location,
+        "allGroups cannot be combined with aggregates in one grouped expression",
       ));
       return;
     }
@@ -277,6 +287,7 @@ fn visit_children(
       }
     }
     Expression::InParameter { expression, .. }
+    | Expression::InGroupValues { expression, .. }
     | Expression::Not { expression }
     | Expression::IsNull { expression }
     | Expression::IsNotNull { expression } => {
@@ -292,6 +303,9 @@ fn visit_children(
         visitor(predicate, format!("{location}.predicate"));
       }
     }
+    Expression::AllGroups { predicate, .. } => {
+      visitor(predicate, format!("{location}.predicate"));
+    }
     Expression::Function { arguments, .. } => {
       for (index, argument) in arguments.iter().enumerate() {
         visitor(argument, format!("{location}.arguments[{index}]"));
@@ -302,6 +316,9 @@ fn visit_children(
         visitor(expression, format!("{location}.expression"));
       }
     }
-    Expression::Field { .. } | Expression::Parameter { .. } | Expression::Literal { .. } => {}
+    Expression::Field { .. }
+    | Expression::Parameter { .. }
+    | Expression::GroupKey { .. }
+    | Expression::Literal { .. } => {}
   }
 }

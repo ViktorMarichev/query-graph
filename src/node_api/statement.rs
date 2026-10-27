@@ -1,6 +1,7 @@
+use napi::bindgen_prelude::Either;
 use napi_derive::napi;
 use query_graph_core::{
-  ParameterBinding, SqlColumn, SqlProjectionObject, SqlRelation, SqlStatement,
+  BindingPathSegment, ParameterBinding, SqlColumn, SqlProjectionObject, SqlRelation, SqlStatement,
 };
 
 #[napi(object)]
@@ -35,6 +36,7 @@ pub struct SqlBinding {
   #[napi(ts_type = "import('./dsl.js').ScalarType")]
   pub scalar_type: String,
   pub index: Option<u32>,
+  pub path: Option<Vec<Either<u32, String>>>,
 }
 
 impl From<ParameterBinding> for SqlBinding {
@@ -46,6 +48,17 @@ impl From<ParameterBinding> for SqlBinding {
       index: binding
         .index
         .map(|index| u32::try_from(index).unwrap_or(u32::MAX)),
+      path: binding.path.map(|path| {
+        path
+          .into_iter()
+          .map(|segment| match segment {
+            BindingPathSegment::Index(index) => {
+              Either::A(u32::try_from(index).expect("binding index must fit a JavaScript array"))
+            }
+            BindingPathSegment::Property(property) => Either::B(property),
+          })
+          .collect()
+      }),
     }
   }
 }

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
   analysis::{DefinitionIndex, GraphTopology},
-  ConstraintCondition, GraphDefinition, RelationCardinality, RelationSelection,
+  ConstraintCondition, GraphDefinition, ParameterShape, RelationCardinality, RelationSelection,
   GRAPH_DEFINITION_VERSION,
 };
 
@@ -153,6 +153,13 @@ impl<'a> DefinitionValidator<'a> {
   fn validate_parameters(&mut self) {
     let mut parameter_names = HashSet::new();
     for (parameter_index, parameter) in self.definition.parameters.iter().enumerate() {
+      if (parameter.shape == ParameterShape::GroupedList) != parameter.key_type.is_some() {
+        self.issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidParameterKeyType,
+          format!("parameters[{parameter_index}].keyType"),
+          "keyType is required for groupedList parameters and forbidden for scalar/list parameters",
+        ));
+      }
       let location = format!("parameters[{parameter_index}].name");
       if parameter.name.trim().is_empty() {
         self.issues.push(DefinitionIssue::new(

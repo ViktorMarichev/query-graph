@@ -95,4 +95,5 @@ export interface SqlBinding {
   parameter: string
   scalarType: import('./dsl.js').ScalarType
   index?: number
+  path?: Array<number | string>
 }

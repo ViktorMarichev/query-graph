@@ -6,6 +6,7 @@ import type {
   ProjectionDefinitionInput,
   RelationalMapping,
   ScalarParameterValue,
+  ScalarType,
 } from './model.js'
 
 export interface QueryOperationBase<SelectPath extends string = string, OrderingName extends string = string> {
@@ -66,9 +67,14 @@ export type DefinitionRelation<Definition extends GraphDefinitionInput> = NonNul
 
 export type DefinitionRoot<Definition extends GraphDefinitionInput> = Definition['root']
 
-export type ParameterValue<Parameter extends ParameterDefinition> = Parameter extends { shape: 'list' }
-  ? readonly ScalarParameterValue<Parameter['scalarType']>[]
-  : ScalarParameterValue<Parameter['scalarType']>
+export type ParameterValue<Parameter extends ParameterDefinition> = Parameter extends {
+  shape: 'groupedList'
+  keyType: infer Key extends ScalarType
+}
+  ? readonly { key: ScalarParameterValue<Key>; values: readonly ScalarParameterValue<Parameter['scalarType']>[] }[]
+  : Parameter extends { shape: 'list' }
+    ? readonly ScalarParameterValue<Parameter['scalarType']>[]
+    : ScalarParameterValue<Parameter['scalarType']>
 
 export type RequiredParameter<Parameter extends ParameterDefinition> = Parameter extends unknown
   ? Parameter extends { required?: true }

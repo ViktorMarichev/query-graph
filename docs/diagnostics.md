@@ -60,6 +60,17 @@ JavaScript.
 
 ## Совместимость diagnostics
 
-Wire schema остается версии 11. В совместимых выпусках сохраняются diagnostic
+Wire schema версии 12 добавляет grouped-параметры и scoped-шаблоны `allGroups`.
+Сохранённые raw definitions предыдущей версии требуют обновления; обычные
+DSL-фабрики формируют актуальную версию автоматически. JS DSL и native binding
+должны быть из одного выпуска пакета.
+
+Невалидные данные группы получают `invalidParameterType` с точным путём,
+например `parameters.characteristics[0].values[1]`. Ссылка вне своего шаблона
+получает `unknownGroupScope`; повторное объявление активного scope получает
+`shadowedGroupScope`. `allGroups` вне constraint predicate получает
+`invalidAllGroupsContext`. Эти проверки выполняются и для raw wire definitions.
+
+Для прежних ошибок сохраняются diagnostic
 codes и locations. Message предназначен человеку и не должен использоваться как
 machine-readable contract.

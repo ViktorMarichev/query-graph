@@ -37,7 +37,7 @@ fn integer_wire_fields_keep_rust_ranges_and_reject_floats() {
 #[test]
 fn rejects_unknown_definition_fields() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 11,
+    "schemaVersion": 12,
     "name": "strictDefinition",
     "root": "root",
     "sources": [{
@@ -68,7 +68,7 @@ fn rejects_unknown_definition_fields() {
 #[test]
 fn rejects_legacy_constraint_names() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 11,
+    "schemaVersion": 12,
     "name": "strictConstraints",
     "root": "root",
     "sources": [{
@@ -96,7 +96,7 @@ fn rejects_legacy_constraint_names() {
 #[test]
 fn rejects_unknown_semantic_functions_during_deserialization() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 11,
+    "schemaVersion": 12,
     "name": "strictFunctions",
     "root": "root",
     "sources": [{
@@ -129,7 +129,7 @@ fn rejects_unknown_semantic_functions_during_deserialization() {
 #[test]
 fn rejects_unknown_exists_fields_during_deserialization() {
   let result = serde_json::from_value::<GraphDefinition>(json!({
-    "schemaVersion": 11,
+    "schemaVersion": 12,
     "name": "strictExists",
     "root": "root",
     "sources": [

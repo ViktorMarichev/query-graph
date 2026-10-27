@@ -26,6 +26,13 @@ pub struct ParameterBinding {
   pub parameter: String,
   pub scalar_type: ScalarType,
   pub index: Option<usize>,
+  pub path: Option<Vec<BindingPathSegment>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum BindingPathSegment {
+  Index(usize),
+  Property(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +73,10 @@ pub(super) trait SqlDialect {
   fn render_literal(&self, value: &LiteralValue) -> String;
 
   fn in_list_limit(&self) -> Option<usize> {
+    None
+  }
+
+  fn parameter_limit(&self) -> Option<usize> {
     None
   }
 
@@ -275,6 +286,16 @@ pub enum SqlCompileError {
   Plan(PlanError),
   MissingSourceMapping(String),
   MissingParameter(String),
+  TooManyParameters {
+    dialect: &'static str,
+    limit: usize,
+  },
+  GroupExpansionLimitExceeded {
+    limit: usize,
+  },
+  GroupValueExpansionLimitExceeded {
+    limit: usize,
+  },
   UnsupportedTableQualifier {
     dialect: &'static str,
     qualifier: &'static str,
@@ -301,6 +322,21 @@ impl fmt::Display for SqlCompileError {
           formatter,
           "parameter {parameter:?} is required by the SQL plan"
         )
+      }
+      Self::TooManyParameters { dialect, limit } => {
+        write!(
+          formatter,
+          "{dialect} supports at most {limit} bindings per statement"
+        )
+      }
+      Self::GroupExpansionLimitExceeded { limit } => {
+        write!(
+          formatter,
+          "grouped predicates exceed the limit of {limit} template expansions per statement"
+        )
+      }
+      Self::GroupValueExpansionLimitExceeded { limit } => {
+        write!(formatter, "grouped predicates exceed the limit of {limit} expanded parameter-list items per statement")
       }
       Self::UnsupportedTableQualifier { dialect, qualifier } => write!(
         formatter,

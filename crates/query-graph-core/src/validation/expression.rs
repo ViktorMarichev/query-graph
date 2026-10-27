@@ -8,11 +8,13 @@ use crate::{
 
 use super::{DefinitionIssue, DefinitionIssueCode};
 
+#[derive(Clone)]
 struct ExpressionScope<'a> {
   allowed_sources: AllowedSources<'a>,
   issue_code: DefinitionIssueCode,
 }
 
+#[derive(Clone)]
 enum AllowedSources<'a> {
   Explicit(&'a HashSet<String>),
   PathTo(usize),
@@ -25,12 +27,15 @@ enum ExistsPolicy {
   RequireExplicitCorrelation,
 }
 
+#[derive(Clone)]
 pub(super) struct ExpressionContext<'a> {
   definition: &'a GraphDefinition,
   index: &'a DefinitionIndex,
   topology: &'a GraphTopology,
   scope: Option<ExpressionScope<'a>>,
   exists_policy: ExistsPolicy,
+  allow_all_groups: bool,
+  group_scopes: Vec<String>,
 }
 
 impl<'a> ExpressionContext<'a> {
@@ -45,6 +50,8 @@ impl<'a> ExpressionContext<'a> {
       topology,
       scope: None,
       exists_policy: ExistsPolicy::Deny,
+      allow_all_groups: false,
+      group_scopes: Vec::new(),
     }
   }
 
@@ -59,6 +66,8 @@ impl<'a> ExpressionContext<'a> {
       topology,
       scope: None,
       exists_policy: ExistsPolicy::AllowImplicitCorrelation,
+      allow_all_groups: true,
+      group_scopes: Vec::new(),
     }
   }
 
@@ -78,6 +87,8 @@ impl<'a> ExpressionContext<'a> {
         issue_code: scope_issue_code,
       }),
       exists_policy: ExistsPolicy::Deny,
+      allow_all_groups: false,
+      group_scopes: Vec::new(),
     }
   }
 
@@ -96,19 +107,25 @@ impl<'a> ExpressionContext<'a> {
         issue_code: DefinitionIssueCode::RelationExpressionScope,
       }),
       exists_policy: ExistsPolicy::RequireExplicitCorrelation,
+      allow_all_groups: false,
+      group_scopes: Vec::new(),
     }
   }
 
   fn within_exists(&self, source: usize) -> Self {
     Self {
-      definition: self.definition,
-      index: self.index,
-      topology: self.topology,
       scope: Some(ExpressionScope {
         allowed_sources: AllowedSources::PathTo(source),
         issue_code: DefinitionIssueCode::ExistsExpressionScope,
       }),
-      exists_policy: self.exists_policy,
+      ..self.clone()
+    }
+  }
+
+  fn scalar_operand(&self) -> Self {
+    Self {
+      allow_all_groups: false,
+      ..self.clone()
     }
   }
 
@@ -176,7 +193,12 @@ pub(super) fn validate(
         "in expression must contain at least one value",
         issues,
       );
-      validate_children(values, &format!("{location}.values"), context, issues);
+      validate_children(
+        values,
+        &format!("{location}.values"),
+        &context.scalar_operand(),
+        issues,
+      );
     }
     Expression::InParameter {
       expression,
@@ -190,6 +212,55 @@ pub(super) fn validate(
         context,
         issues,
       );
+    }
+    Expression::AllGroups {
+      parameter,
+      scope,
+      predicate,
+    } => {
+      if !context.allow_all_groups {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidAllGroupsContext,
+          location,
+          "allGroups is allowed only in constraint predicate positions",
+        ));
+      }
+      validate_parameter(
+        parameter,
+        ParameterShape::GroupedList,
+        &format!("{location}.parameter"),
+        context,
+        issues,
+      );
+      let mut predicate_context = context.clone();
+      if scope.trim().is_empty() {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::EmptyGroupScope,
+          format!("{location}.scope"),
+          "group scope must not be empty",
+        ));
+      } else if context.group_scopes.contains(scope) {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::ShadowedGroupScope,
+          format!("{location}.scope"),
+          format!("group scope {scope:?} is already active"),
+        ));
+      } else {
+        predicate_context.group_scopes.push(scope.clone());
+      }
+      validate(
+        predicate,
+        &format!("{location}.predicate"),
+        &predicate_context,
+        issues,
+      );
+    }
+    Expression::GroupKey { scope } => {
+      validate_group_scope(scope, location, context, issues);
+    }
+    Expression::InGroupValues { expression, scope } => {
+      validate_group_scope(scope, location, context, issues);
+      validate_child(expression, location, "expression", context, issues);
     }
     Expression::And { expressions } | Expression::Or { expressions } => {
       validate_non_empty(
@@ -205,15 +276,33 @@ pub(super) fn validate(
         issues,
       );
     }
-    Expression::Not { expression }
-    | Expression::IsNull { expression }
-    | Expression::IsNotNull { expression } => {
+    Expression::Not { expression } => {
+      validate(
+        expression,
+        &format!("{location}.expression"),
+        context,
+        issues,
+      );
+    }
+    Expression::IsNull { expression } | Expression::IsNotNull { expression } => {
       validate_child(expression, location, "expression", context, issues);
     }
     Expression::Function { arguments, .. } => {
-      validate_children(arguments, &format!("{location}.arguments"), context, issues);
+      validate_children(
+        arguments,
+        &format!("{location}.arguments"),
+        &context.scalar_operand(),
+        issues,
+      );
     }
     Expression::Aggregate { expression, .. } => {
+      if !context.group_scopes.is_empty() {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidAggregateContext,
+          location,
+          "allGroups predicate templates cannot contain aggregates",
+        ));
+      }
       if let Some(expression) = expression {
         validate_child(expression, location, "expression", context, issues);
       }
@@ -232,6 +321,27 @@ pub(super) fn validate(
         issues,
       );
     }
+  }
+}
+
+fn validate_group_scope(
+  scope: &str,
+  location: &str,
+  context: &ExpressionContext<'_>,
+  issues: &mut Vec<DefinitionIssue>,
+) {
+  if scope.trim().is_empty() {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::EmptyGroupScope,
+      format!("{location}.scope"),
+      "group scope must not be empty",
+    ));
+  } else if !context.group_scopes.iter().any(|active| active == scope) {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::UnknownGroupScope,
+      format!("{location}.scope"),
+      format!("group scope {scope:?} is not active"),
+    ));
   }
 }
 
@@ -406,7 +516,12 @@ fn validate_child(
   context: &ExpressionContext<'_>,
   issues: &mut Vec<DefinitionIssue>,
 ) {
-  validate(expression, &format!("{location}.{role}"), context, issues);
+  validate(
+    expression,
+    &format!("{location}.{role}"),
+    &context.scalar_operand(),
+    issues,
+  );
 }
 
 fn validate_children(

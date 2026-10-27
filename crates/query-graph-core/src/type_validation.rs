@@ -2,13 +2,15 @@ use crate::{
   analysis::{DefinitionIndex, GraphTopology},
   type_system::{self, InferredType, TypeSystemError, TypeSystemErrorKind},
   DefinitionIssue, DefinitionIssueCode, DefinitionIssues, Expression, ExpressionType,
-  GraphDefinition, ParameterShape, ProjectionFieldRole,
+  GraphDefinition, ParameterDefinition, ParameterShape, ProjectionFieldRole,
 };
 
+#[derive(Clone)]
 pub(crate) struct ExpressionTypeChecker<'a> {
   definition: &'a GraphDefinition,
   index: &'a DefinitionIndex,
   topology: &'a GraphTopology,
+  group_parameters: Vec<(String, usize)>,
 }
 
 impl<'a> ExpressionTypeChecker<'a> {
@@ -21,6 +23,7 @@ impl<'a> ExpressionTypeChecker<'a> {
       definition,
       index,
       topology,
+      group_parameters: Vec::new(),
     }
   }
 
@@ -154,6 +157,15 @@ impl<'a> ExpressionTypeChecker<'a> {
     let parameter = &self.definition.parameters[self.index.parameter(name)?];
     (parameter.shape == shape).then(|| InferredType::parameter(parameter.scalar_type))
   }
+
+  fn group_parameter(&self, scope: &str) -> Option<&ParameterDefinition> {
+    let (_, index) = self
+      .group_parameters
+      .iter()
+      .rev()
+      .find(|(active, _)| active == scope)?;
+    Some(&self.definition.parameters[*index])
+  }
 }
 
 fn infer_expression(
@@ -243,6 +255,47 @@ fn infer_expression(
         ),
         _ => None,
       }
+    }
+    Expression::AllGroups {
+      parameter,
+      scope,
+      predicate,
+    } => {
+      let mut predicate_environment = environment.clone();
+      predicate_environment
+        .group_parameters
+        .push((scope.clone(), environment.index.parameter(parameter)?));
+      let predicate_location = format!("{location}.predicate");
+      let predicate_type = infer_expression(
+        predicate,
+        &predicate_location,
+        &predicate_environment,
+        issues,
+      );
+      validate_predicate(predicate_type, &predicate_location, issues);
+      predicate_type.map(|predicate_type| {
+        InferredType::scalar(crate::ScalarType::Boolean, predicate_type.nullable)
+      })
+    }
+    Expression::GroupKey { scope } => environment
+      .group_parameter(scope)?
+      .key_type
+      .map(InferredType::parameter),
+    Expression::InGroupValues { expression, scope } => {
+      let expression_type = infer_expression(
+        expression,
+        &format!("{location}.expression"),
+        environment,
+        issues,
+      );
+      let value_type = InferredType::parameter(environment.group_parameter(scope)?.scalar_type);
+      expression_type.and_then(|expression_type| {
+        report_type_result(
+          type_system::infer_in(expression_type, &[value_type]),
+          location,
+          issues,
+        )
+      })
     }
     Expression::And { expressions } | Expression::Or { expressions } => {
       let expression_types = infer_expressions(
@@ -415,5 +468,67 @@ fn issue_code(kind: TypeSystemErrorKind) -> DefinitionIssueCode {
     TypeSystemErrorKind::InvalidType => DefinitionIssueCode::InvalidExpressionType,
     TypeSystemErrorKind::InvalidFunctionArity => DefinitionIssueCode::InvalidFunctionArity,
     TypeSystemErrorKind::UnresolvedType => DefinitionIssueCode::UnresolvedExpressionType,
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::{FieldDefinition, ParameterDefinition, ScalarType, SourceDefinition};
+
+  #[test]
+  fn all_groups_preserves_predicate_nullability_including_nested_captures() {
+    for nullable in [false, true] {
+      let mut definition = GraphDefinition::new("groupTypes", "root");
+      let mut fields = vec![
+        FieldDefinition::new("id", ScalarType::Int64),
+        FieldDefinition::new("code", ScalarType::String),
+        FieldDefinition::new("active", ScalarType::Boolean),
+      ];
+      for field in &mut fields {
+        field.nullable = nullable;
+      }
+      definition
+        .sources
+        .push(SourceDefinition::new("root", fields));
+      definition
+        .parameters
+        .push(ParameterDefinition::optional_grouped_list(
+          "filters",
+          ScalarType::String,
+          ScalarType::Int64,
+        ));
+      let index = DefinitionIndex::build(&definition);
+      let topology = GraphTopology::build(&definition, &index);
+      let environment = ExpressionTypeChecker::new(&definition, &index, &topology);
+      for predicate in [
+        Expression::field("root", "active"),
+        Expression::eq(
+          Expression::field("root", "code"),
+          Expression::group_key("outer"),
+        ),
+        Expression::in_group_values(Expression::field("root", "id"), "outer"),
+        Expression::all_groups(
+          "filters",
+          "inner",
+          Expression::and([
+            Expression::in_group_values(Expression::field("root", "id"), "outer"),
+            Expression::eq(
+              Expression::group_key("inner"),
+              Expression::group_key("outer"),
+            ),
+          ]),
+        ),
+      ] {
+        let mut issues = Vec::new();
+        let expression = Expression::all_groups("filters", "outer", predicate);
+        assert_eq!(
+          infer_expression(&expression, "predicate", &environment, &mut issues),
+          Some(InferredType::scalar(ScalarType::Boolean, nullable)),
+        );
+        assert!(issues.is_empty(), "{issues:?}");
+        assert!(environment.group_parameters.is_empty());
+      }
+    }
   }
 }

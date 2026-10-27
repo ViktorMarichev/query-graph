@@ -114,6 +114,18 @@ pub enum Expression {
     expression: Box<Expression>,
     parameter: String,
   },
+  AllGroups {
+    parameter: String,
+    scope: String,
+    predicate: Box<Expression>,
+  },
+  GroupKey {
+    scope: String,
+  },
+  InGroupValues {
+    expression: Box<Expression>,
+    scope: String,
+  },
   And {
     expressions: Vec<Expression>,
   },
@@ -194,6 +206,31 @@ impl Expression {
     Self::InParameter {
       expression: Box::new(expression),
       parameter: parameter.into(),
+    }
+  }
+
+  pub fn all_groups(
+    parameter: impl Into<String>,
+    scope: impl Into<String>,
+    predicate: Expression,
+  ) -> Self {
+    Self::AllGroups {
+      parameter: parameter.into(),
+      scope: scope.into(),
+      predicate: Box::new(predicate),
+    }
+  }
+
+  pub fn group_key(scope: impl Into<String>) -> Self {
+    Self::GroupKey {
+      scope: scope.into(),
+    }
+  }
+
+  pub fn in_group_values(expression: Expression, scope: impl Into<String>) -> Self {
+    Self::InGroupValues {
+      expression: Box::new(expression),
+      scope: scope.into(),
     }
   }
 
@@ -281,22 +318,6 @@ impl Expression {
     });
   }
 
-  pub(crate) fn for_each_outer_source<'a>(&'a self, visitor: &mut impl FnMut(&'a str)) {
-    self.walk(&mut |expression| match expression {
-      Self::Field { source, .. } => {
-        visitor(source);
-        true
-      }
-      Self::Exists { from, .. } => {
-        if let Some(from) = from {
-          visitor(from);
-        }
-        false
-      }
-      _ => true,
-    });
-  }
-
   pub(crate) fn for_each_exists_source<'a>(
     &'a self,
     visitor: &mut impl FnMut(&'a str, Option<&'a str>),
@@ -309,70 +330,66 @@ impl Expression {
     });
   }
 
-  pub(crate) fn for_each_parameter<'a>(&'a self, visitor: &mut impl FnMut(&'a str)) {
-    self.walk(&mut |expression| {
-      match expression {
-        Self::Parameter { name } => visitor(name),
-        Self::InParameter { parameter, .. } => visitor(parameter),
-        _ => {}
-      }
-      true
-    });
-  }
-
-  fn walk<'a>(&'a self, visitor: &mut impl FnMut(&'a Self) -> bool) {
+  pub(crate) fn walk<'a>(&'a self, visitor: &mut impl FnMut(&'a Self) -> bool) {
     if !visitor(self) {
       return;
     }
+    self.for_each_child(&mut |child| child.walk(visitor));
+  }
 
+  pub(crate) fn for_each_child<'a>(&'a self, visitor: &mut impl FnMut(&'a Self)) {
     match self {
-      Self::Field { .. } | Self::Parameter { .. } | Self::Literal { .. } => {}
+      Self::Field { .. }
+      | Self::Parameter { .. }
+      | Self::Literal { .. }
+      | Self::GroupKey { .. } => {}
       Self::Eq { left, right }
       | Self::NotEq { left, right }
       | Self::LessThan { left, right }
       | Self::LessThanOrEqual { left, right }
       | Self::GreaterThan { left, right }
       | Self::GreaterThanOrEqual { left, right } => {
-        left.walk(visitor);
-        right.walk(visitor);
+        visitor(left);
+        visitor(right);
       }
       Self::Like {
         expression,
         pattern,
       } => {
-        expression.walk(visitor);
-        pattern.walk(visitor);
+        visitor(expression);
+        visitor(pattern);
       }
       Self::In { expression, values } => {
-        expression.walk(visitor);
+        visitor(expression);
         for value in values {
-          value.walk(visitor);
+          visitor(value);
         }
       }
-      Self::InParameter { expression, .. } => {
-        expression.walk(visitor);
+      Self::InParameter { expression, .. } | Self::InGroupValues { expression, .. } => {
+        visitor(expression);
       }
+      Self::AllGroups { predicate, .. } => visitor(predicate),
       Self::And { expressions } | Self::Or { expressions } => {
         for expression in expressions {
-          expression.walk(visitor);
+          visitor(expression);
         }
       }
       Self::Not { expression } | Self::IsNull { expression } | Self::IsNotNull { expression } => {
-        expression.walk(visitor);
+        visitor(expression);
       }
       Self::Exists { predicate, .. } => {
         if let Some(predicate) = predicate {
-          predicate.walk(visitor);
+          visitor(predicate);
         }
       }
       Self::Function { arguments, .. } => {
         for argument in arguments {
-          argument.walk(visitor);
+          visitor(argument);
         }
       }
       Self::Aggregate { expression, .. } => {
         if let Some(expression) = expression {
-          expression.walk(visitor);
+          visitor(expression);
         }
       }
     }

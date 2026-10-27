@@ -114,6 +114,10 @@ impl SqlDialect for SqlServerDialect {
     format!("@{binding_name}")
   }
 
+  fn parameter_limit(&self) -> Option<usize> {
+    Some(2100)
+  }
+
   fn render_literal(&self, value: &LiteralValue) -> String {
     sql::render_literal(value, "N")
   }

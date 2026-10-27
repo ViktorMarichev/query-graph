@@ -75,12 +75,56 @@ Compiler никогда не вставляет operation values в SQL. Каж�
 - SQL placeholder name;
 - имя parameter;
 - scalar type;
-- index элемента для list parameter.
+- index элемента для list parameter;
+- path до вложенного значения для grouped parameter.
 
 Повторное использование parameter переиспользует binding. Пустой list
 компилируется в ложное условие без placeholders.
 
-В Oracle большие <code>inParam</code> и <code>inList</code> разбиваются на
+Для scalar отсутствуют и `index`, и `path`. Для обычного list сохраняется
+`index`. Для grouped list используется только `path`, например:
+
+```ts
+;[
+  { name: 'p0', parameter: 'characteristics', scalarType: 'int64', path: [0, 'key'] },
+  { name: 'p1', parameter: 'characteristics', scalarType: 'int64', path: [0, 'values', 1] },
+]
+```
+
+Executor извлекает значение из `operation.parameters[binding.parameter]`,
+последовательно проходя по сегментам `path`. `index` и `path` взаимно исключаются;
+отсутствующий сегмент должен приводить к ошибке, а не к подстановке `null`.
+Тип binding соответствует конкретному ключу или элементу values, а не контейнеру.
+Повторное обращение к тому же параметру и пути переиспользует placeholder.
+Потребитель должен обновить resolver bindings до начала использования grouped-параметров.
+
+`allGroups` разворачивает шаблон в условия, соединённые `AND`, только при
+компиляции операции. Для отсутствующего optional-параметра и пустого списка
+групп результат равен `TRUE`; зависимости тела шаблона не включаются в план.
+Каждый `exists` остаётся коррелированным подзапросом по описанному пути relations,
+включая `firstBy`. Definition не изменяется, но SQL зависит от количества групп
+и значений. Это один SQL-запрос, а не отдельное выполнение на каждую группу.
+
+На один statement допускается до 10 000 разворачиваний тела `allGroups`
+суммарно по всем шаблонам, включая вложенные. Превышение возвращает
+`groupExpansionLimitExceeded`: вложенность может увеличить SQL многократно,
+даже когда все bindings переиспользуются. Лимит применяется отдельно к каждой
+компиляции и не ограничивает каталог доступных групп в приложении.
+
+Также ограничено суммарное число элементов параметров-массивов, развёрнутых
+внутри этих шаблонов: до 100 000 на statement. Повторное использование
+одинаковых placeholders считается повторно, поскольку увеличивает SQL.
+Ограничение охватывает и `values` группы, и обычный list parameter внутри
+`allGroups`; превышение даёт `groupValueExpansionLimitExceeded`.
+
+SQL Server compiler отклоняет statement с более чем 2100 уникальными bindings
+с диагностикой `tooManyParameters`. Считаются все scalar, list и grouped bindings
+вместе; разбиение `IN` не уменьшает их количество. Для больших выборок нужна
+другая стратегия передачи данных, которой текущий grouped DSL не подменяет
+явную ошибку. Ограничение согласовано с
+[бюджетом параметров SQL Server](https://learn.microsoft.com/sql/sql-server/maximum-capacity-specifications-for-sql-server).
+
+В Oracle большие <code>inParam</code> (включая values группы) и <code>inList</code> разбиваются на
 группы <code>IN</code>, объединённые <code>OR</code> в общих скобках внутри
 одного SQL. Размер группы — до 1000 выражений в 11g–21c и до 65535 в 23ai
 согласно [лимитам Oracle](https://python-oracledb.readthedocs.io/en/v2.5.1/user_guide/bind.html#binding-a-large-number-of-items-in-an-in-list).

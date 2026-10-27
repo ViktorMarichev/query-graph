@@ -30,7 +30,7 @@ import type {
 } from './dsl.js'
 
 /** @deprecated Import authoring primitives from `@query-graph/core/dsl`. */
-export const GRAPH_DEFINITION_VERSION: 11
+export const GRAPH_DEFINITION_VERSION: 12
 
 /** @deprecated Use `source.field(name)` from `@query-graph/core/dsl`. */
 export function field<

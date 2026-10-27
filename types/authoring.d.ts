@@ -1,5 +1,6 @@
 import type {
   AggregateExpression,
+  AllGroupsExpression,
   AllNullability,
   AnyNullability,
   BinaryExpression,
@@ -13,7 +14,9 @@ import type {
   FirstBySelection,
   FunctionExpression,
   GraphDefinition,
+  GroupKeyExpression,
   InExpression,
+  InGroupValuesExpression,
   InParameterExpression,
   JoinProjectionPath,
   LikeExpression,
@@ -110,11 +113,45 @@ export interface ListParameterRef<
   required?: Required
 }
 
+export interface GroupedListParameterRef<
+  Name extends string = string,
+  Key extends ScalarType = ScalarType,
+  Value extends ScalarType = ScalarType,
+  Required extends boolean = boolean,
+> extends ParameterDefinition {
+  readonly [parameterRefBrand]: true
+  name: Name
+  scalarType: Value
+  shape: 'groupedList'
+  keyType: Key
+  required?: Required
+}
+
+declare const groupValuesRefBrand: unique symbol
+
+export interface GroupValuesRef<Type extends ScalarType = ScalarType> {
+  readonly [groupValuesRefBrand]: Type
+  readonly scope: string
+}
+
+export interface GroupedListParameterTypes<Key extends ScalarType = ScalarType, Value extends ScalarType = ScalarType> {
+  key: Key
+  value: Value
+}
+
+export interface GroupScope<Key extends ScalarType = ScalarType, Value extends ScalarType = ScalarType> {
+  key: TypedExpression<GroupKeyExpression, Key, false>
+  values: GroupValuesRef<Value>
+}
+
 export type ParameterRef<
   Name extends string = string,
   Type extends ScalarType = ScalarType,
   Required extends boolean = boolean,
-> = ScalarParameterRef<Name, Type, Required> | ListParameterRef<Name, Type, Required>
+> =
+  | ScalarParameterRef<Name, Type, Required>
+  | ListParameterRef<Name, Type, Required>
+  | GroupedListParameterRef<Name, ScalarType, Type, Required>
 
 export type RelationRef<
   Name extends string = string,
@@ -243,6 +280,27 @@ export function optionalListParameter<const Name extends string, const Type exte
   scalarType: Type,
 ): ListParameterRef<Name, Type, false>
 export const optionalListParam: typeof optionalListParameter
+export function requiredGroupsParameter<
+  const Name extends string,
+  const Key extends ScalarType,
+  const Value extends ScalarType,
+>(name: Name, types: GroupedListParameterTypes<Key, Value>): GroupedListParameterRef<Name, Key, Value, true>
+export const requiredGroupsParam: typeof requiredGroupsParameter
+export function optionalGroupsParameter<
+  const Name extends string,
+  const Key extends ScalarType,
+  const Value extends ScalarType,
+>(name: Name, types: GroupedListParameterTypes<Key, Value>): GroupedListParameterRef<Name, Key, Value, false>
+export const optionalGroupsParam: typeof optionalGroupsParameter
+export function allGroups<
+  const Name extends string,
+  const Key extends ScalarType,
+  const Value extends ScalarType,
+  const Predicate extends ExpressionInput,
+>(
+  parameter: GroupedListParameterRef<Name, Key, Value>,
+  predicate: (group: GroupScope<Key, Value>) => Predicate,
+): TypedExpression<AllGroupsExpression<Name>, 'boolean', InputNullability<Predicate>>
 /** @deprecated Pass a scalar parameter reference directly to an expression factory. */
 export function param<const Name extends string, const Type extends ScalarType>(
   parameter: ScalarParameterRef<Name, Type>,
@@ -312,6 +370,10 @@ export function inParameter<
   expression: Value,
   parameter: ListParameterRef<Name, Type>,
 ): TypedExpression<InParameterExpression<Name>, 'boolean', InputNullability<Value>>
+export function inParameter<const Value extends ExpressionInput, const Type extends ScalarType>(
+  expression: Value,
+  values: GroupValuesRef<Type>,
+): TypedExpression<InGroupValuesExpression, 'boolean', InputNullability<Value>>
 export const inParam: typeof inParameter
 export function or<const Expressions extends readonly ExpressionInput[]>(
   ...expressions: Expressions
