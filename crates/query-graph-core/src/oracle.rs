@@ -116,6 +116,15 @@ impl SqlDialect for OracleDialect {
     sql::render_literal(value, "")
   }
 
+  fn in_list_limit(&self) -> Option<usize> {
+    Some(match self.version {
+      OracleVersion::V23ai => 65_535,
+      OracleVersion::V11g | OracleVersion::V12c | OracleVersion::V19c | OracleVersion::V21c => {
+        1_000
+      }
+    })
+  }
+
   fn render_predicate_value(&self, predicate: &str) -> String {
     if self.version == OracleVersion::V23ai {
       predicate.to_owned()

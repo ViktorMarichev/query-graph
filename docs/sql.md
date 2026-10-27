@@ -80,6 +80,15 @@ Compiler никогда не вставляет operation values в SQL. Каж�
 Повторное использование parameter переиспользует binding. Пустой list
 компилируется в ложное условие без placeholders.
 
+В Oracle большие <code>inParam</code> и <code>inList</code> разбиваются на
+группы <code>IN</code>, объединённые <code>OR</code> в общих скобках внутри
+одного SQL. Размер группы — до 1000 выражений в 11g–21c и до 65535 в 23ai
+согласно [лимитам Oracle](https://python-oracledb.readthedocs.io/en/v2.5.1/user_guide/bind.html#binding-a-large-number-of-items-in-an-in-list).
+<code>not</code> применяется ко всей группе и сохраняет SQL-семантику
+<code>NULL</code>. Порядок элементов и индексы bindings сохраняются, включая
+дубликаты. Пустой литеральный <code>inList</code> по-прежнему отклоняется при
+валидации definition.
+
 ## Result metadata
 
 SQL columns получают технические aliases <code>c0</code>,

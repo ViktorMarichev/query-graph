@@ -217,7 +217,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
   ) -> Result<String, SqlCompileError> {
     let expression = self.render_value(expression)?;
     let values = self.render_values(values)?;
-    Ok(format!("({expression} IN ({}))", values.join(", ")))
+    Ok(self.render_in_values(&expression, &values))
   }
 
   fn render_in_parameter(
@@ -241,7 +241,21 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     let placeholders: Result<Vec<_>, _> = (0..value_count)
       .map(|index| self.render_parameter_binding(parameter, Some(index)))
       .collect();
-    Ok(format!("({expression} IN ({}))", placeholders?.join(", ")))
+    Ok(self.render_in_values(&expression, &placeholders?))
+  }
+
+  fn render_in_values(&self, expression: &str, values: &[String]) -> String {
+    if let Some(limit) = self.dialect.in_list_limit() {
+      if values.len() > limit {
+        let groups = values
+          .chunks(limit)
+          .map(|group| format!("({expression} IN ({}))", group.join(", ")))
+          .collect::<Vec<_>>();
+        return format!("({})", groups.join(" OR "));
+      }
+    }
+
+    format!("({expression} IN ({}))", values.join(", "))
   }
 
   fn render_exists(

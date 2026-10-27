@@ -65,6 +65,10 @@ pub(super) trait SqlDialect {
 
   fn render_literal(&self, value: &LiteralValue) -> String;
 
+  fn in_list_limit(&self) -> Option<usize> {
+    None
+  }
+
   fn render_predicate_value(&self, predicate: &str) -> String {
     render_predicate_value(predicate)
   }
