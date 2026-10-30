@@ -110,6 +110,7 @@ fn mapping() -> RelationalMapping {
             catalog: None,
             schema: Some("dbo".into()),
             name: "Attribute#Link".into(),
+            database_link: None,
           },
           columns: HashMap::from([("idOwner".into(), "owner_id".into())]),
         },
@@ -468,6 +469,7 @@ fn preserves_the_empty_schema_part_in_sql_server_table_names() {
     catalog: Some("Application".into()),
     schema: None,
     name: "Attribute#Link".into(),
+    database_link: None,
   };
   let graph = MappedQueryGraph::new(definition().compile().unwrap(), mapping).unwrap();
 
@@ -481,6 +483,44 @@ fn preserves_the_empty_schema_part_in_sql_server_table_names() {
   assert!(statement
     .sql
     .contains("FROM [Application]..[Attribute#Link] AS [t0]"));
+}
+
+#[test]
+fn rejects_oracle_database_links_on_roots_and_joined_sources() {
+  for source in ["link", "value"] {
+    let mut mapping = mapping();
+    mapping.sources.get_mut(source).unwrap().table = TableName::Qualified {
+      catalog: Some("Application".into()),
+      schema: Some("dbo".into()),
+      name: "RemoteTable".into(),
+      database_link: Some("REMOTE".into()),
+    };
+    let graph = MappedQueryGraph::new(definition().compile().unwrap(), mapping).unwrap();
+    for version in [
+      SqlServerVersion::V2008,
+      SqlServerVersion::V2012,
+      SqlServerVersion::V2016,
+      SqlServerVersion::V2019,
+      SqlServerVersion::V2022,
+    ] {
+      let error = graph
+        .compile_sql_server_with(
+          &QueryOperation {
+            parameters: HashMap::from([("idOwner".into(), json!(42))]),
+            ..QueryOperation::default()
+          },
+          &SqlServerCompiler::new(version),
+        )
+        .unwrap_err();
+      assert!(matches!(
+        error,
+        SqlCompileError::UnsupportedTableQualifier {
+          dialect: "SQL Server",
+          qualifier: "databaseLink",
+        }
+      ));
+    }
+  }
 }
 
 #[test]

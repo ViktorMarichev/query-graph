@@ -18,6 +18,53 @@ const graph = registerDefinition(definition).withRelationalMapping({
 <code>withRelationalMappings</code>. Одинаковые mappings объединяются,
 конфликтующие table/column names возвращают ошибку фазы mapping.
 
+### Oracle Database Links
+
+Для удалённой таблицы укажите <code>databaseLink</code> отдельно от имени:
+
+```ts
+const graph = registerDefinition(definition).withRelationalMapping({
+  sources: {
+    users: {
+      table: { schema: 'APP', name: 'Users', databaseLink: 'REMOTE_GATE' },
+    },
+  },
+})
+```
+
+Oracle скомпилирует адрес как <code>"APP"."Users"@REMOTE_GATE</code>.
+Schema и name экранируются как идентификаторы, а ссылка добавляется вне кавычек.
+Без schema получится <code>"Users"@REMOTE_GATE</code>; без databaseLink
+сохраняется прежний локальный адрес. Строка <code>'Users@REMOTE_GATE'</code>
+по-прежнему означает одно имя таблицы, а не удалённый адрес.
+
+Поддерживается форма <code>LINK[.DOMAIN...][@CONNECTION]</code>, например
+<code>REMOTE.EXAMPLE.COM@READER</code>. Имя должно содержать 1–128 ASCII-байт,
+LINK и CONNECTION начинаются с латинской буквы; каждая непустая часть допускает
+только буквы, цифры, `_`, `$` и `#`.
+Не передавайте ведущий <code>@</code>, кавычки, пробелы или SQL-фрагменты.
+Неверное имя отклоняется при подключении mapping с диагностикой
+<code>invalidDatabaseLink</code> и путём
+<code>sources.&lt;source&gt;.table.databaseLink</code>.
+
+Регистр ссылки нечувствителен: компилятор выводит её в верхнем регистре,
+а объединение mappings считает <code>remote_gate</code> и
+<code>REMOTE_GATE</code> одной ссылкой. Локальная и удалённая таблицы, а также
+таблицы через разные ссылки конфликтуют. Это не меняет сравнение schema/name.
+Правила Oracle описаны в
+[References to Objects in Remote Databases](https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/Syntax-for-Schema-Objects-and-Parts-in-SQL-Statements.html).
+
+SQL Server отклоняет <code>databaseLink</code> с диагностикой
+<code>unsupportedTableQualifier</code>, если операция обращается к этому source.
+Неиспользуемые optional relations по-прежнему не входят в SQL.
+Oracle по-прежнему не поддерживает qualifier <code>catalog</code>.
+
+Ссылки работают в корневом source, JOIN, exists и firstBy через общий рендеринг
+таблиц; bindings и projection metadata не меняются. Mapping выбирается при
+инициализации приложения, не из пользовательских operation parameters.
+Библиотека не создаёт DB link и не проверяет доступ к удалённой БД: это остаётся
+ответственностью инфраструктуры потребителя.
+
 ## Диалекты
 
 ```ts

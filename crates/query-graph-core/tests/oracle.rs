@@ -85,6 +85,7 @@ fn mapping() -> RelationalMapping {
             catalog: None,
             schema: Some("APP".into()),
             name: "Attribute#Link".into(),
+            database_link: None,
           },
           columns: HashMap::from([("idOwner".into(), "owner_id".into())]),
         },
@@ -96,6 +97,7 @@ fn mapping() -> RelationalMapping {
             catalog: None,
             schema: Some("APP".into()),
             name: "AttributeValue".into(),
+            database_link: None,
           },
           columns: HashMap::new(),
         },
@@ -219,6 +221,7 @@ fn rejects_a_sql_server_catalog_in_an_oracle_mapping() {
     catalog: Some("Application".into()),
     schema: None,
     name: "Attribute#Link".into(),
+    database_link: None,
   };
   let graph = MappedQueryGraph::new(definition().compile().unwrap(), mapping).unwrap();
 
@@ -236,4 +239,47 @@ fn rejects_a_sql_server_catalog_in_an_oracle_mapping() {
       qualifier: "catalog"
     }
   ));
+}
+
+#[test]
+fn renders_database_links_outside_quoted_identifiers() {
+  let mut mapping = mapping();
+  mapping.sources.get_mut("link").unwrap().table = TableName::Qualified {
+    catalog: None,
+    schema: Some("App\"Schema".into()),
+    name: "Attribute#Link".into(),
+    database_link: Some("remote.example@reader".into()),
+  };
+  mapping.sources.get_mut("value").unwrap().table = TableName::Qualified {
+    catalog: None,
+    schema: None,
+    name: "Attribute\"Value".into(),
+    database_link: Some("remote_gate".into()),
+  };
+  let graph = MappedQueryGraph::new(definition().compile().unwrap(), mapping).unwrap();
+  let operation = QueryOperation {
+    parameters: HashMap::from([("idOwner".into(), json!(42))]),
+    ..QueryOperation::default()
+  };
+  let local = relational_graph().compile_oracle(&operation).unwrap();
+  for version in [
+    OracleVersion::V11g,
+    OracleVersion::V12c,
+    OracleVersion::V19c,
+    OracleVersion::V21c,
+    OracleVersion::V23ai,
+  ] {
+    let statement = graph
+      .compile_oracle_with(&operation, &OracleCompiler::new(version))
+      .unwrap();
+    assert!(statement
+      .sql
+      .contains("FROM \"App\"\"Schema\".\"Attribute#Link\"@REMOTE.EXAMPLE@READER \"t0\""));
+    assert!(statement
+      .sql
+      .contains("INNER JOIN \"Attribute\"\"Value\"@REMOTE_GATE \"t1\""));
+    assert_eq!(statement.bindings, local.bindings);
+    assert_eq!(statement.columns, local.columns);
+    assert_eq!(statement.relations, local.relations);
+  }
 }

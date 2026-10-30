@@ -85,9 +85,19 @@ impl SqlDialect for SqlServerDialect {
     Ok(match table {
       TableName::Name(name) => self.quote_identifier(name),
       TableName::Qualified {
+        database_link: Some(_),
+        ..
+      } => {
+        return Err(SqlCompileError::UnsupportedTableQualifier {
+          dialect: self.name(),
+          qualifier: "databaseLink",
+        });
+      }
+      TableName::Qualified {
         catalog,
         schema,
         name,
+        database_link: None,
       } => {
         let name = self.quote_identifier(name);
         match (catalog, schema) {

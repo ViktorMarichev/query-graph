@@ -147,6 +147,12 @@ pub enum TableName {
     #[serde(default)]
     schema: Option<String>,
     name: String,
+    #[serde(
+      default,
+      rename = "databaseLink",
+      skip_serializing_if = "Option::is_none"
+    )]
+    database_link: Option<String>,
   },
 }
 
@@ -160,6 +166,7 @@ impl TableName {
           catalog: None,
           schema: None,
           name: right,
+          database_link: None,
         },
       )
       | (
@@ -167,9 +174,33 @@ impl TableName {
           catalog: None,
           schema: None,
           name: left,
+          database_link: None,
         },
         Self::Name(right),
       ) => left == right,
+      (
+        Self::Qualified {
+          catalog: left_catalog,
+          schema: left_schema,
+          name: left_name,
+          database_link: left_link,
+        },
+        Self::Qualified {
+          catalog: right_catalog,
+          schema: right_schema,
+          name: right_name,
+          database_link: right_link,
+        },
+      ) => {
+        left_catalog == right_catalog
+          && left_schema == right_schema
+          && left_name == right_name
+          && match (left_link, right_link) {
+            (Some(left), Some(right)) => left.eq_ignore_ascii_case(right),
+            (None, None) => true,
+            _ => false,
+          }
+      }
       (left, right) => left == right,
     }
   }
@@ -234,6 +265,7 @@ pub enum MappingIssueCode {
   UnknownSource,
   EmptyTableName,
   EmptyTableQualifier,
+  InvalidDatabaseLink,
   UnknownColumnField,
   EmptyColumnName,
 }
@@ -289,6 +321,7 @@ fn validate_table_name(table: &TableName, source: &str, issues: &mut Vec<Mapping
       catalog,
       schema,
       name,
+      database_link,
     } => {
       if name.trim().is_empty() {
         issues.push(MappingIssue::new(
@@ -307,6 +340,46 @@ fn validate_table_name(table: &TableName, source: &str, issues: &mut Vec<Mapping
           ));
         }
       }
+
+      if database_link
+        .as_deref()
+        .is_some_and(|name| !valid_database_link(name))
+      {
+        issues.push(MappingIssue::new(
+          MappingIssueCode::InvalidDatabaseLink,
+          format!("sources.{source}.table.databaseLink"),
+          "databaseLink must be an ASCII name of 1-128 bytes in LINK[.DOMAIN...][@CONNECTION] form; \
+           LINK and CONNECTION must start with a letter, and each nonempty part may contain only \
+           letters, digits, _, $ or #",
+        ));
+      }
     }
   }
+}
+
+fn valid_database_link(name: &str) -> bool {
+  if name.len() > 128 || !name.as_bytes().first().is_some_and(u8::is_ascii_alphabetic) {
+    return false;
+  }
+
+  let (database, connection) = match name.split_once('@') {
+    Some((database, connection)) => (database, Some(connection)),
+    None => (name, None),
+  };
+
+  let valid_part = |part: &str| {
+    !part.is_empty()
+      && part
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'$' | b'#'))
+  };
+
+  database.split('.').all(valid_part)
+    && connection.is_none_or(|connection| {
+      connection
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphabetic)
+        && valid_part(connection)
+    })
 }

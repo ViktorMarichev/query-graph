@@ -435,6 +435,8 @@ export type TableName =
       catalog?: string
       schema?: string
       name: string
+      /** Oracle database link name, without the leading @. Not supported by SQL Server. */
+      databaseLink?: string
     }
 
 export interface SourceMapping {

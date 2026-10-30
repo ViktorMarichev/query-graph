@@ -94,12 +94,19 @@ impl SqlDialect for OracleDialect {
         catalog: None,
         schema,
         name,
+        database_link,
       } => {
         let name = self.quote_identifier(name);
-        Ok(match schema {
+        let mut name = match schema {
           None => name,
           Some(schema) => format!("{}.{name}", self.quote_identifier(schema)),
-        })
+        };
+        if let Some(database_link) = database_link {
+          // Mapping validation restricts this unquoted suffix to database link names.
+          name.push('@');
+          name.push_str(&database_link.to_ascii_uppercase());
+        }
+        Ok(name)
       }
     }
   }
