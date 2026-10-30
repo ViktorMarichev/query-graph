@@ -25,6 +25,22 @@ import type { BatchQuery, BatchRelation, ComposedQueryGraph } from './compositio
 
 type BooleanOr<Value extends boolean> = true extends Value ? true : false
 
+type IsUnion<Value, Whole = Value> = Value extends unknown ? ([Whole] extends [Value] ? false : true) : never
+
+type SingleStringLiteral<Value extends string> = string extends Value
+  ? never
+  : true extends IsUnion<Value>
+    ? never
+    : Value
+
+type SourceIsPresent<Source extends string, PresentSources extends string> = [SingleStringLiteral<Source>] extends [
+  never,
+]
+  ? false
+  : [Source] extends [PresentSources]
+    ? true
+    : false
+
 type BatchQueryGraph<Query extends BatchQuery> =
   Query extends BatchQuery<infer Child, infer _KeyPath, infer _KeyParameter> ? Child : never
 
@@ -116,6 +132,7 @@ type CombineAllNullability<Left extends boolean, Right extends boolean> = [Left]
 type EvaluateAnyNullability<
   Definition extends GraphDefinitionInput,
   Values,
+  PresentSources extends string,
   Depth extends readonly unknown[],
 > = Values extends readonly []
   ? false
@@ -124,16 +141,17 @@ type EvaluateAnyNullability<
         ...infer Rest extends readonly NullabilityExpression[],
       ]
     ? BooleanOr<
-        | EvaluateNullability<Definition, First, readonly [...Depth, unknown]>
-        | EvaluateAnyNullability<Definition, Rest, readonly [...Depth, unknown]>
+        | EvaluateNullability<Definition, First, PresentSources, readonly [...Depth, unknown]>
+        | EvaluateAnyNullability<Definition, Rest, PresentSources, readonly [...Depth, unknown]>
       >
     : Values extends readonly (infer Value extends NullabilityExpression)[]
-      ? BooleanOr<EvaluateNullability<Definition, Value, readonly [...Depth, unknown]>>
+      ? BooleanOr<EvaluateNullability<Definition, Value, PresentSources, readonly [...Depth, unknown]>>
       : boolean
 
 type EvaluateAllNullability<
   Definition extends GraphDefinitionInput,
   Values,
+  PresentSources extends string,
   Depth extends readonly unknown[],
 > = Values extends readonly []
   ? true
@@ -142,14 +160,15 @@ type EvaluateAllNullability<
         ...infer Rest extends readonly NullabilityExpression[],
       ]
     ? CombineAllNullability<
-        EvaluateNullability<Definition, First, readonly [...Depth, unknown]>,
-        EvaluateAllNullability<Definition, Rest, readonly [...Depth, unknown]>
+        EvaluateNullability<Definition, First, PresentSources, readonly [...Depth, unknown]>,
+        EvaluateAllNullability<Definition, Rest, PresentSources, readonly [...Depth, unknown]>
       >
     : boolean
 
 type EvaluateNullability<
   Definition extends GraphDefinitionInput,
   Formula extends NullabilityExpression,
+  PresentSources extends string = never,
   Depth extends readonly unknown[] = readonly [],
 > = Depth['length'] extends 16
   ? boolean
@@ -158,11 +177,16 @@ type EvaluateNullability<
     : Formula extends boolean
       ? Formula
       : Formula extends SourceFieldNullability<infer Source, infer FieldNullable>
-        ? BooleanOr<FieldNullable | SourceOuterNullable<Definition, Source, never, Depth>>
+        ? BooleanOr<
+            | FieldNullable
+            | (SourceIsPresent<Source, PresentSources> extends true
+                ? false
+                : SourceOuterNullable<Definition, Source, never, Depth>)
+          >
         : Formula extends AnyNullability<infer Values>
-          ? EvaluateAnyNullability<Definition, Values, Depth>
+          ? EvaluateAnyNullability<Definition, Values, PresentSources, Depth>
           : Formula extends AllNullability<infer Values>
-            ? EvaluateAllNullability<Definition, Values, Depth>
+            ? EvaluateAllNullability<Definition, Values, PresentSources, Depth>
             : boolean
 
 type ProjectionFieldPath<Field> =
@@ -186,16 +210,59 @@ type ProjectionObjectNullability<Object> =
       ? Nullability
       : boolean
 
+// Only a direct field presence proves its source exists, and only inside that object.
+type ProjectionObjectPresenceSource<Object> = [Object] extends [
+  ProjectionObjectTypeMetadata<infer _Path, infer _Nullability, infer Source>,
+]
+  ? SingleStringLiteral<Source>
+  : never
+
+type EnclosingObjectPath<Object, Path extends string> = Object extends ProjectionObjectDefinition
+  ? Path extends `${SingleStringLiteral<ProjectionObjectPath<Object>>}.${string}`
+    ? SingleStringLiteral<ProjectionObjectPath<Object>>
+    : never
+  : never
+
+type ProjectionObjectAtPath<Object, Path extends string> = Object extends ProjectionObjectDefinition
+  ? ProjectionObjectPath<Object> extends Path
+    ? Object
+    : never
+  : never
+
+type PresentSourcesAtPath<
+  Definition extends GraphDefinitionInput,
+  Path extends string,
+  ObjectPath = EnclosingObjectPath<DefinitionProjectionObject<Definition>, Path>,
+> = [SingleStringLiteral<Path>] extends [never]
+  ? never
+  : ObjectPath extends string
+    ? ProjectionObjectPresenceSource<ProjectionObjectAtPath<DefinitionProjectionObject<Definition>, ObjectPath>>
+    : never
+
 type ProjectionObjectIsNullable<Definition extends GraphDefinitionInput, Object> =
-  true extends EvaluateNullability<Definition, ProjectionObjectNullability<Object>> ? true : false
+  true extends EvaluateNullability<
+    Definition,
+    ProjectionObjectNullability<Object>,
+    PresentSourcesAtPath<Definition, ProjectionObjectPath<Object>>
+  >
+    ? true
+    : false
 
 type ProjectionFieldValue<Definition extends GraphDefinitionInput, Field, TypeMap extends ScalarOutputTypeMap> =
   Field extends ProjectionTypeMetadata<infer _Path, infer Type, infer Nullability, infer _SelectedByDefault>
-    ? true extends EvaluateNullability<Definition, Nullability>
+    ? true extends EvaluateNullability<
+        Definition,
+        Nullability,
+        PresentSourcesAtPath<Definition, ProjectionFieldPath<Field>>
+      >
       ? TypeMap[Type] | null
       : TypeMap[Type]
     : Field extends ProjectionFieldDefinition<infer _Path, infer Type, infer Nullability, infer _SelectedByDefault>
-      ? true extends EvaluateNullability<Definition, Nullability>
+      ? true extends EvaluateNullability<
+          Definition,
+          Nullability,
+          PresentSourcesAtPath<Definition, ProjectionFieldPath<Field>>
+        >
         ? TypeMap[Type] | null
         : TypeMap[Type]
       : never

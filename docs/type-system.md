@@ -118,10 +118,44 @@ type Row = ResultOf<typeof definition, typeof operation>
 Для composed graph выбранные batch relations добавляются как массивы либо
 nullable объекты согласно cardinality.
 
+Если объект объявлен через прямое поле источника:
+
+```ts
+projectObject({ path: 'profile', presence: profiles.field('id') })
+```
+
+то внутри существующего `profile` поля этого источника больше не получают
+`null` из-за optional JOIN. Например, для non-null `id` и `name` и nullable
+`nickname` результат будет:
+
+```ts
+type Row = {
+  profile: {
+    id: number | string
+    name: string
+    nickname: string | null
+  } | null
+}
+```
+
+Сам объект остается nullable. Nullable-колонки, поля других sources и поля
+вне этого объекта сохраняют прежнюю nullability. Вложенные объекты учитывают
+presence родителей, но наличие родителя не гарантирует наличие другого
+источника, даже если связь с ним объявлена `required`.
+
+Вычисляемый presence, например `coalesce(profiles.field('id'), 0)` или
+`isNotNull(profiles.field('id'))`, не подтверждает наличие источника.
+Если тип не позволяет однозначно определить source или путь объекта,
+уточнение также не применяется.
+
+Это уточнение относится к результату после обработки `statement.objects`
+потребителем. SQL и `statement.columns[].nullable` не меняются: до сборки
+вложенных объектов отсутствующая строка JOIN по-прежнему дает NULL-колонки.
+
 Driver может заменить представление scalar values:
 
 ```ts
-interface DriverScalars extends DefaultScalarOutputTypeMap {
+interface DriverScalars extends Omit<DefaultScalarOutputTypeMap, 'int64' | 'decimal' | 'dateTime'> {
   int64: bigint
   decimal: string
   dateTime: Date

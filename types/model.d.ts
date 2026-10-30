@@ -255,6 +255,7 @@ declare const typedProjectionNullabilityType: unique symbol
 declare const typedProjectionDefaultType: unique symbol
 declare const typedProjectionObjectPathType: unique symbol
 declare const typedProjectionObjectNullabilityType: unique symbol
+declare const typedProjectionObjectPresenceSourceType: unique symbol
 
 export interface ProjectionTypeMetadata<
   Path extends string = string,
@@ -271,15 +272,18 @@ export interface ProjectionTypeMetadata<
 export interface ProjectionObjectTypeMetadata<
   Path extends string = string,
   Nullability extends NullabilityExpression = NullabilityExpression,
+  PresenceSource extends string = string,
 > {
   readonly [typedProjectionObjectPathType]: Path
   readonly [typedProjectionObjectNullabilityType]: Nullability
+  readonly [typedProjectionObjectPresenceSourceType]: PresenceSource
 }
 
 export type TypedProjectionObject<
   Path extends string = string,
   Nullability extends NullabilityExpression = NullabilityExpression,
-> = ProjectionObjectDefinition<Path, Nullability> & ProjectionObjectTypeMetadata<Path, Nullability>
+  PresenceSource extends string = string,
+> = ProjectionObjectDefinition<Path, Nullability> & ProjectionObjectTypeMetadata<Path, Nullability, PresenceSource>
 
 export type TypedProjectionField<
   Path extends string = string,

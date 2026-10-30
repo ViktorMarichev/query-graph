@@ -529,7 +529,11 @@ export function project<
 
 export function projectObject<const Path extends string | readonly string[], const Value extends ExpressionInput>(
   configuration: ProjectionObjectConfiguration<Path, Value>,
-): TypedProjectionObject<ConfigurationPath<Path>, InputNullability<Value>>
+): TypedProjectionObject<
+  ConfigurationPath<Path>,
+  InputNullability<Value>,
+  [Value] extends [FieldExpression<infer Source, infer _Field>] ? Source : string
+>
 
 export function dimension<
   const Path extends string | readonly string[],
