@@ -11,6 +11,7 @@ pub(crate) struct ExpressionTypeChecker<'a> {
   index: &'a DefinitionIndex,
   topology: &'a GraphTopology,
   group_parameters: Vec<(String, usize)>,
+  traversal: Option<(String, crate::SourceDefinition)>,
 }
 
 impl<'a> ExpressionTypeChecker<'a> {
@@ -24,6 +25,7 @@ impl<'a> ExpressionTypeChecker<'a> {
       index,
       topology,
       group_parameters: Vec::new(),
+      traversal: None,
     }
   }
 
@@ -175,6 +177,30 @@ fn infer_expression(
   issues: &mut Vec<DefinitionIssue>,
 ) -> Option<InferredType> {
   match expression {
+    Expression::Reachable(traversal) => {
+      let mut local = environment.clone();
+      local.traversal = traversal
+        .input
+        .sources
+        .iter()
+        .find(|source| source.key == traversal.input.root)
+        .map(|source| (traversal.scope.clone(), source.clone()));
+      let location = format!("{location}.match");
+      let predicate_type = infer_expression(&traversal.predicate, &location, &local, issues);
+      validate_predicate(predicate_type, &location, issues);
+      Some(InferredType::scalar(crate::ScalarType::Boolean, false))
+    }
+    Expression::TraversalField { scope, field, .. } => {
+      let (active, source) = environment.traversal.as_ref()?;
+      if active != scope {
+        return None;
+      }
+      let field = source
+        .fields
+        .iter()
+        .find(|candidate| candidate.name == *field)?;
+      Some(InferredType::scalar(field.scalar_type, field.nullable))
+    }
     Expression::Field { source, field } => Some(environment.field_type(source, field)),
     Expression::Parameter { name } => environment.parameter_type(name, ParameterShape::Scalar),
     Expression::Literal { value } => Some(InferredType::literal(value)),

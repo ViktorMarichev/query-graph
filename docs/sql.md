@@ -80,6 +80,12 @@ const oracle = graph.compileOracle(operation, { version: '19c' })
 Version capabilities проверяются до возврата SQL. Например, pagination и
 <code>firstBy</code> могут требовать более новую версию диалекта.
 
+[`reachable`](traversal.md) компилируется в Oracle через `CONNECT BY NOCYCLE`.
+Входные фильтры находятся в отдельном inline view до обхода, а `match` проверяется
+во внешнем `EXISTS`. SQL Server пока возвращает `unsupportedDialectFeature`:
+компилятор не подменяет рекурсию фиксированным количеством JOIN или ограничением
+глубины. Неактивный conditional constraint не требует поддержки обхода.
+
 Semantic functions рендерятся с одинаковым поведением через разные конструкции
 диалектов:
 

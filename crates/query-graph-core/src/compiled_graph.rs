@@ -18,11 +18,58 @@ pub struct CompiledGraph {
   projection: ProjectionAnalysis,
   summary: bool,
   constraint_phases: Box<[ConstraintPhase]>,
+  traversals: std::collections::HashMap<String, CompiledGraph>,
 }
 
 impl CompiledGraph {
   pub(crate) fn try_from_definition(definition: GraphDefinition) -> Result<Self, DefinitionIssues> {
     let analysis = DefinitionAnalysis::build(&definition)?;
+    let mut traversals = std::collections::HashMap::new();
+    let mut inputs = Vec::new();
+    for constraint in &definition.constraints {
+      constraint.predicate.walk(&mut |expression| {
+        if let crate::Expression::Reachable(traversal) = expression {
+          inputs.push(traversal.as_ref());
+        }
+        true
+      });
+    }
+    for traversal in inputs {
+      let mut input = traversal.input.clone();
+      input.parameters = definition.parameters.clone();
+      if let Some(existing) = traversals.get(&traversal.scope) {
+        let existing: &CompiledGraph = existing;
+        if existing.definition() != &input {
+          return Err(DefinitionIssues::from_vec(vec![
+            crate::DefinitionIssue::new(
+              crate::DefinitionIssueCode::InvalidReachableDefinition,
+              "constraints",
+              "reachable scopes must not identify different inputs",
+            ),
+          ]));
+        }
+      } else {
+        traversals.insert(traversal.scope.clone(), input.compile()?);
+      }
+    }
+    let mut known_sources = std::collections::HashMap::new();
+    for source in traversals
+      .values()
+      .flat_map(|graph| &graph.definition.sources)
+    {
+      if known_sources
+        .insert(&source.key, source)
+        .is_some_and(|previous| previous != source)
+      {
+        return Err(DefinitionIssues::from_vec(vec![
+          crate::DefinitionIssue::new(
+            crate::DefinitionIssueCode::InvalidReachableDefinition,
+            "constraints",
+            "reachable sources sharing a mapping key must have identical field definitions",
+          ),
+        ]));
+      }
+    }
     let summary = definition.is_summary();
     let constraint_phases = definition
       .constraints
@@ -43,11 +90,42 @@ impl CompiledGraph {
       projection: analysis.projection,
       summary,
       constraint_phases,
+      traversals,
     })
   }
 
   pub fn definition(&self) -> &GraphDefinition {
     &self.definition
+  }
+
+  pub(crate) fn traversal_input(&self, scope: &str) -> &CompiledGraph {
+    self
+      .traversals
+      .get(scope)
+      .expect("validated traversal must have a compiled input")
+  }
+
+  pub(crate) fn mapping_sources(&self) -> Vec<(&Self, &crate::SourceDefinition)> {
+    let mut sources: Vec<_> = self
+      .definition
+      .sources
+      .iter()
+      .map(|source| (self, source))
+      .collect();
+    let mut local_sources = Vec::new();
+    for input in self.traversals.values() {
+      local_sources.extend(
+        input
+          .definition
+          .sources
+          .iter()
+          .map(|source| (input, source)),
+      );
+    }
+    local_sources.sort_by(|(_, left), (_, right)| left.key.cmp(&right.key));
+    local_sources.dedup_by(|(_, left), (_, right)| left.key == right.key);
+    sources.extend(local_sources);
+    sources
   }
 
   pub fn is_summary(&self) -> bool {

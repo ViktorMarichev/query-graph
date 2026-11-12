@@ -77,6 +77,28 @@ impl SqlDialect for OracleDialect {
     "Oracle"
   }
 
+  fn version(&self) -> &'static str {
+    self.version.as_str()
+  }
+
+  fn supports_reachable(&self) -> bool {
+    true
+  }
+
+  fn render_reachable_query(
+    &self,
+    projection: &str,
+    source: &str,
+    start: &str,
+    step: &str,
+    key: &str,
+  ) -> Result<String, SqlCompileError> {
+    // Include the declared row identity among the PRIOR operands used for cycle detection.
+    Ok(format!(
+      "SELECT {projection}\nFROM {source}\nSTART WITH {start}\nCONNECT BY NOCYCLE {step} AND PRIOR {key} IS NOT NULL"
+    ))
+  }
+
   fn quote_identifier(&self, identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
   }

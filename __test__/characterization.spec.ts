@@ -58,7 +58,7 @@ const graph = registerDefinition(definition).withRelationalMapping({
 
 test('preserves the wire definition, diagnostics, SQL, bindings, and projection metadata', (t) => {
   t.deepEqual(definition, {
-    schemaVersion: 12,
+    schemaVersion: 13,
     name: 'items',
     root: 'items',
     sources: [

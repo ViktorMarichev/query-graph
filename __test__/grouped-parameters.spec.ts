@@ -68,7 +68,7 @@ function groupedPredicate() {
   return allGroups(groups, ({ key, values }) => and(eq(rows.field('kind'), key), inParam(rows.field('id'), values)))
 }
 
-test('authoring: grouped factories preserve value types and aliases in version 12', (t) => {
+test('authoring: grouped factories preserve value types and aliases', (t) => {
   const required = requiredGroupsParameter('required', { key: 'int32', value: 'string' })
   t.is(optionalGroupsParam, optionalGroupsParameter)
   t.is(requiredGroupsParam, requiredGroupsParameter)
@@ -85,7 +85,7 @@ test('authoring: grouped factories preserve value types and aliases in version 1
     parameters: [groups],
     constraints: [constraint({ predicate: groupedPredicate() })],
   })
-  t.is(definition.schemaVersion, 12)
+  t.is(definition.schemaVersion, 13)
   t.deepEqual(JSON.parse(JSON.stringify(definition.parameters)), [groups])
   t.true(Object.isFrozen(definition.constraints[0].predicate))
 })

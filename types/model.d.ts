@@ -180,6 +180,24 @@ export interface ExistsExpression<Source extends string = string, From extends s
   predicate?: Expression
 }
 
+export interface TraversalFieldExpression {
+  kind: 'traversalField'
+  scope: string
+  side: 'current' | 'next'
+  field: string
+}
+
+export interface ReachableExpression {
+  kind: 'reachable'
+  scope: string
+  input: GraphDefinitionInput
+  key: string
+  start: Expression
+  step: Expression
+  match: Expression
+  cycles: 'skip'
+}
+
 export interface FunctionExpression {
   kind: 'function'
   name: SemanticFunctionName
@@ -194,6 +212,8 @@ export interface AggregateExpression {
 
 export type Expression =
   | FieldExpression
+  | TraversalFieldExpression
+  | ReachableExpression
   | ParameterExpression
   | LiteralExpression
   | BinaryExpression
@@ -402,7 +422,7 @@ export interface FirstBySelection {
 export type RelationSelection = FirstBySelection
 
 export interface GraphDefinitionInput {
-  schemaVersion: 12
+  schemaVersion: 13
   name: string
   root: string
   sources: SourceDefinition[]

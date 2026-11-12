@@ -32,6 +32,8 @@ import type {
   RelationCardinality,
   RelationDefinition,
   RelationSelection,
+  ReachableExpression,
+  TraversalFieldExpression,
   ScalarType,
   SourceDefinition,
   SourceFieldNullability,
@@ -395,6 +397,27 @@ export function exists<const Source extends string, const From extends string>(
   predicate: ExpressionInput | undefined,
   configuration: ExistsConfiguration<From>,
 ): TypedExpression<ExistsExpression<Source, From>, 'boolean', false>
+
+export interface TraversalRow<Fields extends FieldSpecMap> {
+  field<Name extends Extract<keyof Fields, string>>(
+    name: Name,
+  ): TypedExpression<TraversalFieldExpression, FieldSpecScalarType<Fields[Name]>, FieldSpecIsNullable<Fields[Name]>>
+}
+
+export interface ReachableConfiguration<Key extends string, Fields extends FieldSpecMap> {
+  source: SourceRef<Key, Fields>
+  modules?: readonly GraphModule[]
+  key: FieldExpression<NoInfer<Key>, Extract<keyof NoInfer<Fields>, string>>
+  where?: ExpressionInput
+  start: ExpressionInput
+  step: (rows: { current: TraversalRow<Fields>; next: TraversalRow<Fields> }) => ExpressionInput
+  match: ExpressionInput
+  cycles?: 'skip'
+}
+
+export function reachable<const Key extends string, const Fields extends FieldSpecMap>(
+  configuration: ReachableConfiguration<Key, Fields>,
+): TypedExpression<ReachableExpression, 'boolean', false>
 
 export function lower<const Value extends ExpressionInput>(
   expression: Value,

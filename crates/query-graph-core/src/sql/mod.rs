@@ -62,6 +62,27 @@ pub struct SqlRelation {
 pub(super) trait SqlDialect {
   fn name(&self) -> &'static str;
 
+  fn version(&self) -> &'static str;
+
+  fn supports_reachable(&self) -> bool {
+    false
+  }
+
+  fn render_reachable_query(
+    &self,
+    _projection: &str,
+    _source: &str,
+    _start: &str,
+    _step: &str,
+    _key: &str,
+  ) -> Result<String, SqlCompileError> {
+    Err(SqlCompileError::UnsupportedDialectFeature {
+      dialect: self.name(),
+      version: self.version(),
+      feature: "reachable traversal",
+    })
+  }
+
   fn quote_identifier(&self, identifier: &str) -> String;
 
   fn render_table_name(&self, table: &TableName) -> Result<String, SqlCompileError>;

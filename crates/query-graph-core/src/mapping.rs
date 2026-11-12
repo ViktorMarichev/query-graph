@@ -1,4 +1,4 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 
@@ -67,9 +67,14 @@ impl RelationalMapping {
 
   pub fn compile(self, graph: &CompiledGraph) -> Result<CompiledRelationalMapping, MappingIssues> {
     let mut issues = Vec::new();
+    let sources = graph.mapping_sources();
+    let source_names: HashSet<_> = sources
+      .iter()
+      .map(|(_, source)| source.key.as_str())
+      .collect();
 
     for source in self.sources.keys() {
-      if graph.source(source).is_none() {
+      if !source_names.contains(source.as_str()) {
         issues.push(MappingIssue::new(
           MappingIssueCode::UnknownSource,
           format!("sources.{source}"),
@@ -78,7 +83,7 @@ impl RelationalMapping {
       }
     }
 
-    for source in &graph.definition().sources {
+    for (source_graph, source) in sources {
       let Some(source_mapping) = self.sources.get(&source.key) else {
         issues.push(MappingIssue::new(
           MappingIssueCode::MissingSource,
@@ -91,7 +96,7 @@ impl RelationalMapping {
       validate_table_name(&source_mapping.table, &source.key, &mut issues);
 
       for (field, column) in &source_mapping.columns {
-        if graph.field(&source.key, field).is_none() {
+        if source_graph.field(&source.key, field).is_none() {
           issues.push(MappingIssue::new(
             MappingIssueCode::UnknownColumnField,
             format!("sources.{}.columns.{field}", source.key),

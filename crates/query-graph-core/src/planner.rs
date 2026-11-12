@@ -306,8 +306,10 @@ fn add_expression_parameters<'a>(
 
   while let Some(expression) = pending.pop() {
     let mut exists_sources = Vec::new();
+    let mut traversals = Vec::new();
     walk_active(expression, operation, &mut |expression| {
       match expression {
+        Expression::Reachable(traversal) => traversals.push(traversal.as_ref()),
         Expression::Parameter { name } => {
           parameters.insert(name.as_str());
         }
@@ -321,6 +323,21 @@ fn add_expression_parameters<'a>(
       }
       true
     });
+
+    for traversal in traversals {
+      let input = graph.traversal_input(&traversal.scope);
+      add_expression_parameters(input, operation, &traversal.start, parameters)?;
+      for constraint in &input.definition().constraints {
+        if match &constraint.when {
+          ConstraintCondition::Always => true,
+          ConstraintCondition::ParameterPresent { parameter } => {
+            operation.parameters.contains_key(parameter)
+          }
+        } {
+          add_expression_parameters(input, operation, &constraint.predicate, parameters)?;
+        }
+      }
+    }
 
     for (source, from) in exists_sources {
       let from = from.unwrap_or(graph.root().key.as_str());

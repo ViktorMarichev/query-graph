@@ -7,6 +7,14 @@ use crate::{
 
 use super::{BindingPathSegment, ParameterBinding, SqlCompileError, SqlDialect};
 
+mod reachable;
+
+struct TraversalScope {
+  scope: String,
+  source: String,
+  alias: String,
+}
+
 const MAX_GROUP_EXPANSIONS: usize = 10_000;
 const MAX_GROUP_VALUE_EXPANSIONS: usize = 100_000;
 
@@ -40,6 +48,10 @@ pub(super) struct Renderer<'a, D> {
   group_scopes: Vec<GroupScope>,
   group_expansions: usize,
   group_value_expansions: usize,
+  alias_prefix: String,
+  root_alias: Option<String>,
+  traversal_scope: Option<TraversalScope>,
+  traversal_count: usize,
 }
 
 impl<'a, D: SqlDialect> Renderer<'a, D> {
@@ -59,6 +71,10 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       group_scopes: Vec::new(),
       group_expansions: 0,
       group_value_expansions: 0,
+      alias_prefix: String::new(),
+      root_alias: None,
+      traversal_scope: None,
+      traversal_count: 0,
     }
   }
 
@@ -79,6 +95,9 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
   ) -> Result<String, SqlCompileError> {
     match expression {
       Expression::Field { source, field } => self.render_field(source, field),
+      Expression::TraversalField { scope, side, field } => {
+        self.render_traversal_field(scope, *side, field)
+      }
       Expression::Parameter { name } => self.render_parameter(name),
       Expression::GroupKey { scope } => self.render_group_key(scope),
       Expression::Literal { value } => Ok(self.dialect.render_literal(value)),
@@ -103,6 +122,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     expression: &Expression,
   ) -> Result<String, SqlCompileError> {
     match expression {
+      Expression::Reachable(traversal) => self.render_reachable(traversal),
       Expression::Eq { left, right } => self.render_comparison(left, "=", right, false),
       Expression::NotEq { left, right } => self.render_comparison(left, "<>", right, true),
       Expression::LessThan { left, right } => self.render_binary(left, "<", right),
@@ -141,6 +161,7 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
         predicate,
       } => self.render_exists(source, from.as_deref(), predicate.as_deref()),
       Expression::Field { .. }
+      | Expression::TraversalField { .. }
       | Expression::Parameter { .. }
       | Expression::GroupKey { .. }
       | Expression::Literal { .. }
@@ -549,10 +570,15 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
   }
 
   fn source_alias(&self, source: &str) -> Result<String, SqlCompileError> {
+    if source == self.graph.root().key {
+      if let Some(alias) = &self.root_alias {
+        return Ok(alias.clone());
+      }
+    }
     self
       .graph
       .source_index(source)
-      .map(|index| format!("t{index}"))
+      .map(|index| format!("{}t{index}", self.alias_prefix))
       .ok_or_else(|| SqlCompileError::MissingSourceMapping(source.to_owned()))
   }
 

@@ -14,6 +14,7 @@ mod relational_graph;
 mod scalar;
 mod sql;
 mod sql_server;
+mod traversal;
 mod type_system;
 mod type_validation;
 mod validation;
@@ -45,5 +46,6 @@ pub use sql::{
   SqlRelation, SqlStatement,
 };
 pub use sql_server::{SqlServerCompiler, SqlServerVersion};
+pub use traversal::{CyclePolicy, ReachableExpression, TraversalSide};
 pub use type_system::ExpressionType;
 pub use validation::{DefinitionIssue, DefinitionIssueCode, DefinitionIssues};

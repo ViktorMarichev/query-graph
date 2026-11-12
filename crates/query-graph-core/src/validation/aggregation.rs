@@ -206,6 +206,7 @@ fn is_predicate(expression: &Expression) -> bool {
       | Expression::IsNull { .. }
       | Expression::IsNotNull { .. }
       | Expression::Exists { .. }
+      | Expression::Reachable(_)
   )
 }
 
@@ -239,6 +240,14 @@ fn validate_grouped_expression(
       ));
       return;
     }
+    Expression::Reachable(_) => {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::InvalidReachableContext,
+        location,
+        "reachable cannot be combined with aggregates in one grouped expression",
+      ));
+      return;
+    }
     Expression::AllGroups { .. } => {
       issues.push(DefinitionIssue::new(
         DefinitionIssueCode::InvalidAllGroupsContext,
@@ -264,6 +273,8 @@ fn visit_children(
   visitor: &mut impl FnMut(&Expression, String),
 ) {
   match expression {
+    Expression::Reachable(traversal) => visitor(&traversal.predicate, format!("{location}.match")),
+    Expression::TraversalField { .. } => {}
     Expression::Eq { left, right }
     | Expression::NotEq { left, right }
     | Expression::LessThan { left, right }

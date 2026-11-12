@@ -68,6 +68,12 @@ impl AggregateFunction {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Expression {
+  Reachable(Box<crate::traversal::ReachableExpression>),
+  TraversalField {
+    scope: String,
+    side: crate::traversal::TraversalSide,
+    field: String,
+  },
   Field {
     source: String,
     field: String,
@@ -342,7 +348,10 @@ impl Expression {
       Self::Field { .. }
       | Self::Parameter { .. }
       | Self::Literal { .. }
-      | Self::GroupKey { .. } => {}
+      | Self::GroupKey { .. }
+      | Self::TraversalField { .. } => {}
+      // Local input and step expressions belong to their own graph context.
+      Self::Reachable(traversal) => visitor(&traversal.predicate),
       Self::Eq { left, right }
       | Self::NotEq { left, right }
       | Self::LessThan { left, right }

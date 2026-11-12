@@ -12,6 +12,7 @@ mod aggregation;
 mod exists_dependencies;
 mod expression;
 mod projection;
+mod reachable;
 mod structure;
 mod topology;
 
@@ -58,6 +59,9 @@ pub enum DefinitionIssueCode {
   EmptyRelationSelectionOrder,
   RelationSelectionExpressionScope,
   InvalidExistsContext,
+  InvalidReachableContext,
+  InvalidReachableDefinition,
+  InvalidTraversalField,
   UnknownExistsSource,
   InvalidExistsSource,
   ExistsExpressionScope,

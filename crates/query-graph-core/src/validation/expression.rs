@@ -29,13 +29,15 @@ enum ExistsPolicy {
 
 #[derive(Clone)]
 pub(super) struct ExpressionContext<'a> {
-  definition: &'a GraphDefinition,
+  pub(super) definition: &'a GraphDefinition,
   index: &'a DefinitionIndex,
   topology: &'a GraphTopology,
   scope: Option<ExpressionScope<'a>>,
   exists_policy: ExistsPolicy,
   allow_all_groups: bool,
   group_scopes: Vec<String>,
+  allow_reachable: bool,
+  traversal: Option<(String, crate::SourceDefinition)>,
 }
 
 impl<'a> ExpressionContext<'a> {
@@ -52,6 +54,8 @@ impl<'a> ExpressionContext<'a> {
       exists_policy: ExistsPolicy::Deny,
       allow_all_groups: false,
       group_scopes: Vec::new(),
+      allow_reachable: false,
+      traversal: None,
     }
   }
 
@@ -68,6 +72,8 @@ impl<'a> ExpressionContext<'a> {
       exists_policy: ExistsPolicy::AllowImplicitCorrelation,
       allow_all_groups: true,
       group_scopes: Vec::new(),
+      allow_reachable: true,
+      traversal: None,
     }
   }
 
@@ -89,6 +95,8 @@ impl<'a> ExpressionContext<'a> {
       exists_policy: ExistsPolicy::Deny,
       allow_all_groups: false,
       group_scopes: Vec::new(),
+      allow_reachable: false,
+      traversal: None,
     }
   }
 
@@ -109,11 +117,14 @@ impl<'a> ExpressionContext<'a> {
       exists_policy: ExistsPolicy::RequireExplicitCorrelation,
       allow_all_groups: false,
       group_scopes: Vec::new(),
+      allow_reachable: false,
+      traversal: None,
     }
   }
 
   fn within_exists(&self, source: usize) -> Self {
     Self {
+      allow_reachable: false,
       scope: Some(ExpressionScope {
         allowed_sources: AllowedSources::PathTo(source),
         issue_code: DefinitionIssueCode::ExistsExpressionScope,
@@ -125,6 +136,22 @@ impl<'a> ExpressionContext<'a> {
   fn scalar_operand(&self) -> Self {
     Self {
       allow_all_groups: false,
+      allow_reachable: false,
+      ..self.clone()
+    }
+  }
+
+  pub(super) fn traversal_match(&self, traversal: &crate::ReachableExpression) -> Self {
+    Self {
+      allow_reachable: false,
+      allow_all_groups: false,
+      exists_policy: ExistsPolicy::Deny,
+      traversal: traversal
+        .input
+        .sources
+        .iter()
+        .find(|source| source.key == traversal.input.root)
+        .map(|source| (traversal.scope.clone(), source.clone())),
       ..self.clone()
     }
   }
@@ -153,6 +180,34 @@ pub(super) fn validate(
   issues: &mut Vec<DefinitionIssue>,
 ) {
   match expression {
+    Expression::Reachable(traversal) => {
+      if !context.allow_reachable || !context.group_scopes.is_empty() {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidReachableContext,
+          location,
+          "reachable is allowed only in top-level constraint predicate positions",
+        ));
+        return;
+      }
+      super::reachable::validate(traversal, location, context, issues);
+    }
+    Expression::TraversalField { scope, side, field } => {
+      let valid = context.traversal.as_ref().is_some_and(|(active, source)| {
+        active == scope
+          && *side == crate::TraversalSide::Next
+          && source
+            .fields
+            .iter()
+            .any(|candidate| candidate.name == *field)
+      });
+      if !valid {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidTraversalField,
+          location,
+          "traversal field is unknown or outside its lexical scope",
+        ));
+      }
+    }
     Expression::Field { source, field } => {
       validate_field(source, field, location, context, issues);
     }

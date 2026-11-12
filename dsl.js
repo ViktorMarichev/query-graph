@@ -41,6 +41,7 @@ exports.isNotNull = primitives.isNotNull
 exports.inParameter = primitives.inParameter
 exports.inParam = primitives.inParam
 exports.exists = primitives.exists
+exports.reachable = require('./lib/authoring/reachable.js').reachable
 exports.lower = primitives.lower
 exports.upper = primitives.upper
 exports.coalesce = primitives.coalesce

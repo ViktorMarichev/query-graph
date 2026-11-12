@@ -231,6 +231,8 @@ application executor      DB connection remains outside query-graph
   constraints, projections, ordering и summary.
 - [Composition](docs/composition.md): GraphModule, batchQuery, batchRelation и
   двухфазное выполнение.
+- [Recursive traversal](docs/traversal.md): `reachable`, локальные модули,
+  фильтрация до обхода и защита от циклов. Пока только Oracle.
 - [Type system](docs/type-system.md): scalar types, nullability,
   <code>QueryOperation</code> и <code>ResultOf</code>.
 - [SQL compilation](docs/sql.md): relational mapping, dialect versions,

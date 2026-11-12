@@ -60,7 +60,9 @@ JavaScript.
 
 ## Совместимость diagnostics
 
-Wire schema версии 12 добавляет grouped-параметры и scoped-шаблоны `allGroups`.
+Wire schema версии 13 добавляет `reachable`, локальный definition обхода и
+scoped-ссылки `current`/`next`. Grouped-параметры и `allGroups` сохраняют
+контракт версии 12.
 Сохранённые raw definitions предыдущей версии требуют обновления; обычные
 DSL-фабрики формируют актуальную версию автоматически. JS DSL и native binding
 должны быть из одного выпуска пакета.
@@ -74,3 +76,11 @@ DSL-фабрики формируют актуальную версию авто
 Для прежних ошибок сохраняются diagnostic
 codes и locations. Message предназначен человеку и не должен использоваться как
 machine-readable contract.
+
+`reachable` возвращает `invalidReachableDefinition` для неверного key,
+недопустимого перехода или конфликта локального модуля, `invalidTraversalField`
+для ссылки за пределами области видимости и `invalidReachableContext` для
+использования вне разрешённого constraint predicate. Ошибки внутри локального
+графа имеют префикс `constraints[i].predicate.input`; начальное условие и переход
+проверяются с путями `.start` и `.step`. SQL Server возвращает
+`unsupportedDialectFeature` в фазе `sql`, если активная операция требует обхода.

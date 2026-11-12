@@ -77,6 +77,10 @@ impl SqlDialect for SqlServerDialect {
     "SQL Server"
   }
 
+  fn version(&self) -> &'static str {
+    self.version.as_str()
+  }
+
   fn quote_identifier(&self, identifier: &str) -> String {
     format!("[{}]", identifier.replace(']', "]]"))
   }
