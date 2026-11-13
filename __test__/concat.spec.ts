@@ -22,7 +22,7 @@ function concatGraph(args: Expression[], authoring: 'wire' | 'dsl', parameters: 
           projection: [project('value', concat(args[0]!, ...args.slice(1)), { default: true })],
         })
       : {
-          schemaVersion: 13,
+          schemaVersion: 14,
           name: 'concatInputs',
           root: 'item',
           sources: [{ key: 'item', fields: [{ name: 'name', scalarType: 'string', nullable: true }] }],

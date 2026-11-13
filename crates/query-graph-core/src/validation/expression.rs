@@ -37,6 +37,7 @@ pub(super) struct ExpressionContext<'a> {
   allow_all_groups: bool,
   group_scopes: Vec<String>,
   allow_reachable: bool,
+  allow_path_equals: bool,
   traversal: Option<(String, crate::SourceDefinition)>,
 }
 
@@ -55,6 +56,7 @@ impl<'a> ExpressionContext<'a> {
       allow_all_groups: false,
       group_scopes: Vec::new(),
       allow_reachable: false,
+      allow_path_equals: false,
       traversal: None,
     }
   }
@@ -73,6 +75,7 @@ impl<'a> ExpressionContext<'a> {
       allow_all_groups: true,
       group_scopes: Vec::new(),
       allow_reachable: true,
+      allow_path_equals: true,
       traversal: None,
     }
   }
@@ -96,6 +99,7 @@ impl<'a> ExpressionContext<'a> {
       allow_all_groups: false,
       group_scopes: Vec::new(),
       allow_reachable: false,
+      allow_path_equals: false,
       traversal: None,
     }
   }
@@ -118,12 +122,14 @@ impl<'a> ExpressionContext<'a> {
       allow_all_groups: false,
       group_scopes: Vec::new(),
       allow_reachable: false,
+      allow_path_equals: false,
       traversal: None,
     }
   }
 
   fn within_exists(&self, source: usize) -> Self {
     Self {
+      allow_path_equals: false,
       allow_reachable: false,
       scope: Some(ExpressionScope {
         allowed_sources: AllowedSources::PathTo(source),
@@ -135,6 +141,7 @@ impl<'a> ExpressionContext<'a> {
 
   fn scalar_operand(&self) -> Self {
     Self {
+      allow_path_equals: false,
       allow_all_groups: false,
       allow_reachable: false,
       ..self.clone()
@@ -143,6 +150,7 @@ impl<'a> ExpressionContext<'a> {
 
   pub(super) fn traversal_match(&self, traversal: &crate::ReachableExpression) -> Self {
     Self {
+      allow_path_equals: false,
       allow_reachable: false,
       allow_all_groups: false,
       exists_policy: ExistsPolicy::Deny,
@@ -180,6 +188,47 @@ pub(super) fn validate(
   issues: &mut Vec<DefinitionIssue>,
 ) {
   match expression {
+    Expression::TraversalRoot { source, field } => {
+      validate_field(source, field, location, context, issues);
+      validate_traversal_reference(source, location, context, issues);
+    }
+    Expression::TraversalLevel { source } => {
+      validate_traversal_reference(source, location, context, issues);
+    }
+    Expression::TraversalPathEquals { source, parameter } => {
+      validate_traversal_reference(source, location, context, issues);
+      validate_parameter(parameter, ParameterShape::List, location, context, issues);
+      let traversal = context
+        .index
+        .source(source)
+        .and_then(|index| context.definition.sources[index].traversal.as_ref());
+      if traversal.is_none_or(|traversal| traversal.path.is_none()) {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidTraversalDefinition,
+          location,
+          "pathEquals source must define a path",
+        ));
+      }
+      if !context.allow_path_equals || !context.group_scopes.is_empty() {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidTraversalContext,
+          location,
+          "pathEquals is supported only as a positive top-level AND constraint",
+        ));
+      }
+      if context
+        .definition
+        .relations
+        .iter()
+        .any(|relation| relation.to == *source && relation.selection.is_some())
+      {
+        issues.push(DefinitionIssue::new(
+          DefinitionIssueCode::InvalidTraversalContext,
+          location,
+          "pathEquals cannot filter a traversal selected by firstBy",
+        ));
+      }
+    }
     Expression::Reachable(traversal) => {
       if !context.allow_reachable || !context.group_scopes.is_empty() {
         issues.push(DefinitionIssue::new(
@@ -189,7 +238,7 @@ pub(super) fn validate(
         ));
         return;
       }
-      super::reachable::validate(traversal, location, context, issues);
+      super::traversal::validate(traversal, location, context, issues);
     }
     Expression::TraversalField { scope, side, field } => {
       let valid = context.traversal.as_ref().is_some_and(|(active, source)| {
@@ -324,18 +373,27 @@ pub(super) fn validate(
         "logical expression must contain at least one item",
         issues,
       );
+      let child_context = ExpressionContext {
+        allow_path_equals: context.allow_path_equals
+          && matches!(expression, Expression::And { .. }),
+        ..context.clone()
+      };
       validate_children(
         expressions,
         &format!("{location}.expressions"),
-        context,
+        &child_context,
         issues,
       );
     }
     Expression::Not { expression } => {
+      let child_context = ExpressionContext {
+        allow_path_equals: false,
+        ..context.clone()
+      };
       validate(
         expression,
         &format!("{location}.expression"),
-        context,
+        &child_context,
         issues,
       );
     }
@@ -376,6 +434,32 @@ pub(super) fn validate(
         issues,
       );
     }
+  }
+}
+
+fn validate_traversal_reference(
+  source: &str,
+  location: &str,
+  context: &ExpressionContext<'_>,
+  issues: &mut Vec<DefinitionIssue>,
+) {
+  if context
+    .index
+    .source(source)
+    .is_none_or(|index| context.definition.sources[index].traversal.is_none())
+  {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::InvalidTraversalDefinition,
+      location,
+      "traversal metadata requires a traversal source",
+    ));
+  }
+  if !context.source_is_allowed(source) {
+    issues.push(DefinitionIssue::new(
+      DefinitionIssueCode::InvalidTraversalContext,
+      location,
+      "traversal source is outside the current expression scope",
+    ));
   }
 }
 

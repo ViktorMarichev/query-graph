@@ -166,7 +166,7 @@ fn infer_expression_paths<'a>(
 
 fn referenced_sources(expression: &Expression) -> Vec<&str> {
   let mut sources = Vec::new();
-  expression.for_each_field(&mut |source, _| {
+  expression.for_each_source(&mut |source| {
     if !sources.contains(&source) {
       sources.push(source);
     }

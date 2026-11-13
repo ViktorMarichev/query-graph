@@ -46,6 +46,7 @@ impl<'a> DefinitionValidator<'a> {
     self.validate_sources();
     self.validate_root();
     self.validate_parameters();
+    self.validate_traversal_sources();
     self.validate_relations();
     self.validate_constraints();
     self.validate_projection();
@@ -83,6 +84,18 @@ impl<'a> DefinitionValidator<'a> {
         "name",
         "graph name must not be empty",
       ));
+    }
+  }
+
+  fn validate_traversal_sources(&mut self) {
+    let context = ExpressionContext::constraint(self.definition, self.index, self.graph_topology);
+    for (index, source) in self.definition.sources.iter().enumerate() {
+      super::traversal::validate_source(
+        source,
+        &format!("sources[{index}].traversal"),
+        &context,
+        &mut self.issues,
+      );
     }
   }
 

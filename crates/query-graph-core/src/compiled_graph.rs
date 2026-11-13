@@ -29,45 +29,66 @@ impl CompiledGraph {
     for constraint in &definition.constraints {
       constraint.predicate.walk(&mut |expression| {
         if let crate::Expression::Reachable(traversal) = expression {
-          inputs.push(traversal.as_ref());
+          inputs.push((
+            crate::traversal::TraversalRef::from(traversal.as_ref()),
+            crate::DefinitionIssueCode::InvalidReachableDefinition,
+            "constraints".to_owned(),
+          ));
         }
         true
       });
     }
-    for traversal in inputs {
+    inputs.extend(
+      definition
+        .sources
+        .iter()
+        .enumerate()
+        .filter_map(|(index, source)| {
+          source.traversal.as_deref().map(|traversal| {
+            (
+              crate::traversal::TraversalRef::from(traversal),
+              crate::DefinitionIssueCode::InvalidTraversalDefinition,
+              format!("sources[{index}].traversal"),
+            )
+          })
+        }),
+    );
+    let mut known_sources: std::collections::HashMap<_, _> = definition
+      .sources
+      .iter()
+      .filter(|source| source.traversal.is_none())
+      .map(|source| (&source.key, source))
+      .collect();
+    for (traversal, code, location) in inputs {
+      for source in &traversal.input.sources {
+        if known_sources
+          .insert(&source.key, source)
+          .is_some_and(|previous| previous != source)
+        {
+          return Err(DefinitionIssues::from_vec(vec![
+            crate::DefinitionIssue::new(
+              code,
+              &location,
+              "traversal sources sharing a mapping key must have identical field definitions",
+            ),
+          ]));
+        }
+      }
       let mut input = traversal.input.clone();
       input.parameters = definition.parameters.clone();
-      if let Some(existing) = traversals.get(&traversal.scope) {
+      if let Some(existing) = traversals.get(traversal.scope) {
         let existing: &CompiledGraph = existing;
         if existing.definition() != &input {
           return Err(DefinitionIssues::from_vec(vec![
             crate::DefinitionIssue::new(
-              crate::DefinitionIssueCode::InvalidReachableDefinition,
-              "constraints",
-              "reachable scopes must not identify different inputs",
+              code,
+              &location,
+              "traversal scopes must not identify different inputs",
             ),
           ]));
         }
       } else {
-        traversals.insert(traversal.scope.clone(), input.compile()?);
-      }
-    }
-    let mut known_sources = std::collections::HashMap::new();
-    for source in traversals
-      .values()
-      .flat_map(|graph| &graph.definition.sources)
-    {
-      if known_sources
-        .insert(&source.key, source)
-        .is_some_and(|previous| previous != source)
-      {
-        return Err(DefinitionIssues::from_vec(vec![
-          crate::DefinitionIssue::new(
-            crate::DefinitionIssueCode::InvalidReachableDefinition,
-            "constraints",
-            "reachable sources sharing a mapping key must have identical field definitions",
-          ),
-        ]));
+        traversals.insert(traversal.scope.to_owned(), input.compile()?);
       }
     }
     let summary = definition.is_summary();
@@ -110,6 +131,7 @@ impl CompiledGraph {
       .definition
       .sources
       .iter()
+      .filter(|source| source.traversal.is_none())
       .map(|source| (self, source))
       .collect();
     let mut local_sources = Vec::new();
@@ -124,7 +146,13 @@ impl CompiledGraph {
     }
     local_sources.sort_by(|(_, left), (_, right)| left.key.cmp(&right.key));
     local_sources.dedup_by(|(_, left), (_, right)| left.key == right.key);
-    sources.extend(local_sources);
+    let mut seen: std::collections::HashSet<_> =
+      sources.iter().map(|(_, source)| &source.key).collect();
+    sources.extend(
+      local_sources
+        .into_iter()
+        .filter(|(_, source)| seen.insert(&source.key)),
+    );
     sources
   }
 
@@ -163,6 +191,10 @@ impl CompiledGraph {
     let source_index = self.index.source(source)?;
     let field_index = self.index.field(source_index, field)?;
     Some(&self.definition.sources[source_index].fields[field_index])
+  }
+
+  pub(crate) fn field_index(&self, source: &str, field: &str) -> Option<usize> {
+    self.index.field(self.index.source(source)?, field)
   }
 
   pub fn parameter(&self, name: &str) -> Option<&crate::ParameterDefinition> {

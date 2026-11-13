@@ -64,11 +64,11 @@ pub(super) trait SqlDialect {
 
   fn version(&self) -> &'static str;
 
-  fn supports_reachable(&self) -> bool {
+  fn supports_traversal(&self) -> bool {
     false
   }
 
-  fn render_reachable_query(
+  fn render_traversal_query(
     &self,
     _projection: &str,
     _source: &str,
@@ -80,6 +80,22 @@ pub(super) trait SqlDialect {
       dialect: self.name(),
       version: self.version(),
       feature: "reachable traversal",
+    })
+  }
+
+  fn render_traversal_root(&self, _field: &str) -> Result<String, SqlCompileError> {
+    Err(SqlCompileError::UnsupportedDialectFeature {
+      dialect: self.name(),
+      version: self.version(),
+      feature: "traversal source",
+    })
+  }
+
+  fn render_traversal_level(&self) -> Result<&'static str, SqlCompileError> {
+    Err(SqlCompileError::UnsupportedDialectFeature {
+      dialect: self.name(),
+      version: self.version(),
+      feature: "traversal source",
     })
   }
 

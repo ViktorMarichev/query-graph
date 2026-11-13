@@ -207,6 +207,7 @@ fn is_predicate(expression: &Expression) -> bool {
       | Expression::IsNotNull { .. }
       | Expression::Exists { .. }
       | Expression::Reachable(_)
+      | Expression::TraversalPathEquals { .. }
   )
 }
 
@@ -224,7 +225,15 @@ fn validate_grouped_expression(
   }
 
   match expression {
-    Expression::Field { source, field } => {
+    Expression::TraversalLevel { .. } | Expression::TraversalPathEquals { .. } => {
+      issues.push(DefinitionIssue::new(
+        DefinitionIssueCode::UngroupedExpression,
+        location,
+        "traversal metadata is not a declared dimension",
+      ));
+      return;
+    }
+    Expression::Field { source, field } | Expression::TraversalRoot { source, field } => {
       issues.push(DefinitionIssue::new(
         DefinitionIssueCode::UngroupedExpression,
         location,
@@ -274,7 +283,10 @@ fn visit_children(
 ) {
   match expression {
     Expression::Reachable(traversal) => visitor(&traversal.predicate, format!("{location}.match")),
-    Expression::TraversalField { .. } => {}
+    Expression::TraversalField { .. }
+    | Expression::TraversalRoot { .. }
+    | Expression::TraversalLevel { .. }
+    | Expression::TraversalPathEquals { .. } => {}
     Expression::Eq { left, right }
     | Expression::NotEq { left, right }
     | Expression::LessThan { left, right }

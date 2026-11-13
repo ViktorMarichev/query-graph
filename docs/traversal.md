@@ -1,9 +1,170 @@
 # Recursive Traversal
 
-`reachable` проверяет, существует ли подходящая строка среди достижимых из
-заданного начала. Это boolean predicate для `constraint`, а не новый executor
-или способ загрузить все строки пути. В текущей реализации поддерживается
-Oracle 11g и новее; SQL Server возвращает явную ошибку `unsupportedDialectFeature`.
+Два API используют один механизм рекурсивного обхода:
+
+- `reachable(...)` проверяет наличие достижимой строки. Это predicate для
+  `constraint`, который не размножает внешние строки.
+- `traversalSource(...)` представляет строки обхода как обычный source. Его
+  можно использовать в `root`, `relations`, `projection`, ordering и summary.
+
+Оба API поддерживают Oracle 11g и новее. SQL Server возвращает явную ошибку
+`unsupportedDialectFeature`, только если операция действительно использует
+обход. Библиотека по-прежнему собирает SQL, а не исполняет запросы.
+
+## Источник строк обхода
+
+```ts
+import { registerDefinition } from '@query-graph/core'
+import {
+  defineGraph,
+  eq,
+  isNull,
+  nullable,
+  project,
+  requiredParam,
+  source,
+  traversalSource,
+} from '@query-graph/core/dsl'
+
+const nodes = source('nodes', {
+  id: 'int64',
+  parentId: nullable('int64'),
+  name: 'string',
+  deletedAt: nullable('dateTime'),
+})
+const nodeId = requiredParam('nodeId', 'int64')
+
+const tree = traversalSource({
+  name: 'tree',
+  source: nodes,
+  key: nodes.field('id'),
+  where: isNull(nodes.field('deletedAt')),
+  start: eq(nodes.field('id'), nodeId),
+  step: ({ current, next }) => eq(current.field('id'), next.field('parentId')),
+  path: { node: nodes.field('id') },
+})
+
+const definition = defineGraph({
+  name: 'subtree',
+  root: tree,
+  sources: [tree],
+  parameters: [nodeId],
+  projection: [
+    project({ path: 'id', expression: tree.field('id'), default: true }),
+    project({ path: 'name', expression: tree.field('name'), default: true }),
+    project({ path: 'startId', expression: tree.rootField('id'), default: true }),
+    project({ path: 'level', expression: tree.level(), default: true }),
+  ],
+})
+
+const graph = registerDefinition(definition).withRelationalMapping({
+  sources: { nodes: { table: 'Node' } },
+})
+
+const statement = graph.compileOracle({ parameters: { nodeId: 12 } })
+```
+
+Схема наследуется от `nodes`: повторно перечислять поля не нужно.
+`tree.field(...)` сохраняет их типы, nullable и selectable. `rootField(...)`
+возвращает поле **начальной строки данного пути**, а не обязательно корня
+предметной иерархии. `level()` имеет тип `int32` и начинается с `1`.
+
+Mapping содержит физический `nodes`, но не вычисляемый `tree`. Обход рендерится
+как inline view с `CONNECT BY NOCYCLE`, `CONNECT_BY_ROOT` и `LEVEL`. Колонки
+получают внутренние SQL aliases; потребитель работает с обычными projection
+paths и `statement.columns`. Дополнительного запроса к БД или нового метода
+executor не требуется.
+
+Один source можно использовать и снаружи обхода:
+
+```ts
+import { relation } from '@query-graph/core/dsl'
+
+const nodesWithTree = defineGraph({
+  name: 'nodesWithTree',
+  root: nodes,
+  sources: [nodes, tree],
+  parameters: [nodeId],
+  relations: [
+    relation({
+      name: 'descendants',
+      from: nodes,
+      to: tree,
+      cardinality: 'many',
+      on: eq(nodes.field('id'), tree.rootField('id')),
+    }),
+  ],
+  projection: [
+    project({ path: 'id', expression: nodes.field('id'), default: true }),
+    project({ path: 'descendant.id', expression: tree.field('id') }),
+    project({ path: 'descendant.level', expression: tree.level() }),
+  ],
+})
+```
+
+Mapping здесь тот же. Выбор только `id` не добавляет JOIN с обходом.
+Для `descendant.*` planner добавляет его лениво. Optional relation делает поля
+обхода nullable; `projectObject` работает с ними так же, как с обычным source.
+Связи **из** `tree` к другим sources, `exists(tree)`, `firstBy` и использование
+такого графа в `batchQuery` тоже поддерживаются.
+
+`traversalSource` возвращает строки путей, а не уникальное множество узлов.
+Один узел, достигнутый несколькими путями или из нескольких начальных строк,
+может появиться несколько раз. JOIN с `cardinality: 'many'` имеет обычные
+последствия для пагинации; `cardinality: 'one'` само по себе не выбирает одну
+строку. Для проверки наличия без размножения строк используйте `reachable`.
+
+### Точный путь
+
+Необязательный `path` задаёт последовательность значений: `node` каждой
+посещённой строки, начиная со стартовой. Можно добавить `prefix`: значение
+этого поля **стартовой строки** будет первым элементом перед всеми `node`.
+Оба поля должны быть non-null integer или string одного типа.
+
+```ts
+import { constraint, optionalListParam, pathEquals } from '@query-graph/core/dsl'
+
+const selectedPath = optionalListParam('selectedPath', 'int64')
+const filteredDefinition = defineGraph({
+  name: 'nodeAtPath',
+  root: tree,
+  sources: [tree],
+  parameters: [nodeId, selectedPath],
+  constraints: [constraint({ when: selectedPath, predicate: pathEquals(tree.path(), selectedPath) })],
+  projection: [project({ path: 'id', expression: tree.field('id'), default: true })],
+})
+
+const filteredGraph = registerDefinition(filteredDefinition).withRelationalMapping({
+  sources: { nodes: { table: 'Node' } },
+})
+const atPath = filteredGraph.compileOracle({
+  parameters: { nodeId: 12, selectedPath: [12, 24, 36] },
+})
+```
+
+Сравнивается вся упорядоченная последовательность, а не множество. Повторные
+значения не удаляются; защита от циклов относится к `key` строки обхода,
+который может отличаться от поля `path.node`. Без optional-параметра `when`
+отключает ограничение. Пустой путь, а также путь только из `prefix`, не даёт
+совпадений. `null` и элементы неверного типа отклоняются.
+
+`tree.path()` является ссылкой для `pathEquals`, а не scalar expression:
+его нельзя выбрать через `project`. Массивы пути в результат не добавляются.
+Значения передаются стандартными list bindings `{parameter, index}`.
+Путь не кодируется через разделитель, поэтому значения string могут содержать
+`/`, `%` и другие символы без специального экранирования.
+
+В первой версии `pathEquals` разрешён только как положительный constraint,
+отдельно или под `and`. `or`, `not`, `exists`, `allGroups`, relation predicates
+и projection для него запрещены. Нельзя применять его к source, который
+входящая relation выбирает через `firstBy`.
+Эти ограничения позволяют отбирать шаги до обхода, а затем проверять точную
+длину, не меняя смысл соседних условий. Независимые `exists` по тому же source
+не наследуют фильтр пути основного запроса.
+
+Количество элементов влияет на SQL и число bindings; предел глубины обхода
+не добавляется. Длинные списки разбиваются на несколько выражений, чтобы не
+превысить [лимит аргументов Oracle CASE](https://docs.oracle.com/en/database/oracle/oracle-database/19/sqlrf/CASE-Expressions.html).
 
 ## Пример: корни связанных объектов
 
@@ -164,9 +325,13 @@ WHERE EXISTS (
   `and`, `or`, `not`. Projection, ordering, relation.on, aggregate expressions
   и вложенные обходы пока не поддерживаются.
 - Локальные модули содержат sources, relations, parameters и constraints,
-  но не projection, objects или ordering. Их source keys должны отличаться
-  от внешних. Между отдельными обходами одинаковый key допустим только для
-  одинаковых определений полей.
+  но не projection, objects или ordering. Для `reachable` их source keys
+  должны отличаться от внешних, чтобы `match` не путал области видимости.
+  `traversalSource` может переиспользовать внешний физический source при
+  полном совпадении его определения. Между отдельными обходами одинаковый key
+  также допустим только для одинаковых определений полей.
+- Источником обхода пока может быть только обычный физический source;
+  вложенные `traversalSource` и `reachable` внутри его входного графа запрещены.
 - Parameters объявляются на внешнем графе. Если локальный модуль объявляет
   parameter, его определение должно совпадать с внешним. Это не создаёт
   отдельный объект operation parameters или отдельный SQL-запрос.

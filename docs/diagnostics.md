@@ -60,9 +60,9 @@ JavaScript.
 
 ## Совместимость diagnostics
 
-Wire schema версии 13 добавляет `reachable`, локальный definition обхода и
-scoped-ссылки `current`/`next`. Grouped-параметры и `allGroups` сохраняют
-контракт версии 12.
+Wire schema версии 14 добавляет `SourceDefinition.traversal` и выражения
+`traversalRoot`, `traversalLevel`, `traversalPathEquals`. Контракт `reachable`
+версии 13 и grouped-параметров версии 12 не меняется.
 Сохранённые raw definitions предыдущей версии требуют обновления; обычные
 DSL-фабрики формируют актуальную версию автоматически. JS DSL и native binding
 должны быть из одного выпуска пакета.
@@ -84,3 +84,10 @@ machine-readable contract.
 графа имеют префикс `constraints[i].predicate.input`; начальное условие и переход
 проверяются с путями `.start` и `.step`. SQL Server возвращает
 `unsupportedDialectFeature` в фазе `sql`, если активная операция требует обхода.
+
+`traversalSource` возвращает `invalidTraversalDefinition` для неверного input,
+key, path или подменённой схемы полей. Ошибки входного графа имеют префикс
+`sources[i].traversal.input`; начальное условие и переход используют `.start`
+и `.step`. Неверный scope metadata и недопустимый контекст `pathEquals`
+получают `invalidTraversalContext`. Ошибки значений list-параметра пути
+используют обычные operation diagnostics.

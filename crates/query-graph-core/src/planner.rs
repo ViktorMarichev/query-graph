@@ -125,6 +125,12 @@ pub(crate) fn build(
 
   let relation_indices = order_relations(graph, required_relations)?;
   let mut required_parameters = HashSet::new();
+  add_source_parameters(
+    graph,
+    operation,
+    &graph.root().key,
+    &mut required_parameters,
+  )?;
   for projection_index in &operation_plan.projection_indices {
     add_expression_parameters(
       graph,
@@ -167,6 +173,7 @@ pub(crate) fn build(
   }
   for relation_index in &relation_indices {
     let relation = &graph.definition().relations[*relation_index];
+    add_source_parameters(graph, operation, &relation.to, &mut required_parameters)?;
     add_expression_parameters(graph, operation, &relation.on, &mut required_parameters)?;
     if let Some(selection) = &relation.selection {
       for order in selection.order_by() {
@@ -268,7 +275,10 @@ fn add_expression_relations(
   let mut sources = HashSet::new();
   walk_active(expression, operation, &mut |expression| {
     match expression {
-      Expression::Field { source, .. } => {
+      Expression::Field { source, .. }
+      | Expression::TraversalRoot { source, .. }
+      | Expression::TraversalLevel { source }
+      | Expression::TraversalPathEquals { source, .. } => {
         sources.insert(source.as_str());
       }
       Expression::Exists { from, .. } => {
@@ -313,7 +323,9 @@ fn add_expression_parameters<'a>(
         Expression::Parameter { name } => {
           parameters.insert(name.as_str());
         }
-        Expression::InParameter { parameter, .. } | Expression::AllGroups { parameter, .. } => {
+        Expression::InParameter { parameter, .. }
+        | Expression::AllGroups { parameter, .. }
+        | Expression::TraversalPathEquals { parameter, .. } => {
           parameters.insert(parameter.as_str());
         }
         Expression::Exists { source, from, .. } => {
@@ -325,18 +337,7 @@ fn add_expression_parameters<'a>(
     });
 
     for traversal in traversals {
-      let input = graph.traversal_input(&traversal.scope);
-      add_expression_parameters(input, operation, &traversal.start, parameters)?;
-      for constraint in &input.definition().constraints {
-        if match &constraint.when {
-          ConstraintCondition::Always => true,
-          ConstraintCondition::ParameterPresent { parameter } => {
-            operation.parameters.contains_key(parameter)
-          }
-        } {
-          add_expression_parameters(input, operation, &constraint.predicate, parameters)?;
-        }
-      }
+      add_traversal_parameters(graph, operation, traversal.into(), parameters)?;
     }
 
     for (source, from) in exists_sources {
@@ -352,6 +353,7 @@ fn add_expression_parameters<'a>(
           continue;
         }
         let relation = &graph.definition().relations[*relation_index];
+        add_source_parameters(graph, operation, &relation.to, parameters)?;
         pending.push(&relation.on);
         if let Some(selection) = &relation.selection {
           pending.extend(selection.order_by().iter().map(|order| &order.expression));
@@ -360,6 +362,42 @@ fn add_expression_parameters<'a>(
     }
   }
 
+  Ok(())
+}
+
+fn add_source_parameters<'a>(
+  graph: &'a CompiledGraph,
+  operation: &QueryOperation,
+  source: &str,
+  parameters: &mut HashSet<&'a str>,
+) -> Result<(), PlanError> {
+  if let Some(traversal) = graph
+    .source(source)
+    .and_then(|source| source.traversal.as_deref())
+  {
+    add_traversal_parameters(graph, operation, traversal.into(), parameters)?;
+  }
+  Ok(())
+}
+
+fn add_traversal_parameters<'a>(
+  graph: &'a CompiledGraph,
+  operation: &QueryOperation,
+  traversal: crate::traversal::TraversalRef<'a>,
+  parameters: &mut HashSet<&'a str>,
+) -> Result<(), PlanError> {
+  let input = graph.traversal_input(traversal.scope);
+  add_expression_parameters(input, operation, traversal.start, parameters)?;
+  for constraint in &input.definition().constraints {
+    if match &constraint.when {
+      ConstraintCondition::Always => true,
+      ConstraintCondition::ParameterPresent { parameter } => {
+        operation.parameters.contains_key(parameter)
+      }
+    } {
+      add_expression_parameters(input, operation, &constraint.predicate, parameters)?;
+    }
+  }
   Ok(())
 }
 

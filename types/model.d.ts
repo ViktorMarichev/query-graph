@@ -80,6 +80,7 @@ export interface FieldDefinition {
 export interface SourceDefinition {
   key: string
   fields: FieldDefinition[]
+  traversal?: TraversalDefinition
 }
 
 export interface ParameterDefinition {
@@ -187,6 +188,33 @@ export interface TraversalFieldExpression {
   field: string
 }
 
+export interface TraversalRootExpression<Source extends string = string, Field extends string = string> {
+  kind: 'traversalRoot'
+  source: Source
+  field: Field
+}
+
+export interface TraversalLevelExpression<Source extends string = string> {
+  kind: 'traversalLevel'
+  source: Source
+}
+
+export interface TraversalPathEqualsExpression<Source extends string = string, Parameter extends string = string> {
+  kind: 'traversalPathEquals'
+  source: Source
+  parameter: Parameter
+}
+
+export interface TraversalDefinition {
+  scope: string
+  input: GraphDefinitionInput
+  key: string
+  start: Expression
+  step: Expression
+  cycles: 'skip'
+  path?: { node: string; prefix?: string }
+}
+
 export interface ReachableExpression {
   kind: 'reachable'
   scope: string
@@ -213,6 +241,9 @@ export interface AggregateExpression {
 export type Expression =
   | FieldExpression
   | TraversalFieldExpression
+  | TraversalRootExpression
+  | TraversalLevelExpression
+  | TraversalPathEqualsExpression
   | ReachableExpression
   | ParameterExpression
   | LiteralExpression
@@ -422,7 +453,7 @@ export interface FirstBySelection {
 export type RelationSelection = FirstBySelection
 
 export interface GraphDefinitionInput {
-  schemaVersion: 13
+  schemaVersion: 14
   name: string
   root: string
   sources: SourceDefinition[]

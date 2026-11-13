@@ -86,6 +86,13 @@ Version capabilities проверяются до возврата SQL. Напр�
 компилятор не подменяет рекурсию фиксированным количеством JOIN или ограничением
 глубины. Неактивный conditional constraint не требует поддержки обхода.
 
+`traversalSource` использует тот же механизм, но возвращает inline view для
+`FROM` или `JOIN`. `rootField` компилируется через `CONNECT_BY_ROOT`, `level()`
+через `LEVEL`. В mapping указываются только физические input sources.
+`pathEquals` использует list bindings с `index`, без новой формы результата
+или изменений executor. Неиспользуемый optional traversal source не попадает
+в SQL и не требует поддержки обхода в выбранном диалекте.
+
 Semantic functions рендерятся с одинаковым поведением через разные конструкции
 диалектов:
 

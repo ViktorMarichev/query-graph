@@ -66,7 +66,7 @@ test('builds and compiles a typed summary graph', (t) => {
     ],
   })
 
-  t.is(definition.schemaVersion, 13)
+  t.is(definition.schemaVersion, 14)
   t.deepEqual(
     definition.projection.fields.map(({ path, role }) => [path.join('.'), role]),
     [

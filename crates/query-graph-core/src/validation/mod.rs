@@ -12,9 +12,9 @@ mod aggregation;
 mod exists_dependencies;
 mod expression;
 mod projection;
-mod reachable;
 mod structure;
 mod topology;
+mod traversal;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,6 +61,8 @@ pub enum DefinitionIssueCode {
   InvalidExistsContext,
   InvalidReachableContext,
   InvalidReachableDefinition,
+  InvalidTraversalDefinition,
+  InvalidTraversalContext,
   InvalidTraversalField,
   UnknownExistsSource,
   InvalidExistsSource,

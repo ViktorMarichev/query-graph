@@ -85,7 +85,7 @@ test('authoring: grouped factories preserve value types and aliases', (t) => {
     parameters: [groups],
     constraints: [constraint({ predicate: groupedPredicate() })],
   })
-  t.is(definition.schemaVersion, 13)
+  t.is(definition.schemaVersion, 14)
   t.deepEqual(JSON.parse(JSON.stringify(definition.parameters)), [groups])
   t.true(Object.isFrozen(definition.constraints[0].predicate))
 })

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{CompiledGraph, DefinitionIssues, Expression};
 
-pub const GRAPH_DEFINITION_VERSION: u32 = 13;
+pub const GRAPH_DEFINITION_VERSION: u32 = 14;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -56,6 +56,8 @@ impl GraphDefinition {
 pub struct SourceDefinition {
   pub key: String,
   pub fields: Vec<FieldDefinition>,
+  #[serde(default, skip_serializing_if = "Option::is_none")]
+  pub traversal: Option<Box<crate::traversal::TraversalDefinition>>,
 }
 
 impl SourceDefinition {
@@ -63,6 +65,7 @@ impl SourceDefinition {
     Self {
       key: key.into(),
       fields,
+      traversal: None,
     }
   }
 }

@@ -69,6 +69,17 @@ impl AggregateFunction {
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum Expression {
   Reachable(Box<crate::traversal::ReachableExpression>),
+  TraversalRoot {
+    source: String,
+    field: String,
+  },
+  TraversalLevel {
+    source: String,
+  },
+  TraversalPathEquals {
+    source: String,
+    parameter: String,
+  },
   TraversalField {
     scope: String,
     side: crate::traversal::TraversalSide,
@@ -317,8 +328,21 @@ impl Expression {
 
   pub fn for_each_field<'a>(&'a self, visitor: &mut impl FnMut(&'a str, &'a str)) {
     self.walk(&mut |expression| {
-      if let Self::Field { source, field } = expression {
+      if let Self::Field { source, field } | Self::TraversalRoot { source, field } = expression {
         visitor(source, field);
+      }
+      true
+    });
+  }
+
+  pub(crate) fn for_each_source<'a>(&'a self, visitor: &mut impl FnMut(&'a str)) {
+    self.walk(&mut |expression| {
+      match expression {
+        Self::Field { source, .. }
+        | Self::TraversalRoot { source, .. }
+        | Self::TraversalLevel { source }
+        | Self::TraversalPathEquals { source, .. } => visitor(source),
+        _ => {}
       }
       true
     });
@@ -346,6 +370,9 @@ impl Expression {
   pub(crate) fn for_each_child<'a>(&'a self, visitor: &mut impl FnMut(&'a Self)) {
     match self {
       Self::Field { .. }
+      | Self::TraversalRoot { .. }
+      | Self::TraversalLevel { .. }
+      | Self::TraversalPathEquals { .. }
       | Self::Parameter { .. }
       | Self::Literal { .. }
       | Self::GroupKey { .. }

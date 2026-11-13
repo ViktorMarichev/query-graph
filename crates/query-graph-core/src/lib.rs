@@ -46,6 +46,8 @@ pub use sql::{
   SqlRelation, SqlStatement,
 };
 pub use sql_server::{SqlServerCompiler, SqlServerVersion};
-pub use traversal::{CyclePolicy, ReachableExpression, TraversalSide};
+pub use traversal::{
+  CyclePolicy, ReachableExpression, TraversalDefinition, TraversalPathDefinition, TraversalSide,
+};
 pub use type_system::ExpressionType;
 pub use validation::{DefinitionIssue, DefinitionIssueCode, DefinitionIssues};

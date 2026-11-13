@@ -7,7 +7,8 @@ use crate::{
 
 use super::{BindingPathSegment, ParameterBinding, SqlCompileError, SqlDialect};
 
-mod reachable;
+mod traversal;
+mod traversal_path;
 
 struct TraversalScope {
   scope: String,
@@ -52,6 +53,7 @@ pub(super) struct Renderer<'a, D> {
   root_alias: Option<String>,
   traversal_scope: Option<TraversalScope>,
   traversal_count: usize,
+  in_exists: bool,
 }
 
 impl<'a, D: SqlDialect> Renderer<'a, D> {
@@ -75,10 +77,18 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
       root_alias: None,
       traversal_scope: None,
       traversal_count: 0,
+      in_exists: false,
     }
   }
 
-  pub(super) fn render_source(&self, source: &str) -> Result<String, SqlCompileError> {
+  pub(super) fn render_source(&mut self, source: &str) -> Result<String, SqlCompileError> {
+    if self
+      .graph
+      .source(source)
+      .is_some_and(|source| source.traversal.is_some())
+    {
+      return self.render_traversal_source(source);
+    }
     let source_mapping = self
       .mapping
       .source(source)
@@ -94,6 +104,10 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     expression: &Expression,
   ) -> Result<String, SqlCompileError> {
     match expression {
+      Expression::TraversalRoot { source, field } => {
+        self.render_traversal_column(source, Some(field))
+      }
+      Expression::TraversalLevel { source } => self.render_traversal_column(source, None),
       Expression::Field { source, field } => self.render_field(source, field),
       Expression::TraversalField { scope, side, field } => {
         self.render_traversal_field(scope, *side, field)
@@ -122,6 +136,9 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
     expression: &Expression,
   ) -> Result<String, SqlCompileError> {
     match expression {
+      Expression::TraversalPathEquals { source, parameter } => {
+        self.render_path_equals(source, parameter)
+      }
       Expression::Reachable(traversal) => self.render_reachable(traversal),
       Expression::Eq { left, right } => self.render_comparison(left, "=", right, false),
       Expression::NotEq { left, right } => self.render_comparison(left, "<>", right, true),
@@ -161,6 +178,8 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
         predicate,
       } => self.render_exists(source, from.as_deref(), predicate.as_deref()),
       Expression::Field { .. }
+      | Expression::TraversalRoot { .. }
+      | Expression::TraversalLevel { .. }
       | Expression::TraversalField { .. }
       | Expression::Parameter { .. }
       | Expression::GroupKey { .. }
@@ -253,6 +272,21 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
   }
 
   fn render_field(&self, source: &str, field: &str) -> Result<String, SqlCompileError> {
+    if self
+      .graph
+      .source(source)
+      .is_some_and(|source| source.traversal.is_some())
+    {
+      let index = self
+        .graph
+        .field_index(source, field)
+        .expect("validated traversal field");
+      return Ok(format!(
+        "{}.{}",
+        self.dialect.quote_identifier(&self.source_alias(source)?),
+        self.dialect.quote_identifier(&format!("qg_field_{index}"))
+      ));
+    }
     let column = self
       .mapping
       .column(source, field)
@@ -439,6 +473,18 @@ impl<'a, D: SqlDialect> Renderer<'a, D> {
   }
 
   fn render_exists(
+    &mut self,
+    source: &str,
+    from: Option<&str>,
+    predicate: Option<&Expression>,
+  ) -> Result<String, SqlCompileError> {
+    let previous = std::mem::replace(&mut self.in_exists, true);
+    let result = self.render_exists_query(source, from, predicate);
+    self.in_exists = previous;
+    result
+  }
+
+  fn render_exists_query(
     &mut self,
     source: &str,
     from: Option<&str>,

@@ -1,4 +1,5 @@
 use super::expression::{self, ExpressionContext};
+use crate::traversal::TraversalRef;
 use crate::{
   ConstraintDefinition, DefinitionIssue, DefinitionIssueCode, Expression, ReachableExpression,
   ScalarType,
@@ -11,15 +12,113 @@ pub(super) fn validate(
   issues: &mut Vec<DefinitionIssue>,
 ) {
   let before = issues.len();
-  let mut issue = |suffix: &str, message: &str| {
+  validate_input(
+    traversal.into(),
+    location,
+    context,
+    DefinitionIssueCode::InvalidReachableDefinition,
+    false,
+    issues,
+  );
+  if traversal.predicate.contains_aggregate() {
     issues.push(DefinitionIssue::new(
       DefinitionIssueCode::InvalidReachableDefinition,
+      format!("{location}.match"),
+      "reachable match cannot contain aggregates",
+    ));
+  }
+  if issues.len() == before {
+    expression::validate(
+      &traversal.predicate,
+      &format!("{location}.match"),
+      &context.traversal_match(traversal),
+      issues,
+    );
+  }
+}
+
+pub(super) fn validate_source(
+  source: &crate::SourceDefinition,
+  location: &str,
+  context: &ExpressionContext<'_>,
+  issues: &mut Vec<DefinitionIssue>,
+) {
+  let Some(traversal) = &source.traversal else {
+    return;
+  };
+  let code = DefinitionIssueCode::InvalidTraversalDefinition;
+  validate_input(
+    traversal.as_ref().into(),
+    location,
+    context,
+    code,
+    true,
+    issues,
+  );
+  let Some(root) = traversal
+    .input
+    .sources
+    .iter()
+    .find(|input| input.key == traversal.input.root)
+  else {
+    return;
+  };
+  if source.fields != root.fields {
+    issues.push(DefinitionIssue::new(
+      code,
+      location,
+      "traversal source fields must exactly match its input root fields",
+    ));
+  }
+  if let Some(path) = &traversal.path {
+    let node = root.fields.iter().find(|field| field.name == path.node);
+    if !node.is_some_and(|field| {
+      !field.nullable
+        && matches!(
+          field.scalar_type,
+          ScalarType::Int32 | ScalarType::Int64 | ScalarType::String
+        )
+    }) {
+      issues.push(DefinitionIssue::new(
+        code,
+        format!("{location}.path.node"),
+        "path node must be a non-null integer or string field",
+      ));
+    }
+    if let Some(prefix) = &path.prefix {
+      let prefix = root.fields.iter().find(|field| field.name == *prefix);
+      if !prefix
+        .zip(node)
+        .is_some_and(|(prefix, node)| !prefix.nullable && prefix.scalar_type == node.scalar_type)
+      {
+        issues.push(DefinitionIssue::new(
+          code,
+          format!("{location}.path.prefix"),
+          "path prefix must be a non-null field of the same type as its node",
+        ));
+      }
+    }
+  }
+}
+
+fn validate_input(
+  traversal: TraversalRef<'_>,
+  location: &str,
+  context: &ExpressionContext<'_>,
+  code: DefinitionIssueCode,
+  allow_shared_sources: bool,
+  issues: &mut Vec<DefinitionIssue>,
+) {
+  let before = issues.len();
+  let mut issue = |suffix: &str, message: &str| {
+    issues.push(DefinitionIssue::new(
+      code,
       format!("{location}.{suffix}"),
       message,
     ))
   };
   if traversal.scope.trim().is_empty() {
-    issue("scope", "reachable scope must not be empty");
+    issue("scope", "traversal scope must not be empty");
   }
   if !traversal.input.projection.fields.is_empty()
     || !traversal.input.projection.objects.is_empty()
@@ -27,20 +126,33 @@ pub(super) fn validate(
   {
     issue(
       "input",
-      "reachable input cannot define projection or ordering",
+      "traversal input cannot define projection or ordering",
     );
   }
   for source in &traversal.input.sources {
-    if context
+    if source.traversal.is_some() {
+      issue(
+        "input.sources",
+        "nested traversal sources are not supported",
+      );
+    }
+    if let Some(outer) = context
       .definition
       .sources
       .iter()
-      .any(|outer| outer.key == source.key)
+      .find(|outer| outer.key == source.key)
     {
-      issue(
-        "input.sources",
-        "reachable input source keys must differ from outer source keys",
-      );
+      if !allow_shared_sources {
+        issue(
+          "input.sources",
+          "reachable input source keys must differ from outer source keys",
+        );
+      } else if outer != source {
+        issue(
+          "input.sources",
+          "shared input source keys must have identical physical source definitions",
+        );
+      }
     }
   }
   let mut parameter_names = std::collections::HashSet::new();
@@ -48,13 +160,13 @@ pub(super) fn validate(
     if !parameter_names.insert(&parameter.name) {
       issue(
         "input.parameters",
-        "reachable module parameters must not contain duplicate names",
+        "traversal module parameters must not contain duplicate names",
       );
     }
     if !context.definition.parameters.contains(parameter) {
       issue(
         "input.parameters",
-        "reachable module parameters must be declared identically on the outer graph",
+        "traversal module parameters must be declared identically on the outer graph",
       );
     }
   }
@@ -78,17 +190,17 @@ pub(super) fn validate(
         )
     })
   {
-    issue("key", "reachable key must be a non-null integer or string field of its source; it must uniquely identify rows");
+    issue("key", "traversal key must be a non-null integer or string field of its source; it must uniquely identify rows");
   }
   let mut input = traversal.input.clone();
   input.parameters = context.definition.parameters.clone();
-  let step = step_predicate(&traversal.step, traversal);
+  let step = step_predicate(traversal.step, traversal);
   if step.is_none() {
-    issue("step", "reachable step must be equalities between current and next fields, optionally combined with and");
+    issue("step", "traversal step must be equalities between current and next fields, optionally combined with and");
   }
   for constraint in &input.constraints {
     if !valid_filter(&constraint.predicate, &input.root) {
-      issue("input.constraints", "reachable input filters may reference only its root and local exists; nested traversals and aggregates are not supported");
+      issue("input.constraints", "traversal input filters may reference only its root and local exists; nested traversals and aggregates are not supported");
     }
   }
   for relation in &input.relations {
@@ -99,14 +211,11 @@ pub(super) fn validate(
       );
     }
   }
-  if !valid_filter(&traversal.start, &input.root) {
+  if !valid_filter(traversal.start, &input.root) {
     issue(
       "start",
-      "reachable start must reference only its input root and local exists",
+      "traversal start must reference only its input root and local exists",
     );
-  }
-  if traversal.predicate.contains_aggregate() {
-    issue("match", "reachable match cannot contain aggregates");
   }
   if issues.len() != before {
     return;
@@ -132,12 +241,6 @@ pub(super) fn validate(
       issues.push(error);
     }
   }
-  expression::validate(
-    &traversal.predicate,
-    &format!("{location}.match"),
-    &context.traversal_match(traversal),
-    issues,
-  );
 }
 
 fn contains_traversal(expression: &Expression) -> bool {
@@ -145,7 +248,11 @@ fn contains_traversal(expression: &Expression) -> bool {
   expression.walk(&mut |node| {
     if matches!(
       node,
-      Expression::Reachable(_) | Expression::TraversalField { .. }
+      Expression::Reachable(_)
+        | Expression::TraversalField { .. }
+        | Expression::TraversalRoot { .. }
+        | Expression::TraversalLevel { .. }
+        | Expression::TraversalPathEquals { .. }
     ) {
       found = true;
       return false;
@@ -176,7 +283,7 @@ fn valid_filter(expression: &Expression, root: &str) -> bool {
   valid
 }
 
-fn step_predicate(expression: &Expression, traversal: &ReachableExpression) -> Option<Expression> {
+fn step_predicate(expression: &Expression, traversal: TraversalRef<'_>) -> Option<Expression> {
   match expression {
     Expression::And { expressions } if !expressions.is_empty() => Some(Expression::and(
       expressions
@@ -201,9 +308,7 @@ fn step_predicate(expression: &Expression, traversal: &ReachableExpression) -> O
       else {
         return None;
       };
-      if left_scope != &traversal.scope
-        || right_scope != &traversal.scope
-        || left_side == right_side
+      if left_scope != traversal.scope || right_scope != traversal.scope || left_side == right_side
       {
         return None;
       }

@@ -177,6 +177,32 @@ fn infer_expression(
   issues: &mut Vec<DefinitionIssue>,
 ) -> Option<InferredType> {
   match expression {
+    Expression::TraversalLevel { source } => {
+      let index = environment.index.source(source)?;
+      Some(InferredType::scalar(
+        crate::ScalarType::Int32,
+        environment.topology.source_is_nullable(index),
+      ))
+    }
+    Expression::TraversalPathEquals { source, parameter } => {
+      let index = environment.index.source(source)?;
+      let source = &environment.definition.sources[index];
+      let path = source.traversal.as_ref()?.path.as_ref()?;
+      let node = source.fields.iter().find(|field| field.name == path.node)?;
+      let parameter_type = environment.parameter_type(parameter, ParameterShape::List)?;
+      report_type_result(
+        type_system::infer_equality(
+          InferredType::scalar(node.scalar_type, false),
+          parameter_type,
+        ),
+        location,
+        issues,
+      )?;
+      Some(InferredType::scalar(
+        crate::ScalarType::Boolean,
+        environment.topology.source_is_nullable(index),
+      ))
+    }
     Expression::Reachable(traversal) => {
       let mut local = environment.clone();
       local.traversal = traversal
@@ -201,7 +227,9 @@ fn infer_expression(
         .find(|candidate| candidate.name == *field)?;
       Some(InferredType::scalar(field.scalar_type, field.nullable))
     }
-    Expression::Field { source, field } => Some(environment.field_type(source, field)),
+    Expression::Field { source, field } | Expression::TraversalRoot { source, field } => {
+      Some(environment.field_type(source, field))
+    }
     Expression::Parameter { name } => environment.parameter_type(name, ParameterShape::Scalar),
     Expression::Literal { value } => Some(InferredType::literal(value)),
     Expression::Eq { left, right } | Expression::NotEq { left, right } => infer_binary(

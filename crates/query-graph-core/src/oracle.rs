@@ -81,11 +81,11 @@ impl SqlDialect for OracleDialect {
     self.version.as_str()
   }
 
-  fn supports_reachable(&self) -> bool {
+  fn supports_traversal(&self) -> bool {
     true
   }
 
-  fn render_reachable_query(
+  fn render_traversal_query(
     &self,
     projection: &str,
     source: &str,
@@ -97,6 +97,14 @@ impl SqlDialect for OracleDialect {
     Ok(format!(
       "SELECT {projection}\nFROM {source}\nSTART WITH {start}\nCONNECT BY NOCYCLE {step} AND PRIOR {key} IS NOT NULL"
     ))
+  }
+
+  fn render_traversal_root(&self, field: &str) -> Result<String, SqlCompileError> {
+    Ok(format!("CONNECT_BY_ROOT {field}"))
+  }
+
+  fn render_traversal_level(&self) -> Result<&'static str, SqlCompileError> {
+    Ok("LEVEL")
   }
 
   fn quote_identifier(&self, identifier: &str) -> String {

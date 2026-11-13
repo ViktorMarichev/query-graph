@@ -34,6 +34,9 @@ import type {
   RelationSelection,
   ReachableExpression,
   TraversalFieldExpression,
+  TraversalRootExpression,
+  TraversalLevelExpression,
+  TraversalPathEqualsExpression,
   ScalarType,
   SourceDefinition,
   SourceFieldNullability,
@@ -404,16 +407,82 @@ export interface TraversalRow<Fields extends FieldSpecMap> {
   ): TypedExpression<TraversalFieldExpression, FieldSpecScalarType<Fields[Name]>, FieldSpecIsNullable<Fields[Name]>>
 }
 
-export interface ReachableConfiguration<Key extends string, Fields extends FieldSpecMap> {
+export interface TraversalConfiguration<Key extends string, Fields extends FieldSpecMap> {
   source: SourceRef<Key, Fields>
   modules?: readonly GraphModule[]
   key: FieldExpression<NoInfer<Key>, Extract<keyof NoInfer<Fields>, string>>
   where?: ExpressionInput
   start: ExpressionInput
   step: (rows: { current: TraversalRow<Fields>; next: TraversalRow<Fields> }) => ExpressionInput
-  match: ExpressionInput
   cycles?: 'skip'
 }
+
+export interface ReachableConfiguration<Key extends string, Fields extends FieldSpecMap>
+  extends TraversalConfiguration<Key, Fields> {
+  match: ExpressionInput
+}
+
+export interface TraversalPathConfiguration<Key extends string, Fields extends FieldSpecMap> {
+  node: FieldExpression<Key, Extract<keyof Fields, string>>
+  prefix?: FieldExpression<Key, Extract<keyof Fields, string>>
+}
+
+declare const traversalPathBrand: unique symbol
+
+export interface TraversalPathRef<Source extends string = string, Type extends ScalarType = ScalarType> {
+  readonly [traversalPathBrand]: Type
+  readonly source: Source
+}
+
+export interface TraversalSourceRef<
+  Key extends string = string,
+  Fields extends FieldSpecMap = FieldSpecMap,
+  PathType extends ScalarType = never,
+> extends SourceRef<Key, Fields> {
+  rootField<Name extends Extract<keyof Fields, string>>(
+    name: Name,
+  ): TypedExpression<
+    TraversalRootExpression<Key, Name>,
+    FieldSpecScalarType<Fields[Name]>,
+    SourceFieldNullability<Key, FieldSpecIsNullable<Fields[Name]>>
+  >
+  level(): TypedExpression<TraversalLevelExpression<Key>, 'int32', SourceFieldNullability<Key, false>>
+  path(
+    this: [PathType] extends [never] ? never : TraversalSourceRef<Key, Fields, PathType>,
+  ): TraversalPathRef<Key, PathType>
+}
+
+export interface TraversalSourceConfiguration<
+  Name extends string,
+  Input extends string,
+  Fields extends FieldSpecMap,
+  Path extends TraversalPathConfiguration<Input, Fields> | undefined = undefined,
+> extends TraversalConfiguration<Input, Fields> {
+  name: Name
+  path?: Path
+}
+
+export function traversalSource<
+  const Name extends string,
+  const Input extends string,
+  const Fields extends FieldSpecMap,
+  const Path extends TraversalPathConfiguration<Input, NoInfer<Fields>> | undefined = undefined,
+>(
+  configuration: TraversalSourceConfiguration<Name, Input, Fields, Path>,
+): TraversalSourceRef<
+  Name,
+  Fields,
+  Path extends { node: FieldExpression<Input, infer Field> }
+    ? Field extends keyof Fields
+      ? FieldSpecScalarType<Fields[Field]>
+      : never
+    : never
+>
+
+export function pathEquals<const Source extends string, const Type extends ScalarType, const Name extends string>(
+  path: TraversalPathRef<Source, Type>,
+  parameter: ListParameterRef<Name, NoInfer<Type>>,
+): TypedExpression<TraversalPathEqualsExpression<Source, Name>, 'boolean', SourceFieldNullability<Source, false>>
 
 export function reachable<const Key extends string, const Fields extends FieldSpecMap>(
   configuration: ReachableConfiguration<Key, Fields>,
